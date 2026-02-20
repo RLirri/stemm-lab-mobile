@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useState} from "react";
 import {
     View,
     Text,
@@ -7,15 +7,15 @@ import {
     StyleSheet,
     Alert,
 } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { AppStackParamList } from "../../navigation/AppStack";
-import { auth, db } from "../../services/firebase";
-import { createTeam, joinTeamByCode } from "../../services/teamService";
-import { doc, onSnapshot } from "firebase/firestore";
+import {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {AppStackParamList} from "../../navigation/AppStack";
+import {auth, db} from "../../services/firebase";
+import {createTeam, joinTeamByCode} from "../../services/teamService";
+import {doc, onSnapshot} from "firebase/firestore";
 
 type Props = NativeStackScreenProps<AppStackParamList, "TeamUp">;
 
-export default function TeamUpScreen({ navigation }: Props) {
+export default function TeamUpScreen({navigation}: Props) {
     const user = auth.currentUser;
 
     const [teamName, setTeamName] = useState("");
@@ -162,9 +162,9 @@ export default function TeamUpScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20 },
-    title: { fontSize: 32, fontWeight: "900", marginTop: 10, marginBottom: 10 },
-    section: { marginTop: 18, fontWeight: "800", fontSize: 16 },
+    container: {flex: 1, padding: 20},
+    title: {fontSize: 32, fontWeight: "900", marginTop: 10, marginBottom: 10},
+    section: {marginTop: 18, fontWeight: "800", fontSize: 16},
     input: {
         borderWidth: 1,
         borderColor: "#e5e5e5",
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginTop: 12,
     },
-    buttonText: { color: "white", fontWeight: "800", fontSize: 16 },
+    buttonText: {color: "white", fontWeight: "800", fontSize: 16},
     secondaryButton: {
         alignSelf: "flex-start",
         borderWidth: 1,
@@ -190,9 +190,9 @@ const styles = StyleSheet.create({
         borderRadius: 999,
         marginTop: 6,
     },
-    secondaryText: { fontWeight: "800" },
-    buttonDisabled: { opacity: 0.45 },
-    hint: { marginTop: 14, opacity: 0.7 },
+    secondaryText: {fontWeight: "800"},
+    buttonDisabled: {opacity: 0.45},
+    hint: {marginTop: 14, opacity: 0.7},
 
     banner: {
         borderWidth: 1,
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
         padding: 12,
         marginBottom: 12,
     },
-    bannerText: { fontWeight: "800" },
+    bannerText: {fontWeight: "800"},
     bannerBtn: {
         marginTop: 10,
         backgroundColor: "#111",
@@ -210,5 +210,5 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: "center",
     },
-    bannerBtnText: { color: "white", fontWeight: "800" },
+    bannerBtnText: {color: "white", fontWeight: "800"},
 });
