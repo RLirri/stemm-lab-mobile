@@ -8,23 +8,19 @@ export type TeamStats = {
 
 export type TeamDoc = {
     name: string;
-    code: string;
     isPublic: boolean;
     createdBy: string;
-
-    members: string[];
-    memberMap: Record<
-        string,
-        {
-            displayName: string | null;
-            email: string | null;
-        }
-    >;
-
-    stats?: TeamStats;
-
-    createdAt: Timestamp;
-    updatedAt?: Timestamp;
+    members?: string[];
+    memberMap?: Record<string, { displayName?: string; email?: string }>;
+    stats?: {
+        memberCount?: number;
+        totalScore?: number;
+        lastUpdated?: any;
+        currentSeasonTotalScore?: number;
+        currentSeasonActivityScores?: Record<string, number>;
+    };
+    createdAt?: any;
+    updatedAt?: any;
 };
 
 export type LeaderboardTeamRow = {
@@ -33,4 +29,5 @@ export type LeaderboardTeamRow = {
     memberCount: number;
     totalScore: number;
     lastUpdated: Date | null;
+    activityScores?: Record<string, number>;
 };

@@ -4,6 +4,9 @@ import {NativeStackScreenProps} from "@react-navigation/native-stack";
 import {AppStackParamList} from "../../navigation/AppStack";
 import {auth} from "../../services/firebase";
 import {backfillTeamStats} from "../../services/teamMigrationService";
+import {seedActivities} from "../../services/activityAdminService";
+import {activityCatalog} from "../../features/activities/activityCatalog";
+
 
 type Props = NativeStackScreenProps<AppStackParamList, "Home">;
 
@@ -23,6 +26,17 @@ export default function HomeScreen({navigation}: Props) {
                 "Backfill Complete ✅",
                 `Scanned: ${result.scanned}\nUpdated: ${result.updated}`
             );
+        } catch (error: any) {
+            Alert.alert("Error ❌", error?.message ?? "Unknown error");
+        } finally {
+            setMigrating(false);
+        }
+    };
+    const handleSeedActivities = async () => {
+        try {
+            setMigrating(true);
+            const res = await seedActivities(activityCatalog);
+            Alert.alert("Seed Complete ✅", `Upserted: ${res.upserted}`);
         } catch (error: any) {
             Alert.alert("Error ❌", error?.message ?? "Unknown error");
         } finally {
@@ -59,6 +73,20 @@ export default function HomeScreen({navigation}: Props) {
                     </Text>
                 </Pressable>
             ) : null}
+            {__DEV__ && isAdmin ? (
+                <Pressable
+                    style={[styles.button, migrating && {opacity: 0.6}]}
+                    onPress={handleSeedActivities}
+                    disabled={migrating}
+                >
+                    <Text style={styles.buttonText}>
+                        {migrating ? "DEV: Seeding..." : "DEV: Seed activities"}
+                    </Text>
+                </Pressable>
+            ) : null}
+            <Pressable style={styles.button} onPress={() => navigation.navigate("Activities")}>
+                <Text style={styles.buttonText}>Activities</Text>
+            </Pressable>
         </View>
 
     );
