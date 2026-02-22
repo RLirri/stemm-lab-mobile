@@ -1,4 +1,3 @@
-// src/screens/Leaderboard/LeaderboardScreen.tsx
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     View,
@@ -19,7 +18,7 @@ import {subscribeLeaderboard} from "../../services/leaderboardService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Leaderboard">;
 
-type Mode = "global" | "parachute_drop";
+type Mode = "global" | "parachute_drop" | "sound_hunter";
 
 function medal(rank: number) {
     if (rank === 1) return "🥇";
@@ -32,13 +31,25 @@ function safeNum(x: unknown, fallback = 0) {
     return typeof x === "number" && Number.isFinite(x) ? x : fallback;
 }
 
-function AnimatedNumber({
-                            value,
-                            style,
-                        }: {
-    value: number;
-    style?: any;
-}) {
+function modeTitle(mode: Mode) {
+    if (mode === "global") return "Global Leaderboard";
+    if (mode === "parachute_drop") return "Activity 1 Leaderboard";
+    return "Activity 2 Leaderboard";
+}
+
+function modeTabLabel(mode: Mode) {
+    if (mode === "global") return "Global";
+    if (mode === "parachute_drop") return "Parachute Drop";
+    return "Sound Hunter";
+}
+
+function activityKeyForMode(mode: Mode): string | undefined {
+    if (mode === "parachute_drop") return "parachute_drop";
+    if (mode === "sound_hunter") return "sound_hunter";
+    return undefined;
+}
+
+function AnimatedNumber({value, style}: { value: number; style?: any }) {
     const animated = useRef(new Animated.Value(value)).current;
     const [display, setDisplay] = useState(value);
 
@@ -72,11 +83,12 @@ export default function LeaderboardScreen({navigation}: Props) {
     // Score delta
     const prevScoreByTeamRef = useRef<Map<string, number>>(new Map());
     const [deltaByTeam, setDeltaByTeam] = useState<Record<string, number>>({});
-    // Reset delta cache when switching tabs (global ↔ activity)
-    // useEffect(() => {
-    //     prevScoreByTeamRef.current = new Map();
-    //     setDeltaByTeam({});
-    // }, [mode]);
+
+    // IMPORTANT: reset delta cache when switching tabs
+    useEffect(() => {
+        prevScoreByTeamRef.current = new Map();
+        setDeltaByTeam({});
+    }, [mode]);
 
     // Fetch my team once
     useEffect(() => {
@@ -101,10 +113,12 @@ export default function LeaderboardScreen({navigation}: Props) {
         setLoading(true);
         setError(null);
 
+        const activityKey = activityKeyForMode(mode);
+
         const unsubscribe = subscribeLeaderboard(
             {
                 mode: mode === "global" ? "global" : "activity",
-                activityKey: mode === "global" ? undefined : "parachute_drop",
+                activityKey,
                 pageSize: 50,
             },
             (next) => {
@@ -115,7 +129,7 @@ export default function LeaderboardScreen({navigation}: Props) {
                     const shownScore =
                         mode === "global"
                             ? safeNum(r.totalScore, 0)
-                            : safeNum(r.activityScores?.["parachute_drop"], 0);
+                            : safeNum(r.activityScores?.[activityKey ?? ""], 0);
 
                     const prev = prevMap.get(r.id);
                     if (typeof prev === "number") {
@@ -139,7 +153,6 @@ export default function LeaderboardScreen({navigation}: Props) {
         return () => unsubscribe();
     }, [mode]);
 
-
     // Compute my rank whenever rows change
     useEffect(() => {
         if (!myTeamId) {
@@ -151,38 +164,28 @@ export default function LeaderboardScreen({navigation}: Props) {
     }, [myTeamId, rows]);
 
     const onRefresh = async () => {
-        // Real-time mode: refresh is UX only
         setRefreshing(true);
         await new Promise((r) => setTimeout(r, 250));
         setRefreshing(false);
     };
 
-
     const header = useMemo(() => {
         return (
             <>
-                <Text style={styles.title}>
-                    {mode === "global" ? "Global Leaderboard" : "Activity 1 Leaderboard"}
-                </Text>
+                <Text style={styles.title}>{modeTitle(mode)}</Text>
 
                 <View style={styles.tabs}>
-                    <Pressable
-                        onPress={() => setMode("global")}
-                        style={[styles.tab, mode === "global" && styles.tabActive]}
-                    >
-                        <Text style={[styles.tabText, mode === "global" && styles.tabTextActive]}>
-                            Global
-                        </Text>
-                    </Pressable>
-
-                    <Pressable
-                        onPress={() => setMode("parachute_drop")}
-                        style={[styles.tab, mode === "parachute_drop" && styles.tabActive]}
-                    >
-                        <Text style={[styles.tabText, mode === "parachute_drop" && styles.tabTextActive]}>
-                            Parachute Drop
-                        </Text>
-                    </Pressable>
+                    {(["global", "parachute_drop", "sound_hunter"] as Mode[]).map((m) => (
+                        <Pressable
+                            key={m}
+                            onPress={() => setMode(m)}
+                            style={[styles.tab, mode === m && styles.tabActive]}
+                        >
+                            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
+                                {modeTabLabel(m)}
+                            </Text>
+                        </Pressable>
+                    ))}
                 </View>
 
                 {myRank ? (
@@ -224,10 +227,12 @@ export default function LeaderboardScreen({navigation}: Props) {
                     }
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>}
                     renderItem={({item, index}) => {
+                        const activityKey = activityKeyForMode(mode);
+
                         const shownScore =
                             mode === "global"
                                 ? safeNum(item.totalScore, 0)
-                                : safeNum(item.activityScores?.["parachute_drop"], 0);
+                                : safeNum(item.activityScores?.[activityKey ?? ""], 0);
 
                         const delta = safeNum(deltaByTeam[item.id], 0);
 

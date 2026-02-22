@@ -12,6 +12,11 @@ import {stripUndefinedDeep} from "./firestoreSanitize";
 import {uploadVideoToStorage} from "./evidenceService";
 
 import type {ActivityRunDraft} from "../store/activityRunDraftStore";
+import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
+
+/* =========================================================
+   Utilities
+========================================================= */
 
 function isFiniteNumber(x: unknown): x is number {
     return typeof x === "number" && Number.isFinite(x);
@@ -21,18 +26,19 @@ function safeNum(x: unknown): number {
     return typeof x === "number" && Number.isFinite(x) ? x : 0;
 }
 
-/**
- * Activity key registry
- * Add future activities here.
- */
+/* =========================================================
+   Activity Key Registry
+========================================================= */
+
 export const ACTIVITY_KEYS = {
     PARACHUTE_DROP: "parachute_drop",
+    SOUND_HUNTER: "sound_hunter",
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
 
 /* =========================================================
-   ACTIVITY 1 SCORING
+   ACTIVITY 1 SCORING (UNCHANGED)
 ========================================================= */
 
 export function scoreActivity1(run: ActivityRunDraft, bestAttemptIndex: number) {
@@ -114,7 +120,7 @@ async function updateTeamScoresTransactional(teamId: string, activityKey: string
 }
 
 /* =========================================================
-   SUBMIT ACTIVITY 1 (WITH EVIDENCE UPLOAD)
+   SUBMIT ACTIVITY 1 (UNCHANGED)
 ========================================================= */
 
 export async function submitActivity1({
@@ -192,7 +198,7 @@ export async function submitActivity1({
         session: run.session,
         attempts: run.attempts,
 
-        evidence, //
+        evidence,
 
         seasonId: DEFAULT_SEASON_ID,
         status: "submitted" as const,
@@ -207,6 +213,104 @@ export async function submitActivity1({
 
     // 4) Update team leaderboard totals
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.PARACHUTE_DROP, score);
+
+    return {submissionId: newSubmission.id, score};
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 2 (UPDATED: VIDEO OPTIONAL)
+========================================================= */
+
+export async function submitActivity2({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+                                      }: {
+    run: Activity2RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    // valid measurements (must be at least 3)
+    const valid = run.actions.filter(
+        (a) => a.isValid === true && isFiniteNumber(a.dbAvg) && isFiniteNumber(a.durationSec)
+    );
+
+    if (valid.length < 3) throw new Error("Minimum 3 valid measurements required.");
+
+    // score = average(valid dbAvg), 0.1 precision
+    const avg = valid.reduce((sum, a) => sum + (a.dbAvg ?? 0), 0) / valid.length;
+    const score = Math.round(avg * 10) / 10;
+
+    // Optional session video evidence upload
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+    }> = [];
+
+    const localUri = run.session.sessionVideo?.uri;
+    if (typeof localUri === "string" && localUri.length > 0) {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.SOUND_HUNTER}/${run.runId}/session.mp4`;
+
+        const uploaded = await uploadVideoToStorage({
+            uri: localUri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+        });
+    }
+
+    // Build submission payload
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: run.activityId,
+        activityKey: ACTIVITY_KEYS.SOUND_HUNTER,
+        algorithmVersion: 1,
+
+        teamId,
+        createdBy,
+        runId: run.runId,
+
+        reflection: reflection.trim(),
+        rating,
+
+        // score fields
+        score,
+        validCount: valid.length,
+        avgDb: score,
+
+        // store session + actions (includes GPS if present)
+        session: run.session,
+        actions: run.actions,
+
+        evidence, // can be []
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    // Update team totals
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.SOUND_HUNTER, score);
 
     return {submissionId: newSubmission.id, score};
 }
