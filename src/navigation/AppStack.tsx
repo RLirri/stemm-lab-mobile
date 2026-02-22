@@ -18,6 +18,15 @@ import A1ResultScreen from "../screens/Activities/Activity1/A1ResultScreen";
 import A1ComparisonScreen from "../screens/Activities/Activity1/A1ComparisonScreen";
 import A1ReflectionSubmitScreen from "../screens/Activities/Activity1/A1ReflectionSubmitScreen";
 
+// Activity 2 (Sound Pollution Hunter) flow screens
+import A2OverviewScreen from "../screens/Activities/Activity2/A2OverviewScreen";
+import A2SessionSetupScreen from "../screens/Activities/Activity2/A2SessionSetupScreen";
+import A2PredictionScreen from "../screens/Activities/Activity2/A2PredictionScreen";
+import A2MeasurementScreen from "../screens/Activities/Activity2/A2MeasurementScreen";
+import A2MapScreen from "../screens/Activities/Activity2/A2MapScreen";
+import A2ResultsScreen from "../screens/Activities/Activity2/A2ResultsScreen";
+import A2ReflectionSubmitScreen from "../screens/Activities/Activity2/A2ReflectionSubmitScreen";
+
 export type AppStackParamList = {
     Home: undefined;
     Profile: undefined;
@@ -38,6 +47,15 @@ export type AppStackParamList = {
     A1Result: { activityId: string; runId: string; attemptIndex: number };
     A1Comparison: { activityId: string; runId: string };
     A1ReflectionSubmit: { activityId: string; runId: string };
+
+    // Activity 2 flow (v1)
+    A2Overview: { activityId: string };
+    A2SessionSetup: { activityId: string; runId?: string };
+    A2Prediction: { activityId: string; runId: string };
+    A2Measurement: { activityId: string; runId: string };
+    A2Map: { activityId: string; runId: string };
+    A2Results: { activityId: string; runId: string };
+    A2ReflectionSubmit: { activityId: string; runId: string };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -69,6 +87,19 @@ export default function AppStack() {
             <Stack.Screen name="A1Comparison" component={A1ComparisonScreen} options={{title: "Compare"}}/>
             <Stack.Screen name="A1ReflectionSubmit" component={A1ReflectionSubmitScreen}
                           options={{title: "Reflection & Submit"}}
+            />
+
+            {/* Activity 2: Sound Pollution Hunter */}
+            <Stack.Screen name="A2Overview" component={A2OverviewScreen} options={{title: "Overview"}}/>
+            <Stack.Screen name="A2SessionSetup" component={A2SessionSetupScreen} options={{title: "Session Setup"}}/>
+            <Stack.Screen name="A2Prediction" component={A2PredictionScreen} options={{title: "Prediction"}}/>
+            <Stack.Screen name="A2Measurement" component={A2MeasurementScreen} options={{title: "Measurements"}}/>
+            <Stack.Screen name="A2Map" component={A2MapScreen} options={{title: "Map"}}/>
+            <Stack.Screen name="A2Results" component={A2ResultsScreen} options={{title: "Results"}}/>
+            <Stack.Screen
+                name="A2ReflectionSubmit"
+                component={A2ReflectionSubmitScreen}
+                options={{title: "Reflection & Submit"}}
             />
         </Stack.Navigator>
     );

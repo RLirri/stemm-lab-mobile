@@ -16,26 +16,37 @@ import {getActivityById} from "../../services/activityService";
 import type {Activity} from "../../types/activity";
 
 import {activityCatalog} from "../../features/activities/activityCatalog";
+
+// Activity 1 draft store
 import {createRunDraft} from "../../store/activityRunDraftStore";
+
+// Activity 2 draft store
+import {createActivity2RunDraft} from "../../store/activity2RunDraftStore";
 
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
 /**
  * Local-only routing metadata (keeps your ActivityDoc clean).
- * We try to match by:
- *  - activity.slug (preferred)
- *  - activityId === definition.id (works with deterministic IDs)
+ * activityCatalog items should include:
+ *  - id
+ *  - slug
+ *  - startRoute
  */
 type ActivityFlowMeta = {
+    id: string;
     slug?: string;
     startRoute?: keyof AppStackParamList;
 };
 
-function getSlug(activity: Activity | null): string | null {
+function getActivitySlug(activity: Activity | null): string | null {
     if (!activity) return null;
-    // Some teams store slug in Firestore; keep it optional and safe.
     const maybeSlug = (activity as unknown as { slug?: string }).slug;
-    return maybeSlug ?? activity.id ?? null;
+    if (typeof maybeSlug === "string" && maybeSlug.trim()) return maybeSlug.trim();
+    return null;
+}
+
+function isNonEmptyString(x: unknown): x is string {
+    return typeof x === "string" && x.trim().length > 0;
 }
 
 export default function ActivityDetailScreen({route, navigation}: Props) {
@@ -67,28 +78,28 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
         };
     }, [activityId]);
 
-    const flow = useMemo(() => {
-        const slug = getSlug(activity);
-        if (!slug) return null;
+    const flow = useMemo<ActivityFlowMeta | null>(() => {
+        const defs = activityCatalog as unknown as ActivityFlowMeta[];
 
-        // We keep your existing activityCatalog/definitions intact by
-        // allowing optional routing metadata (startRoute) via type assertion.
-        const defs = activityCatalog as unknown as Array<
-            { id: string } & ActivityFlowMeta
-        >;
+        const slug = getActivitySlug(activity);
+        if (slug) {
+            const bySlug = defs.find((d) => isNonEmptyString(d.slug) && d.slug === slug);
+            if (bySlug) return bySlug;
+        }
 
-        // Preferred: match by slug if available; otherwise deterministic ID match.
-        return (
-            defs.find((d) => (d.slug ? d.slug === slug : false)) ??
-            defs.find((d) => d.id === activityId) ??
-            null
-        );
+        // Fallback: match by deterministic id
+        const byId = defs.find((d) => d.id === activityId);
+        return byId ?? null;
     }, [activity, activityId]);
 
     const timeSpanLabel =
         activity?.timeSpanMinutes && activity.timeSpanMinutes > 0
             ? `~${activity.timeSpanMinutes} min`
             : null;
+
+    function assertNever(_x: never): never {
+        throw new Error("Unexpected route");
+    }
 
     async function onStart() {
         if (!user) return;
@@ -107,15 +118,99 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                 return;
             }
 
-            // v1 approach: create a local run draft (in-memory store) for flows that need runId.
-            if (startRoute === "A1SessionSetup") {
-                const draft = createRunDraft(activityId, user.uid);
-                navigation.navigate("A1SessionSetup", {activityId, runId: draft.runId});
-                return;
-            }
+            /**
+             * IMPORTANT:
+             * The “NAVIGATE not handled” error happens when the route name string
+             * is not exactly registered in AppStack OR you navigate with wrong params.
+             *
+             * We keep routing strict here with a switch on known routes.
+             */
+            switch (startRoute) {
+                /* =========================
+                   Activity 1
+                ========================= */
+                case "A1SessionSetup": {
+                    const draft = createRunDraft(activityId, user.uid);
+                    navigation.navigate("A1SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
 
-            // Generic fallback: navigate with activityId only.
-            navigation.navigate(startRoute, {activityId} as never);
+                // If someone sets startRoute to later steps by mistake, still handle safely
+                case "A1AttemptPlan":
+                case "A1Measurements":
+                case "A1Result":
+                case "A1Comparison":
+                case "A1ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 1 must start at Session Setup. Please set startRoute to A1SessionSetup."
+                    );
+                    return;
+                }
+
+                /* =========================
+                   Activity 2
+                ========================= */
+
+                // If you want an overview-first UX (recommended)
+                case "A2Overview": {
+                    // A2Overview in your current AppStack expects ONLY { activityId }.
+                    // The run draft is created later (usually in A2SessionSetup) OR
+                    // you can create it inside A2Overview when user taps Continue.
+                    navigation.navigate("A2Overview", {activityId});
+                    return;
+                }
+
+                // If you want to start directly with Session Setup
+                case "A2SessionSetup": {
+                    const draft = createActivity2RunDraft(activityId, user.uid);
+                    navigation.navigate("A2SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+                // Guard against misconfigured startRoute
+                case "A2Prediction":
+                case "A2Measurement":
+                case "A2Map":
+                case "A2Results":
+                case "A2ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 2 must start at Overview or Session Setup. Please set startRoute to A2Overview or A2SessionSetup."
+                    );
+                    return;
+                }
+
+                /* =========================
+                   App-level routes (don’t start activities here)
+                ========================= */
+                case "Home":
+                case "Profile":
+                case "TeamUp":
+                case "TeamDetail":
+                case "ExploreTeams":
+                case "Leaderboard":
+                case "Activities":
+                case "ActivityDetail": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "startRoute must point to an activity flow screen (A1*/A2*)."
+                    );
+                    return;
+                }
+
+                default: {
+                    // If TypeScript can’t narrow (e.g., because startRoute comes from data),
+                    // keep a safe runtime message.
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const r = startRoute as any;
+                    Alert.alert(
+                        "Unknown route",
+                        `startRoute "${String(r)}" is not supported. Check your activityCatalog mapping.`
+                    );
+                    return;
+                }
+            }
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : "Unknown error";
             Alert.alert("Start failed", msg);
@@ -156,9 +251,7 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
             </Text>
 
             {activity.shortDescription ? (
-                <Text style={[styles.body, {marginTop: 12}]}>
-                    {activity.shortDescription}
-                </Text>
+                <Text style={[styles.body, {marginTop: 12}]}>{activity.shortDescription}</Text>
             ) : null}
 
             {activity.description ? (
@@ -198,14 +291,15 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
 
             {!flow?.startRoute ? (
                 <Text style={styles.hint}>
-                    Flow routing isn’t configured for this activity yet (missing slug/startRoute mapping).
+                    Flow routing isn’t configured for this activity yet (missing startRoute in activityCatalog).
                 </Text>
             ) : (
                 <Text style={styles.hint}>
-                    You’ll complete session setup, baseline + prototypes, measurements, results, reflection, and
-                    submission.
+                    Start route: <Text style={{fontWeight: "900"}}>{String(flow.startRoute)}</Text>
                 </Text>
             )}
+
+            <View style={{height: 24}}/>
         </ScrollView>
     );
 }
