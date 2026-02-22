@@ -1,6 +1,6 @@
 import type {Timestamp} from "firebase/firestore";
 
-export type ActivityCategory = "Science" | "Tech" | "Engineering" | "Math" | "Medicine";
+export type ActivityCategory = "Science" | "Tech" | "Engineering" | "Math" | "Medicine" | "Environmental Science";
 export type ActivityDifficulty = "Easy" | "Medium" | "Hard";
 
 export type ActivityInputType =
@@ -32,8 +32,22 @@ export type ActivityPhase = {
 };
 
 export type ActivityScoring =
-    | { type: "fixed"; basePoints: number }
-    | { type: "formula"; formula: { kind: "distance-higher-better" | "time-lower-better"; factor?: number } };
+    | { type: "fixed"; basePoints: number; notes?: string }
+    | {
+    type: "formula";
+    formula: {
+        kind: "distance-higher-better" | "time-lower-better";
+        factor?: number;
+    };
+    notes?: string;
+}
+    | {
+    type: "computed";
+    key:
+        | "avg_valid_db" // Activity 2
+        | "custom"; // future-proof
+    notes?: string;
+};
 
 export type ActivityDoc = {
     // identity
