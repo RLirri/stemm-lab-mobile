@@ -28,64 +28,64 @@ function safeNum(x: unknown, fallback = 0): number {
     return typeof x === "number" && Number.isFinite(x) ? x : fallback;
 }
 
-/**
- * Read "season total" score with backward compatibility.
- * - New system: stats.currentSeasonTotalScore
- * - Legacy: stats.totalScore
- */
 function getSeasonTotal(stats: NonNullable<TeamDoc["stats"]>): number {
     const season = safeNum((stats as any).currentSeasonTotalScore, NaN);
     if (Number.isFinite(season)) return season;
     return safeNum((stats as any).totalScore, 0);
 }
 
-/**
- * Read activity score map (season-aware) with backward compatibility.
- * - New system: stats.currentSeasonActivityScores (map)
- * - Legacy fallback: undefined -> {}
- */
 function getSeasonActivityScores(stats: NonNullable<TeamDoc["stats"]>): Record<string, number> {
     const m = (stats as any).currentSeasonActivityScores;
     return m && typeof m === "object" ? (m as Record<string, number>) : {};
 }
 
+function toRow(d: { id: string; data: () => any }): LeaderboardTeamRow {
+    const data = d.data() as TeamDoc;
+    const stats = (data.stats ?? {}) as NonNullable<TeamDoc["stats"]>;
+
+    return {
+        id: d.id,
+        name: data.name ?? "Unnamed Team",
+        memberCount: safeNum(stats.memberCount, data.members?.length ?? 0),
+        totalScore: getSeasonTotal(stats),
+        lastUpdated: tsToDate((stats as any).lastUpdated ?? null),
+        activityScores: getSeasonActivityScores(stats),
+    };
+}
+
+function scoreForMode(row: LeaderboardTeamRow, args: SubscribeLeaderboardArgs): number {
+    if (args.mode === "global") return safeNum(row.totalScore, 0);
+    const k = args.activityKey ?? "";
+    return safeNum(row.activityScores?.[k], 0);
+}
+
 /**
- * Real-time leaderboard subscription.
- *
- * IMPORTANT:
- * - For ordering to work consistently, the ordered field must exist on docs.
- * - Ensure backfill sets:
- *   - stats.currentSeasonTotalScore (number)
- *   - stats.currentSeasonActivityScores.<activityKey> (number)
+ * Robust realtime leaderboard:
+ * - Try “proper ordered” query first (fast + correct)
+ * - If it errors due to missing index/fields, fallback to safe query and client-sort
  */
-export function subscribeLeaderboard(
+export function subscribeLeaderboardRobust(
     args: SubscribeLeaderboardArgs,
     onData: (rows: LeaderboardTeamRow[]) => void,
     onError?: (err: unknown) => void
 ): Unsubscribe {
     const pageSize = args.pageSize ?? 50;
-
     const teamsRef = collection(db, "teams");
 
-    const q =
+    // Primary query (best)
+    const primaryQuery =
         args.mode === "global"
             ? query(
                 teamsRef,
                 where("isPublic", "==", true),
-                // GLOBAL uses season total (NOT stats.totalScore)
                 orderBy("stats.currentSeasonTotalScore", "desc"),
                 orderBy("stats.lastUpdated", "desc"),
                 limit(pageSize)
             )
             : (() => {
                 const activityKey = args.activityKey;
-                if (!activityKey) {
-                    throw new Error("subscribeLeaderboard(activity): missing activityKey");
-                }
-
-                // activityKey must be like "parachute_drop" (no hyphens)
+                if (!activityKey) throw new Error("subscribeLeaderboardRobust(activity): missing activityKey");
                 const fieldPath = `stats.currentSeasonActivityScores.${activityKey}`;
-
                 return query(
                     teamsRef,
                     where("isPublic", "==", true),
@@ -95,41 +95,60 @@ export function subscribeLeaderboard(
                 );
             })();
 
-    return onSnapshot(
-        q,
+    // Fallback query (always works if isPublic exists)
+    const fallbackQuery = query(
+        teamsRef,
+        where("isPublic", "==", true),
+        orderBy("stats.lastUpdated", "desc"),
+        limit(pageSize)
+    );
+
+    // Start primary subscription
+    let unsubFallback: Unsubscribe | null = null;
+
+    const unsubPrimary = onSnapshot(
+        primaryQuery,
         (snap) => {
-            const rows: LeaderboardTeamRow[] = snap.docs.map((d) => {
-                const data = d.data() as TeamDoc;
-                const stats = (data.stats ?? {}) as NonNullable<TeamDoc["stats"]>;
-
-                const seasonTotal = getSeasonTotal(stats);
-                const activityScores = getSeasonActivityScores(stats);
-
-                return {
-                    id: d.id,
-                    name: data.name ?? "Unnamed Team",
-                    memberCount: safeNum(stats.memberCount, data.members?.length ?? 0),
-                    // totalScore in UI = season total
-                    totalScore: seasonTotal,
-                    lastUpdated: tsToDate((stats as any).lastUpdated ?? null),
-                    activityScores,
-                };
-            });
-
+            const rows = snap.docs.map((d) => toRow({id: d.id, data: () => d.data()}));
             onData(rows);
         },
         (err) => {
+            // If primary fails (missing index / missing ordered field), fallback gracefully
             if (onError) onError(err);
+
+            // Start fallback subscription if not already started
+            if (!unsubFallback) {
+                unsubFallback = onSnapshot(
+                    fallbackQuery,
+                    (snap) => {
+                        const rows = snap.docs
+                            .map((d) => toRow({id: d.id, data: () => d.data()}))
+                            .sort((a, b) => scoreForMode(b, args) - scoreForMode(a, args))
+                            .slice(0, pageSize);
+
+                        onData(rows);
+                    },
+                    (fallbackErr) => {
+                        if (onError) onError(fallbackErr);
+                        onData([]);
+                    }
+                );
+            }
         }
     );
+
+    return () => {
+        unsubPrimary();
+        if (unsubFallback) unsubFallback();
+    };
 }
 
 /**
- * Optional: non-realtime fetch (useful for quick tests)
+ * Optional: non-realtime fetch (kept)
  */
 export async function fetchLeaderboard(args: {
     activityKey?: string;
-    pageSize?: number;
+    pageSize?: number
 }): Promise<LeaderboardTeamRow[]> {
     const pageSize = args.pageSize ?? 50;
     const activityKey = args.activityKey;
@@ -140,7 +159,6 @@ export async function fetchLeaderboard(args: {
         ? query(
             teamsRef,
             where("isPublic", "==", true),
-            //  GLOBAL uses season total (NOT stats.totalScore)
             orderBy("stats.currentSeasonTotalScore", "desc"),
             orderBy("stats.lastUpdated", "desc"),
             limit(pageSize)
@@ -155,21 +173,5 @@ export async function fetchLeaderboard(args: {
 
     const snap = await getDocs(q);
 
-    return snap.docs.map((d) => {
-        const data = d.data() as TeamDoc;
-        const stats = (data.stats ?? {}) as NonNullable<TeamDoc["stats"]>;
-
-        const seasonTotal = getSeasonTotal(stats);
-        const activityScores = getSeasonActivityScores(stats);
-
-        return {
-            id: d.id,
-            name: data.name ?? "Unnamed Team",
-            memberCount: safeNum(stats.memberCount, data.members?.length ?? 0),
-            // totalScore in UI = season total
-            totalScore: seasonTotal,
-            lastUpdated: tsToDate((stats as any).lastUpdated ?? null),
-            activityScores,
-        };
-    });
+    return snap.docs.map((d) => toRow({id: d.id, data: () => d.data()}));
 }

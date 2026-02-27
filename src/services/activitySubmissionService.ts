@@ -13,6 +13,7 @@ import {uploadVideoToStorage} from "./evidenceService";
 
 import type {ActivityRunDraft} from "../store/activityRunDraftStore";
 import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
+import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
 
 /* =========================================================
    Utilities
@@ -33,6 +34,7 @@ function safeNum(x: unknown): number {
 export const ACTIVITY_KEYS = {
     PARACHUTE_DROP: "parachute_drop",
     SOUND_HUNTER: "sound_hunter",
+    HAND_FAN: "hand_fan",
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
@@ -311,6 +313,186 @@ export async function submitActivity2({
 
     // Update team totals
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.SOUND_HUNTER, score);
+
+    return {submissionId: newSubmission.id, score};
+}
+
+/* =========================================================
+   ACTIVITY 3 SCORING (FR-A3-06: highest average bend angle)
+========================================================= */
+
+function isNonEmptyString(x: unknown): x is string {
+    return typeof x === "string" && x.trim().length > 0;
+}
+
+export function scoreActivity3(run: Activity3RunDraft) {
+    const count = run.session.fanDesignCount;
+
+    const perDesign: Array<{ designIndex: number; avg: number; n: number }> = [];
+
+    for (let i = 0; i < count; i++) {
+        const rows = run.measurements.filter(
+            (m) => m.designIndex === i && isFiniteNumber(m.bendAngleDeg) && (m.bendAngleDeg ?? 0) >= 0
+        );
+        const n = rows.length;
+        const avg = n > 0 ? rows.reduce((s, m) => s + (m.bendAngleDeg ?? 0), 0) / n : 0;
+        perDesign.push({designIndex: i, avg, n});
+    }
+
+    // Score = highest average bend angle (rounded to 0.1)
+    const best = perDesign.reduce(
+        (acc, cur) => (cur.avg > acc.avg ? cur : acc),
+        {designIndex: 0, avg: 0, n: 0}
+    );
+
+    const score = Math.round(best.avg * 10) / 10;
+
+    return {
+        score,
+        bestDesignIndex: best.designIndex,
+        perDesign,
+    };
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 3 (GPS REQUIRED + SESSION VIDEO REQUIRED + PER-MEASUREMENT VIDEOS OPTIONAL)
+========================================================= */
+
+export async function submitActivity3({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+                                      }: {
+    run: Activity3RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    // Prediction required (FR-A3-05)
+    if (!run.prediction?.createdAt) throw new Error("Prediction is required before submission.");
+
+    // GPS required for submission (your policy)
+    if (!run.session.gpsEnabled) throw new Error("GPS must be enabled before submission.");
+    if (run.session.gpsPermission !== "granted") throw new Error("GPS permission must be granted before submission.");
+
+    // Reflection + rating checks
+    const text = reflection.trim();
+    if (text.length < 20) throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
+
+    // Require at least 1 valid measurement per design (matches your measurement gate)
+    const count = run.session.fanDesignCount;
+    for (let i = 0; i < count; i++) {
+        const hasOne = run.measurements.some(
+            (m) => m.designIndex === i && isFiniteNumber(m.bendAngleDeg)
+        );
+        if (!hasOne) throw new Error(`Missing measurements: record at least 1 bend angle for Design ${i + 1}.`);
+    }
+
+    // Session video REQUIRED by your validate() in A3ReflectionSubmit
+    const sessionUri = run.evidence?.sessionVideo?.uri;
+    if (!isNonEmptyString(sessionUri)) {
+        throw new Error("Session video is required before submission.");
+    }
+
+    const {score, bestDesignIndex, perDesign} = scoreActivity3(run);
+
+    // 1) Upload session video
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+        kind: "session" | "measurement";
+        measurementId?: string;
+    }> = [];
+
+    {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.HAND_FAN}/${run.runId}/session.mp4`;
+        const uploaded = await uploadVideoToStorage({
+            uri: sessionUri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+            kind: "session",
+        });
+    }
+
+    // 2) Upload per-measurement videos (optional)
+    const withVideo = run.measurements.filter((m) => isNonEmptyString(m.video?.uri));
+
+    // If you want to be extra safe, you can keep it sequential (less memory pressure).
+    for (const m of withVideo) {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.HAND_FAN}/${run.runId}/measurement_${m.id}.mp4`;
+
+        const uploaded = await uploadVideoToStorage({
+            uri: m.video!.uri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+            kind: "measurement",
+            measurementId: m.id,
+        });
+    }
+
+    // 3) Build submission payload (sanitize!)
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: run.session.activityId,
+        activityKey: ACTIVITY_KEYS.HAND_FAN,
+        algorithmVersion: 1,
+
+        teamId,
+        createdBy,
+        runId: run.runId,
+
+        reflection: text,
+        rating,
+
+        score, // highest average bend angle
+        scoreBreakdown: {
+            bestDesignIndex,
+            perDesign, // avg + n for each design
+        },
+
+        // store full details
+        session: run.session,
+        prediction: run.prediction,
+        measurements: run.measurements,
+
+        evidence,
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    // 4) Write submission
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    // 5) Update team totals (same transactional method)
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HAND_FAN, score);
 
     return {submissionId: newSubmission.id, score};
 }

@@ -23,6 +23,9 @@ import {createRunDraft} from "../../store/activityRunDraftStore";
 // Activity 2 draft store
 import {createActivity2RunDraft} from "../../store/activity2RunDraftStore";
 
+// Activity 3 draft store
+import {createActivity3RunDraft} from "../../store/activity3RunDraftStore";
+
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
 /**
@@ -177,6 +180,35 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                     Alert.alert(
                         "Flow misconfigured",
                         "Activity 2 must start at Overview or Session Setup. Please set startRoute to A2Overview or A2SessionSetup."
+                    );
+                    return;
+                }
+                /* =========================
+   Activity 3
+========================= */
+
+                // Recommended: overview-first UX
+                case "A3Overview": {
+                    navigation.navigate("A3Overview", {activityId});
+                    return;
+                }
+
+                // If starting directly at Session Setup (also supported)
+                case "A3SessionSetup": {
+                    const draft = createActivity3RunDraft({activityId, createdBy: user.uid});
+                    navigation.navigate("A3SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+                // Guard against misconfigured startRoute
+                case "A3Prediction":
+                case "A3Measurements":
+                case "A3Results":
+                case "A3Comparison":
+                case "A3ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 3 must start at Overview or Session Setup. Please set startRoute to A3Overview or A3SessionSetup."
                     );
                     return;
                 }

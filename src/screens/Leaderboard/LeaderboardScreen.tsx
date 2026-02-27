@@ -14,11 +14,14 @@ import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 import type {AppStackParamList} from "../../navigation/AppStack";
 import type {LeaderboardTeamRow} from "../../types/team";
 import {getMyTeamId} from "../../services/meService";
-import {subscribeLeaderboard} from "../../services/leaderboardService";
+import {subscribeLeaderboardRobust} from "../../services/leaderboardService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Leaderboard">;
 
-type Mode = "global" | "parachute_drop" | "sound_hunter";
+
+type Mode = "global" | "parachute_drop" | "sound_hunter" | "hand_fan";
+
+const MODES: Mode[] = ["global", "parachute_drop", "sound_hunter", "hand_fan"];
 
 function medal(rank: number) {
     if (rank === 1) return "🥇";
@@ -34,18 +37,21 @@ function safeNum(x: unknown, fallback = 0) {
 function modeTitle(mode: Mode) {
     if (mode === "global") return "Global Leaderboard";
     if (mode === "parachute_drop") return "Activity 1 Leaderboard";
-    return "Activity 2 Leaderboard";
+    if (mode === "sound_hunter") return "Activity 2 Leaderboard";
+    return "Activity 3 Leaderboard";
 }
 
 function modeTabLabel(mode: Mode) {
     if (mode === "global") return "Global";
     if (mode === "parachute_drop") return "Parachute Drop";
-    return "Sound Hunter";
+    if (mode === "sound_hunter") return "Sound Hunter";
+    return "Hand Fan";
 }
 
 function activityKeyForMode(mode: Mode): string | undefined {
     if (mode === "parachute_drop") return "parachute_drop";
     if (mode === "sound_hunter") return "sound_hunter";
+    if (mode === "hand_fan") return "hand_fan"; // ✅ ensure your submitActivity3 uses this key
     return undefined;
 }
 
@@ -54,7 +60,7 @@ function AnimatedNumber({value, style}: { value: number; style?: any }) {
     const [display, setDisplay] = useState(value);
 
     useEffect(() => {
-        const id = animated.addListener(({value: v}) => setDisplay(Math.round(v)));
+        const subId = animated.addListener(({value: v}) => setDisplay(Math.round(v)));
 
         Animated.timing(animated, {
             toValue: value,
@@ -63,7 +69,7 @@ function AnimatedNumber({value, style}: { value: number; style?: any }) {
         }).start();
 
         return () => {
-            animated.removeListener(id);
+            animated.removeListener(subId);
         };
     }, [animated, value]);
 
@@ -80,11 +86,11 @@ export default function LeaderboardScreen({navigation}: Props) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Score delta
+    // Score delta cache
     const prevScoreByTeamRef = useRef<Map<string, number>>(new Map());
     const [deltaByTeam, setDeltaByTeam] = useState<Record<string, number>>({});
 
-    // IMPORTANT: reset delta cache when switching tabs
+    // Reset delta cache on mode change (prevents weird deltas)
     useEffect(() => {
         prevScoreByTeamRef.current = new Map();
         setDeltaByTeam({});
@@ -108,14 +114,14 @@ export default function LeaderboardScreen({navigation}: Props) {
         };
     }, []);
 
-    // Subscribe leaderboard by mode (real-time)
+    // Subscribe leaderboard by mode
     useEffect(() => {
         setLoading(true);
         setError(null);
 
         const activityKey = activityKeyForMode(mode);
 
-        const unsubscribe = subscribeLeaderboard(
+        const unsubscribe = subscribeLeaderboardRobust(
             {
                 mode: mode === "global" ? "global" : "activity",
                 activityKey,
@@ -144,7 +150,7 @@ export default function LeaderboardScreen({navigation}: Props) {
                 setLoading(false);
             },
             (err) => {
-                setError((err as any)?.message ?? "Failed to load leaderboard");
+                setError((err as any)?.message ?? "Failed to load leaderboard.");
                 setRows([]);
                 setLoading(false);
             }
@@ -164,18 +170,25 @@ export default function LeaderboardScreen({navigation}: Props) {
     }, [myTeamId, rows]);
 
     const onRefresh = async () => {
+        // With realtime subscription, refresh is mostly UX.
         setRefreshing(true);
         await new Promise((r) => setTimeout(r, 250));
         setRefreshing(false);
     };
 
     const header = useMemo(() => {
+        const helpLine =
+            mode === "global"
+                ? "Season total (current season)."
+                : "Activity score (current season).";
+
         return (
             <>
                 <Text style={styles.title}>{modeTitle(mode)}</Text>
+                <Text style={styles.sub}>{helpLine}</Text>
 
                 <View style={styles.tabs}>
-                    {(["global", "parachute_drop", "sound_hunter"] as Mode[]).map((m) => (
+                    {MODES.map((m) => (
                         <Pressable
                             key={m}
                             onPress={() => setMode(m)}
@@ -188,16 +201,26 @@ export default function LeaderboardScreen({navigation}: Props) {
                     ))}
                 </View>
 
-                {myRank ? (
-                    <View style={styles.myRankCard}>
-                        <Text style={styles.myRankLabel}>Your Team Rank</Text>
-                        <Text style={styles.myRankValue}>#{myRank}</Text>
-                    </View>
+                {myTeamId ? (
+                    myRank ? (
+                        <View style={styles.myRankCard}>
+                            <Text style={styles.myRankLabel}>Your Team Rank</Text>
+                            <Text style={styles.myRankValue}>#{myRank}</Text>
+                            <Text style={styles.myRankHint}>Tap your row to view your team details.</Text>
+                        </View>
+                    ) : (
+                        <View style={styles.myRankCardMuted}>
+                            <Text style={styles.myRankMutedTitle}>Your team isn’t in top 50</Text>
+                            <Text style={styles.myRankMutedHint}>
+                                This list shows the top 50 public teams. Your team may still have points.
+                            </Text>
+                        </View>
+                    )
                 ) : (
                     <View style={styles.myRankCardMuted}>
                         <Text style={styles.myRankMutedTitle}>Join a team to be ranked</Text>
                         <Text style={styles.myRankMutedHint}>
-                            You can still view the leaderboard, but submissions/scores require a team.
+                            You can view the leaderboard, but submissions/scores require a team.
                         </Text>
                     </View>
                 )}
@@ -205,7 +228,7 @@ export default function LeaderboardScreen({navigation}: Props) {
                 {error ? <Text style={styles.error}>{error}</Text> : null}
             </>
         );
-    }, [error, mode, myRank]);
+    }, [error, mode, myRank, myTeamId]);
 
     return (
         <View style={styles.container}>
@@ -221,8 +244,9 @@ export default function LeaderboardScreen({navigation}: Props) {
                     ListHeaderComponent={header}
                     ListEmptyComponent={
                         <Text style={styles.empty}>
-                            No public teams yet (or missing fields). Run backfill once, and make sure teams
-                            arePublic=true.
+                            No public teams yet — or leaderboard fields aren’t backfilled.
+                            {"\n"}Make sure teams have isPublic=true and stats.currentSeasonTotalScore /
+                            stats.currentSeasonActivityScores.
                         </Text>
                     }
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>}
@@ -235,23 +259,31 @@ export default function LeaderboardScreen({navigation}: Props) {
                                 : safeNum(item.activityScores?.[activityKey ?? ""], 0);
 
                         const delta = safeNum(deltaByTeam[item.id], 0);
+                        const isMine = myTeamId != null && item.id === myTeamId;
 
                         return (
                             <Pressable
                                 onPress={() => navigation.navigate("TeamDetail", {teamId: item.id, mode: "view"})}
-                                style={({pressed}) => [styles.row, pressed && styles.pressed]}
+                                style={({pressed}) => [
+                                    styles.row,
+                                    isMine && styles.myRow,
+                                    pressed && styles.pressed,
+                                ]}
                             >
-                                <Text style={styles.rank}>{medal(index + 1)}</Text>
+                                <Text style={[styles.rank, isMine && styles.rankMine]}>{medal(index + 1)}</Text>
 
                                 <View style={{flex: 1}}>
-                                    <Text style={styles.name} numberOfLines={1}>
+                                    <Text style={[styles.name, isMine && styles.nameMine]} numberOfLines={1}>
                                         {item.name}
                                     </Text>
-                                    <Text style={styles.meta}>{safeNum(item.memberCount)} members</Text>
+                                    <Text style={[styles.meta, isMine && styles.metaMine]}>
+                                        {safeNum(item.memberCount)} members
+                                    </Text>
                                 </View>
 
                                 <View style={{alignItems: "flex-end", minWidth: 72}}>
-                                    <AnimatedNumber value={shownScore} style={styles.score}/>
+                                    <AnimatedNumber value={shownScore}
+                                                    style={[styles.score, isMine && styles.scoreMine]}/>
                                     {delta !== 0 ? (
                                         <Text style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
                                             {delta > 0 ? `+${delta}` : `${delta}`}
@@ -273,15 +305,16 @@ const styles = StyleSheet.create({
     container: {flex: 1},
 
     title: {fontSize: 22, fontWeight: "900", paddingHorizontal: 16, paddingTop: 16},
-    error: {paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, color: "crimson"},
+    sub: {paddingHorizontal: 16, paddingTop: 6, opacity: 0.7},
 
-    tabs: {flexDirection: "row", paddingHorizontal: 16, gap: 8, paddingTop: 10},
+    error: {paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, color: "crimson"},
 
+    tabs: {flexDirection: "row", paddingHorizontal: 16, gap: 8, paddingTop: 10, flexWrap: "wrap"},
     tab: {
-        flex: 1,
         borderWidth: 1,
         borderColor: "#e5e5e5",
         paddingVertical: 10,
+        paddingHorizontal: 12,
         borderRadius: 12,
         alignItems: "center",
         backgroundColor: "white",
@@ -299,6 +332,7 @@ const styles = StyleSheet.create({
     },
     myRankLabel: {color: "white", opacity: 0.8},
     myRankValue: {color: "white", fontSize: 22, fontWeight: "900"},
+    myRankHint: {marginTop: 6, color: "white", opacity: 0.75},
 
     myRankCardMuted: {
         marginHorizontal: 16,
@@ -315,22 +349,42 @@ const styles = StyleSheet.create({
     center: {flex: 1, justifyContent: "center", alignItems: "center"},
     loadingText: {marginTop: 8, opacity: 0.7},
 
-    empty: {paddingHorizontal: 16, paddingVertical: 12, opacity: 0.7},
+    empty: {paddingHorizontal: 16, paddingVertical: 12, opacity: 0.7, lineHeight: 18},
 
     pressed: {opacity: 0.7},
 
     row: {
         flexDirection: "row",
         alignItems: "center",
-        padding: 14,
-        borderBottomWidth: StyleSheet.hairlineWidth,
+        padding: 16,
+        marginHorizontal: 16,
+        marginVertical: 6,
+        borderRadius: 16,
+        backgroundColor: "white",
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+
+    // highlight my team
+    myRow: {
+        backgroundColor: "#111",
+        borderBottomColor: "#111",
     },
 
     rank: {width: 40, fontSize: 16, fontWeight: "900"},
-    name: {fontSize: 16, fontWeight: "800"},
-    meta: {fontSize: 12, opacity: 0.7},
 
-    score: {fontSize: 18, fontWeight: "900"},
+    rankMine: {color: "white"},
+
+    name: {fontSize: 16, fontWeight: "800"},
+    nameMine: {color: "white"},
+
+    meta: {fontSize: 12, opacity: 0.7},
+    metaMine: {color: "white", opacity: 0.8},
+
+    score: {fontSize: 22, fontWeight: "900"},
+    scoreMine: {color: "white"},
 
     delta: {marginTop: 2, fontSize: 12, fontWeight: "900"},
     deltaUp: {color: "green"},

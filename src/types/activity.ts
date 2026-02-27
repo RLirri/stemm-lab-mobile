@@ -1,6 +1,13 @@
 import type {Timestamp} from "firebase/firestore";
 
-export type ActivityCategory = "Science" | "Tech" | "Engineering" | "Math" | "Medicine" | "Environmental Science";
+export type ActivityCategory =
+    "Science"
+    | "Tech"
+    | "Engineering"
+    | "Math"
+    | "Medicine"
+    | "Environmental Science"
+    | "Air Movement";
 export type ActivityDifficulty = "Easy" | "Medium" | "Hard";
 
 export type ActivityInputType =
