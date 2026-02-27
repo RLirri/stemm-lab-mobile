@@ -1,6 +1,7 @@
-// src/screens/Activities/Activity3/A3SessionSetup.tsx
+// src/screens/Activities/Activity3/A3SessionSetupScreen.tsx
 import React, {useEffect, useMemo, useState} from "react";
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -11,22 +12,25 @@ import {
     Text,
     TextInput,
     View,
-    ActivityIndicator,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth} from "../../../services/firebase";
+
 import {
     createActivity3RunDraft,
     getActivity3RunDraft,
     updateActivity3Session,
+    updateActivity3FanDesign,
+    setActivity3SessionVideo,
     validateA3Session,
     type Activity3RunDraft,
-    type FanDistanceCm,
-    type FanMaterial,
+    type FanFoldType,
     type SurfaceContext,
 } from "../../../store/activity3RunDraftStore";
+
+import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A3SessionSetup">;
 
@@ -42,13 +46,7 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
-    /**
-     * Production-safe:
-     * - If expo-location is installed, request permission
-     * - If not installed, gracefully deny with a useful message
-     */
     try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const Location = await import("expo-location");
         const res = await Location.requestForegroundPermissionsAsync();
         return res.status === "granted" ? "granted" : "denied";
@@ -57,13 +55,13 @@ async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
     }
 }
 
-export default function A3SessionSetup({route, navigation}: Props) {
+export default function A3SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
 
-    // form fields
+    // session fields
     const [surface, setSurface] = useState<SurfaceContext | undefined>(undefined);
     const [designCountRaw, setDesignCountRaw] = useState<string>("3");
 
@@ -74,16 +72,14 @@ export default function A3SessionSetup({route, navigation}: Props) {
     const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
     const [askingGps, setAskingGps] = useState(false);
 
-    // optional: pick defaults for first measurement (nice UX for next screen)
-    const [defaultDistance, setDefaultDistance] = useState<FanDistanceCm>(15);
-    const [defaultMaterial, setDefaultMaterial] = useState<FanMaterial>("paper");
+    // evidence state (stored in draft, but we show local UI)
+    const [attachingVideo, setAttachingVideo] = useState(false);
 
     useEffect(() => {
         if (!user) return;
 
         let d = runId ? getActivity3RunDraft(runId) : null;
         if (!d) {
-            // Create draft if missing (matches “session expired → recreate” behavior but more user-friendly here)
             d = createActivity3RunDraft({
                 activityId,
                 createdBy: user.uid,
@@ -110,7 +106,7 @@ export default function A3SessionSetup({route, navigation}: Props) {
 
     const sessionError = useMemo(() => {
         if (!draft) return null;
-        // Build a “what would be persisted” view for validation
+
         const fanDesignCount = clampInt(Number(designCountRaw || "3"), 1, 8);
         const stiffnessK = advancedMode ? toNumberOrUndefined(stiffnessKRaw) : undefined;
 
@@ -120,6 +116,7 @@ export default function A3SessionSetup({route, navigation}: Props) {
                 ...draft.session,
                 surfaceContext: surface,
                 fanDesignCount,
+                // IMPORTANT: updateActivity3Session will normalize fanDesigns for count
                 advancedMode,
                 stiffnessK,
                 gpsEnabled,
@@ -144,6 +141,7 @@ export default function A3SessionSetup({route, navigation}: Props) {
             gpsEnabled,
             gpsPermission,
         });
+
         setDraft(next);
         return next;
     }
@@ -171,6 +169,49 @@ export default function A3SessionSetup({route, navigation}: Props) {
         }
     }
 
+    async function onAttachSessionVideo(source: "camera" | "library") {
+        if (!draft) return;
+
+        try {
+            setAttachingVideo(true);
+
+            const picked =
+                source === "camera"
+                    ? await recordVideoWithCamera()
+                    : await pickVideoFromLibrary();
+
+            // user cancelled
+            if (!picked) return;
+
+            const next = setActivity3SessionVideo(draft.runId, {
+                uri: picked.uri,
+                createdAt: Date.now(),
+            });
+
+            setDraft(next);
+        } catch (e: any) {
+            Alert.alert("Video error", e?.message ?? "Could not attach video.");
+        } finally {
+            setAttachingVideo(false);
+        }
+    }
+
+    function onRemoveSessionVideo() {
+        if (!draft) return;
+        const next = setActivity3SessionVideo(draft.runId, undefined);
+        setDraft(next);
+    }
+
+    function onUpdateDesign(index: number, patch: any) {
+        if (!draft) return;
+        try {
+            const next = updateActivity3FanDesign(draft.runId, index, patch);
+            setDraft(next);
+        } catch (e: any) {
+            Alert.alert("Design update error", e?.message ?? "Could not update design.");
+        }
+    }
+
     function onContinue() {
         if (!user) return;
         if (!draft) return;
@@ -184,15 +225,7 @@ export default function A3SessionSetup({route, navigation}: Props) {
         const next = persistSession();
         if (!next) return;
 
-        // Next screen in your SRS flow: Prediction required before results.
-        // (You’ll implement A3PredictionScreen next.)
-        navigation.navigate("A3Prediction", {
-            activityId,
-            runId: next.runId,
-            // Optional defaults for next screen(s)
-            defaultDistance,
-            defaultMaterial,
-        } as never);
+        navigation.navigate("A3Prediction", {activityId, runId: next.runId});
     }
 
     if (!user) return null;
@@ -206,42 +239,49 @@ export default function A3SessionSetup({route, navigation}: Props) {
         );
     }
 
+    const sessionVideoAttached = !!draft.evidence?.sessionVideo?.uri;
+
     return (
         <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Measurement Setup</Text>
+                <Text style={styles.title}>Session Setup</Text>
                 <Text style={styles.sub}>
-                    Configure the Hand Fan Challenge session. You’ll predict first, then record bend angles for each
-                    design.
+                    Configure the Hand Fan Challenge. You’ll set design details, predict first, then record bend angles.
                 </Text>
 
+                {/* Context */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Context (optional)</Text>
-                    <Text style={styles.help}>This helps interpretation (airflow behaves differently on floor vs
-                        table).</Text>
+                    <Text style={styles.help}>Airflow behaves differently on floor vs table.</Text>
 
                     <Text style={styles.label}>Test surface</Text>
                     <View style={styles.segmentWrap}>
                         {(["table", "floor"] as const).map((v) => {
                             const on = surface === v;
                             return (
-                                <Pressable key={v} onPress={() => setSurface(v)}
-                                           style={[styles.segmentBtn, on && styles.segmentBtnActive]}>
+                                <Pressable
+                                    key={v}
+                                    onPress={() => setSurface(v)}
+                                    style={[styles.segmentBtn, on && styles.segmentBtnActive]}
+                                >
                                     <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{v}</Text>
                                 </Pressable>
                             );
                         })}
-                        <Pressable onPress={() => setSurface(undefined)}
-                                   style={[styles.segmentBtn, !surface && styles.segmentBtnActive]}>
+                        <Pressable
+                            onPress={() => setSurface(undefined)}
+                            style={[styles.segmentBtn, !surface && styles.segmentBtnActive]}
+                        >
                             <Text style={[styles.segmentText, !surface && styles.segmentTextActive]}>Not sure</Text>
                         </Pressable>
                     </View>
                 </View>
 
+                {/* Fan Designs count */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Fan Designs</Text>
                     <Text style={styles.help}>
-                        Default is 3 designs. You can increase if your team built more versions.
+                        Default is 3 designs. Increase only if your team built more versions.
                     </Text>
 
                     <Text style={styles.label}>Number of designs (1–8)</Text>
@@ -255,10 +295,95 @@ export default function A3SessionSetup({route, navigation}: Props) {
                     />
 
                     <Text style={styles.note}>
-                        Tip: Keep design count realistic — your results view will compare averages per design.
+                        After changing this, press “Continue” to normalize designs (the store will add/remove design
+                        entries).
                     </Text>
                 </View>
 
+                {/* Design metadata editor */}
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Design Details (for airflow)</Text>
+                    <Text style={styles.help}>
+                        Record what makes each fan different (folds, layers, size). This supports the question:
+                        “How does fan design influence air velocity and resulting movement?”
+                    </Text>
+
+                    <View style={{marginTop: 10, gap: 12}}>
+                        {draft.session.fanDesigns.map((d) => (
+                            <View key={d.index} style={styles.designBox}>
+                                <Text style={{fontWeight: "900"}}>Design {d.index + 1}</Text>
+
+                                <Text style={styles.label}>Name</Text>
+                                <TextInput
+                                    value={d.name ?? ""}
+                                    onChangeText={(t) => onUpdateDesign(d.index, {name: t})}
+                                    placeholder={`Design ${d.index + 1}`}
+                                    style={styles.input}
+                                />
+
+                                <View style={[styles.rowBetween, {marginTop: 10}]}>
+                                    <Text style={styles.label}>Has folds?</Text>
+                                    <Switch
+                                        value={Boolean(d.hasFolds)}
+                                        onValueChange={(v) => onUpdateDesign(d.index, {
+                                            hasFolds: v,
+                                            foldType: v ? d.foldType : undefined
+                                        })}
+                                    />
+                                </View>
+
+                                <Text style={styles.label}>Fold type</Text>
+                                <View style={styles.segmentWrap}>
+                                    {(["flat", "folded", "pleated"] as FanFoldType[]).map((v) => {
+                                        const on = (d.foldType ?? "flat") === v;
+                                        return (
+                                            <Pressable
+                                                key={v}
+                                                onPress={() => onUpdateDesign(d.index, {
+                                                    foldType: v,
+                                                    hasFolds: v !== "flat"
+                                                })}
+                                                style={[styles.segmentBtn, on && styles.segmentBtnActive]}
+                                            >
+                                                <Text
+                                                    style={[styles.segmentText, on && styles.segmentTextActive]}>{v}</Text>
+                                            </Pressable>
+                                        );
+                                    })}
+                                </View>
+
+                                <Text style={styles.label}>Fold count (0–60)</Text>
+                                <TextInput
+                                    value={d.foldCount == null ? "" : String(d.foldCount)}
+                                    onChangeText={(t) => onUpdateDesign(d.index, {foldCount: t ? clampInt(Number(t.replace(/[^\d]/g, "")), 0, 60) : undefined})}
+                                    placeholder="e.g. 12"
+                                    keyboardType="number-pad"
+                                    style={styles.input}
+                                />
+
+                                <Text style={styles.label}>Layers (1–5)</Text>
+                                <TextInput
+                                    value={d.layers == null ? "" : String(d.layers)}
+                                    onChangeText={(t) => onUpdateDesign(d.index, {layers: t ? clampInt(Number(t.replace(/[^\d]/g, "")), 1, 5) : undefined})}
+                                    placeholder="e.g. 1"
+                                    keyboardType="number-pad"
+                                    style={styles.input}
+                                />
+
+                                <Text style={styles.label}>Notes (optional)</Text>
+                                <TextInput
+                                    value={d.notes ?? ""}
+                                    onChangeText={(t) => onUpdateDesign(d.index, {notes: t})}
+                                    placeholder="e.g., no tape, wider fan, stronger handle…"
+                                    style={[styles.input, {height: 90, textAlignVertical: "top"}]}
+                                    multiline
+                                />
+                            </View>
+                        ))}
+                    </View>
+                </View>
+
+                {/* Advanced mode */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Advanced Mode</Text>
                     <Text style={styles.help}>
@@ -281,15 +406,61 @@ export default function A3SessionSetup({route, navigation}: Props) {
                                 style={styles.input}
                             />
                             <Text style={styles.note}>
-                                If unknown, leave blank. You can still record bend angles and compare designs.
+                                If unknown, leave blank. You can still compare designs using bend angles.
                             </Text>
                         </>
                     ) : (
-                        <Text style={styles.note}>Primary-school view: focus on distances, materials, and bend
-                            angles.</Text>
+                        <Text style={styles.note}>
+                            Primary-school view: focus on distances, materials, and bend angles.
+                        </Text>
                     )}
                 </View>
 
+                {/* Session video */}
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Session Video (Required for submission)</Text>
+                    <Text style={styles.help}>
+                        Record one video showing your setup and how you test the designs fairly (same distance rule,
+                        stable hand, no hitting others).
+                    </Text>
+
+                    <View style={styles.gpsRow}>
+                        <Text style={{fontWeight: "900"}}>Status:</Text>
+                        <Text style={{opacity: 0.75}}>
+                            {sessionVideoAttached ? "Attached ✅" : "Missing ❌"}
+                        </Text>
+                    </View>
+
+                    <View style={{flexDirection: "row", gap: 10, marginTop: 12}}>
+                        <Pressable
+                            style={[styles.secondaryBtn, {flex: 1}, attachingVideo && {opacity: 0.7}]}
+                            onPress={() => onAttachSessionVideo("camera")}
+                            disabled={attachingVideo}
+                        >
+                            <Text style={styles.secondaryBtnText}>Record</Text>
+                        </Pressable>
+
+                        <Pressable
+                            style={[styles.secondaryBtn, {flex: 1}, attachingVideo && {opacity: 0.7}]}
+                            onPress={() => onAttachSessionVideo("library")}
+                            disabled={attachingVideo}
+                        >
+                            <Text style={styles.secondaryBtnText}>Pick</Text>
+                        </Pressable>
+                    </View>
+
+                    {sessionVideoAttached ? (
+                        <Pressable style={[styles.dangerBtn]} onPress={onRemoveSessionVideo}>
+                            <Text style={styles.dangerBtnText}>Remove video</Text>
+                        </Pressable>
+                    ) : null}
+
+                    <Text style={styles.note}>
+                        Tip: Keep it short (10–30s). Show distance marking (15/30/45 cm) + the material bending.
+                    </Text>
+                </View>
+
+                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for submission)</Text>
                     <Text style={styles.help}>
@@ -304,7 +475,11 @@ export default function A3SessionSetup({route, navigation}: Props) {
                     <View style={styles.gpsRow}>
                         <Text style={{fontWeight: "900"}}>Permission:</Text>
                         <Text style={{opacity: 0.75}}>
-                            {gpsPermission === "unknown" ? "Not requested" : gpsPermission === "granted" ? "Granted ✅" : "Denied ❌"}
+                            {gpsPermission === "unknown"
+                                ? "Not requested"
+                                : gpsPermission === "granted"
+                                    ? "Granted ✅"
+                                    : "Denied ❌"}
                         </Text>
                     </View>
 
@@ -325,48 +500,12 @@ export default function A3SessionSetup({route, navigation}: Props) {
 
                     {gpsPermission === "denied" ? (
                         <Text style={styles.note}>
-                            If you want to submit later, enable location permissions in device settings and try again.
+                            To submit later: enable location permissions in device settings and try again.
                         </Text>
                     ) : null}
                 </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Defaults for first measurement</Text>
-                    <Text style={styles.help}>
-                        These defaults help the next screen start faster. You can change per measurement later.
-                    </Text>
-
-                    <Text style={styles.label}>Distance</Text>
-                    <View style={styles.segmentWrap}>
-                        {([15, 30, 45] as const).map((v) => {
-                            const on = defaultDistance === v;
-                            return (
-                                <Pressable key={v} onPress={() => setDefaultDistance(v)}
-                                           style={[styles.segmentBtn, on && styles.segmentBtnActive]}>
-                                    <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{v} cm</Text>
-                                </Pressable>
-                            );
-                        })}
-                    </View>
-
-                    <Text style={styles.label}>Material</Text>
-                    <View style={styles.segmentWrap}>
-                        {(["paper", "cardboard"] as const).map((v) => {
-                            const on = defaultMaterial === v;
-                            return (
-                                <Pressable key={v} onPress={() => setDefaultMaterial(v)}
-                                           style={[styles.segmentBtn, on && styles.segmentBtnActive]}>
-                                    <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{v}</Text>
-                                </Pressable>
-                            );
-                        })}
-                    </View>
-
-                    <Text style={styles.note}>
-                        Reminder: Keep stable, don’t hit others. Follow the distance rule carefully (15/30/45 cm).
-                    </Text>
-                </View>
-
+                {/* errors */}
                 {sessionError ? (
                     <View style={styles.errorCard}>
                         <Text style={{fontWeight: "900"}}>Fix before continuing</Text>
@@ -406,6 +545,14 @@ const styles = StyleSheet.create({
     help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
     note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
     bold: {fontWeight: "900"},
+
+    designBox: {
+        borderWidth: 1,
+        borderColor: "#e5e5e5",
+        backgroundColor: "white",
+        borderRadius: 12,
+        padding: 12,
+    },
 
     input: {
         marginTop: 8,
@@ -457,6 +604,17 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     secondaryBtnText: {fontWeight: "900", opacity: 0.9},
+
+    dangerBtn: {
+        marginTop: 12,
+        borderWidth: 1,
+        borderColor: "#b00020",
+        backgroundColor: "white",
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: "center",
+    },
+    dangerBtnText: {fontWeight: "900", color: "#b00020"},
 
     errorCard: {
         marginTop: 14,
