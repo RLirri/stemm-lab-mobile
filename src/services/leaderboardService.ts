@@ -17,6 +17,7 @@ export type SubscribeLeaderboardArgs = {
     mode: "global" | "activity";
     activityKey?: string; // e.g. "parachute_drop"
     pageSize?: number;
+    scoreOrder?: "asc" | "desc";
 };
 
 function tsToDate(ts?: Timestamp | null): Date | null {
@@ -70,15 +71,15 @@ export function subscribeLeaderboardRobust(
     onError?: (err: unknown) => void
 ): Unsubscribe {
     const pageSize = args.pageSize ?? 50;
+    const scoreOrder = args.scoreOrder ?? "desc"; // ✅ use it
     const teamsRef = collection(db, "teams");
 
-    // Primary query (best)
     const primaryQuery =
         args.mode === "global"
             ? query(
                 teamsRef,
                 where("isPublic", "==", true),
-                orderBy("stats.currentSeasonTotalScore", "desc"),
+                orderBy("stats.currentSeasonTotalScore", scoreOrder), // ✅
                 orderBy("stats.lastUpdated", "desc"),
                 limit(pageSize)
             )
@@ -89,13 +90,12 @@ export function subscribeLeaderboardRobust(
                 return query(
                     teamsRef,
                     where("isPublic", "==", true),
-                    orderBy(fieldPath, "desc"),
+                    orderBy(fieldPath, scoreOrder), // ✅
                     orderBy("stats.lastUpdated", "desc"),
                     limit(pageSize)
                 );
             })();
 
-    // Fallback query (always works if isPublic exists)
     const fallbackQuery = query(
         teamsRef,
         where("isPublic", "==", true),
@@ -103,7 +103,6 @@ export function subscribeLeaderboardRobust(
         limit(pageSize)
     );
 
-    // Start primary subscription
     let unsubFallback: Unsubscribe | null = null;
 
     const unsubPrimary = onSnapshot(
@@ -113,17 +112,22 @@ export function subscribeLeaderboardRobust(
             onData(rows);
         },
         (err) => {
-            // If primary fails (missing index / missing ordered field), fallback gracefully
             if (onError) onError(err);
 
-            // Start fallback subscription if not already started
             if (!unsubFallback) {
                 unsubFallback = onSnapshot(
                     fallbackQuery,
                     (snap) => {
                         const rows = snap.docs
                             .map((d) => toRow({id: d.id, data: () => d.data()}))
-                            .sort((a, b) => scoreForMode(b, args) - scoreForMode(a, args))
+                            .sort((a, b) => {
+                                const sa = scoreForMode(a, args);
+                                const sb = scoreForMode(b, args);
+                                if (sa !== sb) return scoreOrder === "asc" ? sa - sb : sb - sa; // ✅
+                                const ta = a.lastUpdated?.getTime() ?? 0;
+                                const tb = b.lastUpdated?.getTime() ?? 0;
+                                return tb - ta;
+                            })
                             .slice(0, pageSize);
 
                         onData(rows);

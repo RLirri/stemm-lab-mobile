@@ -1,3 +1,4 @@
+// src/screens/Leaderboard/LeaderboardScreen.tsx (or wherever it lives)
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     View,
@@ -18,10 +19,9 @@ import {subscribeLeaderboardRobust} from "../../services/leaderboardService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Leaderboard">;
 
+type Mode = "global" | "parachute_drop" | "sound_hunter" | "hand_fan" | "earthquake_structure";
 
-type Mode = "global" | "parachute_drop" | "sound_hunter" | "hand_fan";
-
-const MODES: Mode[] = ["global", "parachute_drop", "sound_hunter", "hand_fan"];
+const MODES: Mode[] = ["global", "parachute_drop", "sound_hunter", "hand_fan", "earthquake_structure"];
 
 function medal(rank: number) {
     if (rank === 1) return "🥇";
@@ -38,21 +38,37 @@ function modeTitle(mode: Mode) {
     if (mode === "global") return "Global Leaderboard";
     if (mode === "parachute_drop") return "Activity 1 Leaderboard";
     if (mode === "sound_hunter") return "Activity 2 Leaderboard";
-    return "Activity 3 Leaderboard";
+    if (mode === "hand_fan") return "Activity 3 Leaderboard";
+    return "Activity 4 Leaderboard";
 }
 
 function modeTabLabel(mode: Mode) {
     if (mode === "global") return "Global";
-    if (mode === "parachute_drop") return "Parachute Drop";
-    if (mode === "sound_hunter") return "Sound Hunter";
-    return "Hand Fan";
+    if (mode === "parachute_drop") return "A1";
+    if (mode === "sound_hunter") return "A2";
+    if (mode === "hand_fan") return "A3";
+    return "A4";
 }
 
 function activityKeyForMode(mode: Mode): string | undefined {
     if (mode === "parachute_drop") return "parachute_drop";
     if (mode === "sound_hunter") return "sound_hunter";
-    if (mode === "hand_fan") return "hand_fan"; // ✅ ensure your submitActivity3 uses this key
+    if (mode === "hand_fan") return "hand_fan";
+    if (mode === "earthquake_structure") return "earthquake_structure"; // ✅ MUST match submitActivity4 key
     return undefined;
+}
+
+function scoreOrderForMode(mode: Mode): "asc" | "desc" {
+    // Activity 4 is "lower is better"
+    if (mode === "earthquake_structure") return "asc";
+    // others: higher is better
+    return "desc";
+}
+
+function helpLineForMode(mode: Mode) {
+    if (mode === "global") return "Season total (current season).";
+    if (mode === "earthquake_structure") return "Activity score (lower is better).";
+    return "Activity score (current season).";
 }
 
 function AnimatedNumber({value, style}: { value: number; style?: any }) {
@@ -86,20 +102,16 @@ export default function LeaderboardScreen({navigation}: Props) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Score delta cache
     const prevScoreByTeamRef = useRef<Map<string, number>>(new Map());
     const [deltaByTeam, setDeltaByTeam] = useState<Record<string, number>>({});
 
-    // Reset delta cache on mode change (prevents weird deltas)
     useEffect(() => {
         prevScoreByTeamRef.current = new Map();
         setDeltaByTeam({});
     }, [mode]);
 
-    // Fetch my team once
     useEffect(() => {
         let cancelled = false;
-
         (async () => {
             try {
                 const tid = await getMyTeamId();
@@ -108,24 +120,24 @@ export default function LeaderboardScreen({navigation}: Props) {
                 if (!cancelled) setMyTeamId(null);
             }
         })();
-
         return () => {
             cancelled = true;
         };
     }, []);
 
-    // Subscribe leaderboard by mode
     useEffect(() => {
         setLoading(true);
         setError(null);
 
         const activityKey = activityKeyForMode(mode);
+        const scoreOrder = scoreOrderForMode(mode);
 
         const unsubscribe = subscribeLeaderboardRobust(
             {
                 mode: mode === "global" ? "global" : "activity",
                 activityKey,
                 pageSize: 50,
+                scoreOrder,
             },
             (next) => {
                 const nextDelta: Record<string, number> = {};
@@ -139,7 +151,7 @@ export default function LeaderboardScreen({navigation}: Props) {
 
                     const prev = prevMap.get(r.id);
                     if (typeof prev === "number") {
-                        const d = shownScore - prev;
+                        const d = shownScore - prev; // negative means improved if lower-is-better
                         if (d !== 0) nextDelta[r.id] = d;
                     }
                     prevMap.set(r.id, shownScore);
@@ -159,7 +171,6 @@ export default function LeaderboardScreen({navigation}: Props) {
         return () => unsubscribe();
     }, [mode]);
 
-    // Compute my rank whenever rows change
     useEffect(() => {
         if (!myTeamId) {
             setMyRank(null);
@@ -170,33 +181,22 @@ export default function LeaderboardScreen({navigation}: Props) {
     }, [myTeamId, rows]);
 
     const onRefresh = async () => {
-        // With realtime subscription, refresh is mostly UX.
         setRefreshing(true);
         await new Promise((r) => setTimeout(r, 250));
         setRefreshing(false);
     };
 
     const header = useMemo(() => {
-        const helpLine =
-            mode === "global"
-                ? "Season total (current season)."
-                : "Activity score (current season).";
-
         return (
             <>
                 <Text style={styles.title}>{modeTitle(mode)}</Text>
-                <Text style={styles.sub}>{helpLine}</Text>
+                <Text style={styles.sub}>{helpLineForMode(mode)}</Text>
 
                 <View style={styles.tabs}>
                     {MODES.map((m) => (
-                        <Pressable
-                            key={m}
-                            onPress={() => setMode(m)}
-                            style={[styles.tab, mode === m && styles.tabActive]}
-                        >
-                            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
-                                {modeTabLabel(m)}
-                            </Text>
+                        <Pressable key={m} onPress={() => setMode(m)}
+                                   style={[styles.tab, mode === m && styles.tabActive]}>
+                            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>{modeTabLabel(m)}</Text>
                         </Pressable>
                     ))}
                 </View>
@@ -252,7 +252,6 @@ export default function LeaderboardScreen({navigation}: Props) {
                     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh}/>}
                     renderItem={({item, index}) => {
                         const activityKey = activityKeyForMode(mode);
-
                         const shownScore =
                             mode === "global"
                                 ? safeNum(item.totalScore, 0)
@@ -261,14 +260,23 @@ export default function LeaderboardScreen({navigation}: Props) {
                         const delta = safeNum(deltaByTeam[item.id], 0);
                         const isMine = myTeamId != null && item.id === myTeamId;
 
+                        // Optional: label deltas differently for A4 (since negative is “good”)
+                        const isA4 = mode === "earthquake_structure";
+                        const deltaText =
+                            delta === 0
+                                ? " "
+                                : isA4
+                                    ? delta < 0
+                                        ? `${delta}` // improved (lower)
+                                        : `+${delta}` // worse (higher)
+                                    : delta > 0
+                                        ? `+${delta}`
+                                        : `${delta}`;
+
                         return (
                             <Pressable
                                 onPress={() => navigation.navigate("TeamDetail", {teamId: item.id, mode: "view"})}
-                                style={({pressed}) => [
-                                    styles.row,
-                                    isMine && styles.myRow,
-                                    pressed && styles.pressed,
-                                ]}
+                                style={({pressed}) => [styles.row, isMine && styles.myRow, pressed && styles.pressed]}
                             >
                                 <Text style={[styles.rank, isMine && styles.rankMine]}>{medal(index + 1)}</Text>
 
@@ -276,17 +284,22 @@ export default function LeaderboardScreen({navigation}: Props) {
                                     <Text style={[styles.name, isMine && styles.nameMine]} numberOfLines={1}>
                                         {item.name}
                                     </Text>
-                                    <Text style={[styles.meta, isMine && styles.metaMine]}>
-                                        {safeNum(item.memberCount)} members
-                                    </Text>
+                                    <Text
+                                        style={[styles.meta, isMine && styles.metaMine]}>{safeNum(item.memberCount)} members</Text>
                                 </View>
 
                                 <View style={{alignItems: "flex-end", minWidth: 72}}>
                                     <AnimatedNumber value={shownScore}
                                                     style={[styles.score, isMine && styles.scoreMine]}/>
                                     {delta !== 0 ? (
-                                        <Text style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
-                                            {delta > 0 ? `+${delta}` : `${delta}`}
+                                        <Text
+                                            style={[
+                                                styles.delta,
+                                                // For A4: negative is good; for others: positive is good
+                                                isA4 ? (delta < 0 ? styles.deltaGood : styles.deltaBad) : delta > 0 ? styles.deltaGood : styles.deltaBad,
+                                            ]}
+                                        >
+                                            {deltaText}
                                         </Text>
                                     ) : (
                                         <Text style={styles.deltaMute}> </Text>
@@ -367,14 +380,9 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
 
-    // highlight my team
-    myRow: {
-        backgroundColor: "#111",
-        borderBottomColor: "#111",
-    },
+    myRow: {backgroundColor: "#111", borderBottomColor: "#111"},
 
     rank: {width: 40, fontSize: 16, fontWeight: "900"},
-
     rankMine: {color: "white"},
 
     name: {fontSize: 16, fontWeight: "800"},
@@ -387,7 +395,7 @@ const styles = StyleSheet.create({
     scoreMine: {color: "white"},
 
     delta: {marginTop: 2, fontSize: 12, fontWeight: "900"},
-    deltaUp: {color: "green"},
-    deltaDown: {color: "crimson"},
+    deltaGood: {color: "green"},
+    deltaBad: {color: "crimson"},
     deltaMute: {marginTop: 2, fontSize: 12, opacity: 0},
 });
