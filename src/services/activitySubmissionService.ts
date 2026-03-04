@@ -14,6 +14,7 @@ import {uploadVideoToStorage} from "./evidenceService";
 import type {ActivityRunDraft} from "../store/activityRunDraftStore";
 import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
 import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
+import type {Activity4RunDraft} from "../store/activity4RunDraftStore";
 
 /* =========================================================
    Utilities
@@ -35,6 +36,7 @@ export const ACTIVITY_KEYS = {
     PARACHUTE_DROP: "parachute_drop",
     SOUND_HUNTER: "sound_hunter",
     HAND_FAN: "hand_fan",
+    EARTHQUAKE: "earthquake_resistant"
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
@@ -495,4 +497,165 @@ export async function submitActivity3({
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HAND_FAN, score);
 
     return {submissionId: newSubmission.id, score};
+}
+
+/* =========================================================
+   ACTIVITY 4 SCORING (FR-A4-06: LOWEST movement score wins)
+========================================================= */
+
+export function scoreActivity4(run: Activity4RunDraft) {
+    const valid = run.measurements.filter(
+        (m) => isFiniteNumber(m.movementScore)
+    );
+
+    if (valid.length === 0) {
+        throw new Error("No valid movement scores found.");
+    }
+
+    // Lowest score wins
+    const best = valid.reduce((acc, cur) =>
+        (cur.movementScore! < acc.movementScore!)
+            ? cur
+            : acc
+    );
+
+    const score = Math.round(best.movementScore! * 1000) / 1000; // 3 decimal precision
+
+    return {
+        score,
+        bestDesignIndex: best.designIndex,
+        totalDesignsTested: valid.length,
+    };
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 4 (EARTHQUAKE RESISTANT STRUCTURE)
+========================================================= */
+
+export async function submitActivity4({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+                                      }: {
+    run: Activity4RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    // --- POLICY VALIDATION ---
+
+    if (!run.prediction?.createdAt) {
+        throw new Error("Prediction must be entered before measurement.");
+    }
+
+    if (!run.session.gpsEnabled) {
+        throw new Error("GPS must be enabled before submission.");
+    }
+
+    if (run.session.gpsPermission !== "granted") {
+        throw new Error("GPS permission must be granted before submission.");
+    }
+
+    if (reflection.trim().length < 20) {
+        throw new Error("Reflection must be at least 20 characters.");
+    }
+
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
+        throw new Error("Rating must be between 1 and 5.");
+    }
+
+    if (!run.evidence?.sessionVideo?.uri) {
+        throw new Error("Session video evidence is required.");
+    }
+
+    if (run.measurements.length < run.session.designCount) {
+        throw new Error("All designs must be tested before submission.");
+    }
+
+    // --- SCORING ---
+    const {score, bestDesignIndex, totalDesignsTested} = scoreActivity4(run);
+
+    // --- UPLOAD SESSION VIDEO ---
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+        kind: "session";
+    }> = [];
+
+    const sessionUri = run.evidence.sessionVideo.uri;
+
+    const storagePath =
+        `evidence/${teamId}/${ACTIVITY_KEYS.EARTHQUAKE}/${run.runId}/session.mp4`;
+
+    const uploaded = await uploadVideoToStorage({
+        uri: sessionUri,
+        storagePath,
+        contentType: "video/mp4",
+    });
+
+    evidence.push({
+        type: "video",
+        storagePath: uploaded.storagePath,
+        downloadURL: uploaded.downloadURL,
+        contentType: uploaded.contentType,
+        kind: "session",
+    });
+
+    // --- BUILD SUBMISSION PAYLOAD ---
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: run.session.activityId,
+        activityKey: ACTIVITY_KEYS.EARTHQUAKE,
+        algorithmVersion: 1,
+
+        teamId,
+        createdBy,
+        runId: run.runId,
+
+        reflection: reflection.trim(),
+        rating,
+
+        // Leaderboard score (LOWEST movement wins)
+        score,
+        scoreBreakdown: {
+            bestDesignIndex,
+            totalDesignsTested,
+        },
+
+        session: run.session,
+        prediction: run.prediction,
+        measurements: run.measurements,
+
+        evidence,
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    // --- WRITE SUBMISSION ---
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    // --- UPDATE TEAM LEADERBOARD ---
+    await updateTeamScoresTransactional(
+        teamId,
+        ACTIVITY_KEYS.EARTHQUAKE,
+        score
+    );
+
+    return {
+        submissionId: newSubmission.id,
+        score,
+    };
 }
