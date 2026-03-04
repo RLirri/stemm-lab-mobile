@@ -26,6 +26,9 @@ import {createActivity2RunDraft} from "../../store/activity2RunDraftStore";
 // Activity 3 draft store
 import {createActivity3RunDraft} from "../../store/activity3RunDraftStore";
 
+import {createActivity4RunDraft} from "../../store/activity4RunDraftStore";
+
+
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
 /**
@@ -216,6 +219,36 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                 /* =========================
                    App-level routes (don’t start activities here)
                 ========================= */
+                case "A4Overview": {
+                    navigation.navigate("A4Overview", {activityId});
+                    return;
+                }
+
+                case "A4SessionSetup": {
+                    const draft = createActivity4RunDraft({
+                        activityId,
+                        createdBy: user.uid,
+                        designCount: 3,
+                    });
+                    navigation.navigate("A4SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+                case "A4Prediction":
+                case "A4Measurements":
+                case "A4Results":
+                case "A4Comparison":
+                case "A4ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 4 must start at Overview or Session Setup. Please set startRoute to A4Overview or A4SessionSetup."
+                    );
+                    return;
+                }
+
+                /* =========================
+                   App-level routes (don’t start activities here)
+                ========================= */
                 case "Home":
                 case "Profile":
                 case "TeamUp":
@@ -226,7 +259,7 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                 case "ActivityDetail": {
                     Alert.alert(
                         "Flow misconfigured",
-                        "startRoute must point to an activity flow screen (A1*/A2*)."
+                        "startRoute must point to an activity flow screen (A1*/A2*/A3*/A4*)."
                     );
                     return;
                 }

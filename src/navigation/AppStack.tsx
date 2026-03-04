@@ -42,6 +42,15 @@ import A3ComparisonScreen from "../screens/Activities/Activity3/A3ComparisonScre
 import A3ReflectionSubmitScreen from "../screens/Activities/Activity3/A3ReflectionSubmitScreen";
 import A3SessionSetupScreen from "../screens/Activities/Activity3/A3SessionSetupScreen";
 
+import A4OverviewScreen from "../screens/Activities/Activity4/A4OverviewScreen";
+import A4SessionSetupScreen from "../screens/Activities/Activity4/A4SessionSetupScreen";
+import A4PredictionScreen from "../screens/Activities/Activity4/A4PredictionScreen";
+import A4MeasurementsScreen from "../screens/Activities/Activity4/A4MeasurementsScreen";
+import A4ResultsScreen from "../screens/Activities/Activity4/A4ResultsScreen";
+import A4ComparisonScreen from "../screens/Activities/Activity4/A4ComparisonScreen";
+import A4ReflectionSubmitScreen from "../screens/Activities/Activity4/A4ReflectionSubmitScreen";
+
+
 export type AppStackParamList = {
     Home: undefined;
     Profile: undefined;
@@ -86,6 +95,14 @@ export type AppStackParamList = {
     A3Results: { activityId: string; runId: string };
     A3Comparison: { activityId: string; runId: string };
     A3ReflectionSubmit: { activityId: string; runId: string };
+
+    A4Overview: { activityId: string; runId?: string };
+    A4SessionSetup: { activityId: string; runId?: string };
+    A4Prediction: { activityId: string; runId: string };
+    A4Measurements: { activityId: string; runId: string };
+    A4Results: { activityId: string; runId: string };
+    A4Comparison: { activityId: string; runId: string };
+    A4ReflectionSubmit: { activityId: string; runId: string };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -131,6 +148,15 @@ export default function AppStack() {
             <Stack.Screen name="A3Results" component={A3ResultsScreen} options={{title: "Results"}}/>
             <Stack.Screen name="A3Comparison" component={A3ComparisonScreen} options={{title: "Compare"}}/>
             <Stack.Screen name="A3ReflectionSubmit" component={A3ReflectionSubmitScreen}
+                          options={{title: "Reflection & Submit"}}/>
+
+            <Stack.Screen name="A4Overview" component={A4OverviewScreen} options={{title: "Activity 4"}}/>
+            <Stack.Screen name="A4SessionSetup" component={A4SessionSetupScreen} options={{title: "Setup"}}/>
+            <Stack.Screen name="A4Prediction" component={A4PredictionScreen} options={{title: "Prediction"}}/>
+            <Stack.Screen name="A4Measurements" component={A4MeasurementsScreen} options={{title: "Measurements"}}/>
+            <Stack.Screen name="A4Comparison" component={A4ComparisonScreen} options={{title: "Compare"}}/>
+            <Stack.Screen name="A4Results" component={A4ResultsScreen} options={{title: "Results"}}/>
+            <Stack.Screen name="A4ReflectionSubmit" component={A4ReflectionSubmitScreen}
                           options={{title: "Reflection & Submit"}}/>
 
         </Stack.Navigator>

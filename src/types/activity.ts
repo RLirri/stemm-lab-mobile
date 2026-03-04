@@ -7,6 +7,7 @@ export type ActivityCategory =
     | "Math"
     | "Medicine"
     | "Environmental Science"
+    | "Engineering + Earth Science"
     | "Air Movement";
 export type ActivityDifficulty = "Easy" | "Medium" | "Hard";
 
