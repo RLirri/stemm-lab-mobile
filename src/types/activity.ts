@@ -8,6 +8,7 @@ export type ActivityCategory =
     | "Medicine"
     | "Environmental Science"
     | "Engineering + Earth Science"
+    | "Medical Science + Biomechanics"
     | "Air Movement";
 export type ActivityDifficulty = "Easy" | "Medium" | "Hard";
 
@@ -81,6 +82,8 @@ export type ActivityDoc = {
         count?: boolean;
         notes?: boolean;
         evidence?: { image?: boolean; video?: boolean; maxItems?: number };
+        gps?: boolean;
+        rating?: boolean;
     };
 
     // advanced dynamic forms

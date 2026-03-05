@@ -28,6 +28,8 @@ import {createActivity3RunDraft} from "../../store/activity3RunDraftStore";
 
 import {createActivity4RunDraft} from "../../store/activity4RunDraftStore";
 
+import {createActivity5RunDraft} from "../../store/activity5RunDraftStore";
+
 
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
@@ -242,6 +244,45 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                     Alert.alert(
                         "Flow misconfigured",
                         "Activity 4 must start at Overview or Session Setup. Please set startRoute to A4Overview or A4SessionSetup."
+                    );
+                    return;
+                }
+                /* =========================
+   Activity 5
+========================= */
+
+                // Recommended: overview-first UX
+                case "A5Overview": {
+                    navigation.navigate("A5Overview", {activityId});
+                    return;
+                }
+
+                // If starting directly at Session Setup (also supported)
+                case "A5SessionSetup": {
+                    const draft = createActivity5RunDraft({
+                        activityId,
+                        createdBy: user.uid,
+                        participantCount: 1,
+                        samplingHz: 50,
+                        movementDurationSec: 20,
+                        gpsEnabled: true,
+                        feedbackEnabled: true,
+                    });
+
+                    navigation.navigate("A5SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+                // Guard against misconfigured startRoute
+                case "A5Prediction":
+                case "A5GuidedTrials":
+                // case "A5Measurements":
+                case "A5Results":
+                case "A5Comparison":
+                case "A5ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 5 must start at Overview or Session Setup. Please set startRoute to A5Overview or A5SessionSetup."
                     );
                     return;
                 }
