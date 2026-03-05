@@ -15,6 +15,7 @@ import type {ActivityRunDraft} from "../store/activityRunDraftStore";
 import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
 import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
 import type {Activity4RunDraft} from "../store/activity4RunDraftStore";
+import type {Activity5RunDraft} from "../store/activity5RunDraftStore";
 
 /* =========================================================
    Utilities
@@ -24,53 +25,39 @@ function isFiniteNumber(x: unknown): x is number {
     return typeof x === "number" && Number.isFinite(x);
 }
 
-function safeNum(x: unknown): number {
-    return typeof x === "number" && Number.isFinite(x) ? x : 0;
+function safeNum(x: unknown, fallback = 0): number {
+    return typeof x === "number" && Number.isFinite(x) ? x : fallback;
+}
+
+function isNonEmptyString(x: unknown): x is string {
+    return typeof x === "string" && x.trim().length > 0;
+}
+
+function safeStr(x: unknown): string {
+    return typeof x === "string" ? x : "";
 }
 
 /* =========================================================
    Activity Key Registry
+   IMPORTANT: Leaderboard modes must use these keys.
 ========================================================= */
 
 export const ACTIVITY_KEYS = {
     PARACHUTE_DROP: "parachute_drop",
     SOUND_HUNTER: "sound_hunter",
     HAND_FAN: "hand_fan",
-    EARTHQUAKE: "earthquake_resistant"
+    EARTHQUAKE: "earthquake_structure", // keep consistent with Leaderboard mode key
+    HUMAN_PERFORMANCE: "human_performance",
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
 
 /* =========================================================
-   ACTIVITY 1 SCORING (UNCHANGED)
-========================================================= */
-
-export function scoreActivity1(run: ActivityRunDraft, bestAttemptIndex: number) {
-    const a = run.attempts?.[bestAttemptIndex];
-
-    const tHit = a?.measurements?.tHitSec;
-    const inZone = a?.measurements?.inTargetZone;
-    const gForce = a?.computed?.gForce;
-
-    // NOTE: This is your current scoring:
-    // base = tHit * 100 (higher time => higher score)
-    const base = isFiniteNumber(tHit) && tHit > 0 ? tHit * 100 : 0;
-
-    const targetBonus = inZone === true ? 20 : 0;
-
-    let gForcePenalty = 0;
-    if (isFiniteNumber(gForce)) {
-        if (gForce >= 30) gForcePenalty = 30;
-        else if (gForce >= 10) gForcePenalty = 15;
-        else if (gForce >= 5) gForcePenalty = 5;
-    }
-
-    const score = Math.max(0, Math.round(base + targetBonus - gForcePenalty));
-    return {score, base, targetBonus, gForcePenalty};
-}
-
-/* =========================================================
-   TEAM SCORE UPDATE (ALL-TIME + CURRENT SEASON + PER-ACTIVITY)
+   TEAM SCORE UPDATE
+   - all-time total
+   - current season total
+   - current season per-activity
+   - season history
 ========================================================= */
 
 async function updateTeamScoresTransactional(teamId: string, activityKey: string, score: number) {
@@ -124,7 +111,34 @@ async function updateTeamScoresTransactional(teamId: string, activityKey: string
 }
 
 /* =========================================================
-   SUBMIT ACTIVITY 1 (UNCHANGED)
+   ACTIVITY 1 SCORING
+========================================================= */
+
+export function scoreActivity1(run: ActivityRunDraft, bestAttemptIndex: number) {
+    const a = run.attempts?.[bestAttemptIndex];
+
+    const tHit = a?.measurements?.tHitSec;
+    const inZone = a?.measurements?.inTargetZone;
+    const gForce = a?.computed?.gForce;
+
+    // base = tHit * 100 (higher time => higher score)
+    const base = isFiniteNumber(tHit) && tHit > 0 ? tHit * 100 : 0;
+
+    const targetBonus = inZone === true ? 20 : 0;
+
+    let gForcePenalty = 0;
+    if (isFiniteNumber(gForce)) {
+        if (gForce >= 30) gForcePenalty = 30;
+        else if (gForce >= 10) gForcePenalty = 15;
+        else if (gForce >= 5) gForcePenalty = 5;
+    }
+
+    const score = Math.max(0, Math.round(base + targetBonus - gForcePenalty));
+    return {score, base, targetBonus, gForcePenalty};
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 1
 ========================================================= */
 
 export async function submitActivity1({
@@ -148,7 +162,7 @@ export async function submitActivity1({
 
     const {score, base, targetBonus, gForcePenalty} = scoreActivity1(run, bestAttemptIndex);
 
-    // 1) Upload best attempt video if exists
+    // Upload best attempt video if exists
     const bestAttempt = run.attempts?.[bestAttemptIndex];
     const localVideoUri = bestAttempt?.video?.uri;
 
@@ -160,8 +174,7 @@ export async function submitActivity1({
         contentType?: string;
     }> = [];
 
-    if (typeof localVideoUri === "string" && localVideoUri.length > 0) {
-        // Use underscore keys only for activityKey, so paths and indexes are safe.
+    if (isNonEmptyString(localVideoUri)) {
         const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.PARACHUTE_DROP}/${run.runId}/attempt_${bestAttemptIndex}.mp4`;
 
         const uploaded = await uploadVideoToStorage({
@@ -179,7 +192,6 @@ export async function submitActivity1({
         });
     }
 
-    // 2) Build Firestore submission payload (sanitize!)
     const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
@@ -198,7 +210,6 @@ export async function submitActivity1({
         score,
         scoreBreakdown: {base, targetBonus, gForcePenalty},
 
-        // store full details in v1
         session: run.session,
         attempts: run.attempts,
 
@@ -206,23 +217,20 @@ export async function submitActivity1({
 
         seasonId: DEFAULT_SEASON_ID,
         status: "submitted" as const,
-
         createdAt: serverTimestamp(),
     };
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    // 3) Write submission
     const newSubmission = await addDoc(submissionRef, payload);
 
-    // 4) Update team leaderboard totals
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.PARACHUTE_DROP, score);
 
     return {submissionId: newSubmission.id, score};
 }
 
 /* =========================================================
-   SUBMIT ACTIVITY 2 (UPDATED: VIDEO OPTIONAL)
+   SUBMIT ACTIVITY 2 (VIDEO OPTIONAL)
 ========================================================= */
 
 export async function submitActivity2({
@@ -241,18 +249,15 @@ export async function submitActivity2({
     if (!teamId) throw new Error("User has no team.");
     if (!createdBy) throw new Error("Missing user.");
 
-    // valid measurements (must be at least 3)
-    const valid = run.actions.filter(
-        (a) => a.isValid === true && isFiniteNumber(a.dbAvg) && isFiniteNumber(a.durationSec)
+    const valid = (run.actions ?? []).filter(
+        (a) => a?.isValid === true && isFiniteNumber(a?.dbAvg) && isFiniteNumber(a?.durationSec)
     );
 
     if (valid.length < 3) throw new Error("Minimum 3 valid measurements required.");
 
-    // score = average(valid dbAvg), 0.1 precision
     const avg = valid.reduce((sum, a) => sum + (a.dbAvg ?? 0), 0) / valid.length;
     const score = Math.round(avg * 10) / 10;
 
-    // Optional session video evidence upload
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -260,8 +265,8 @@ export async function submitActivity2({
         contentType?: string;
     }> = [];
 
-    const localUri = run.session.sessionVideo?.uri;
-    if (typeof localUri === "string" && localUri.length > 0) {
+    const localUri = run.session?.sessionVideo?.uri;
+    if (isNonEmptyString(localUri)) {
         const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.SOUND_HUNTER}/${run.runId}/session.mp4`;
 
         const uploaded = await uploadVideoToStorage({
@@ -278,7 +283,6 @@ export async function submitActivity2({
         });
     }
 
-    // Build submission payload
     const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
@@ -293,16 +297,14 @@ export async function submitActivity2({
         reflection: reflection.trim(),
         rating,
 
-        // score fields
         score,
         validCount: valid.length,
         avgDb: score,
 
-        // store session + actions (includes GPS if present)
         session: run.session,
         actions: run.actions,
 
-        evidence, // can be []
+        evidence,
 
         seasonId: DEFAULT_SEASON_ID,
         status: "submitted" as const,
@@ -313,19 +315,14 @@ export async function submitActivity2({
 
     const newSubmission = await addDoc(submissionRef, payload);
 
-    // Update team totals
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.SOUND_HUNTER, score);
 
     return {submissionId: newSubmission.id, score};
 }
 
 /* =========================================================
-   ACTIVITY 3 SCORING (FR-A3-06: highest average bend angle)
+   ACTIVITY 3 SCORING (highest average bend angle)
 ========================================================= */
-
-function isNonEmptyString(x: unknown): x is string {
-    return typeof x === "string" && x.trim().length > 0;
-}
 
 export function scoreActivity3(run: Activity3RunDraft) {
     const count = run.session.fanDesignCount;
@@ -333,7 +330,7 @@ export function scoreActivity3(run: Activity3RunDraft) {
     const perDesign: Array<{ designIndex: number; avg: number; n: number }> = [];
 
     for (let i = 0; i < count; i++) {
-        const rows = run.measurements.filter(
+        const rows = (run.measurements ?? []).filter(
             (m) => m.designIndex === i && isFiniteNumber(m.bendAngleDeg) && (m.bendAngleDeg ?? 0) >= 0
         );
         const n = rows.length;
@@ -341,7 +338,6 @@ export function scoreActivity3(run: Activity3RunDraft) {
         perDesign.push({designIndex: i, avg, n});
     }
 
-    // Score = highest average bend angle (rounded to 0.1)
     const best = perDesign.reduce(
         (acc, cur) => (cur.avg > acc.avg ? cur : acc),
         {designIndex: 0, avg: 0, n: 0}
@@ -357,7 +353,7 @@ export function scoreActivity3(run: Activity3RunDraft) {
 }
 
 /* =========================================================
-   SUBMIT ACTIVITY 3 (GPS REQUIRED + SESSION VIDEO REQUIRED + PER-MEASUREMENT VIDEOS OPTIONAL)
+   SUBMIT ACTIVITY 3 (GPS REQUIRED + SESSION VIDEO REQUIRED)
 ========================================================= */
 
 export async function submitActivity3({
@@ -376,28 +372,21 @@ export async function submitActivity3({
     if (!teamId) throw new Error("User has no team.");
     if (!createdBy) throw new Error("Missing user.");
 
-    // Prediction required (FR-A3-05)
     if (!run.prediction?.createdAt) throw new Error("Prediction is required before submission.");
 
-    // GPS required for submission (your policy)
     if (!run.session.gpsEnabled) throw new Error("GPS must be enabled before submission.");
     if (run.session.gpsPermission !== "granted") throw new Error("GPS permission must be granted before submission.");
 
-    // Reflection + rating checks
     const text = reflection.trim();
     if (text.length < 20) throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
     if (!isFiniteNumber(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
 
-    // Require at least 1 valid measurement per design (matches your measurement gate)
     const count = run.session.fanDesignCount;
     for (let i = 0; i < count; i++) {
-        const hasOne = run.measurements.some(
-            (m) => m.designIndex === i && isFiniteNumber(m.bendAngleDeg)
-        );
+        const hasOne = (run.measurements ?? []).some((m) => m.designIndex === i && isFiniteNumber(m.bendAngleDeg));
         if (!hasOne) throw new Error(`Missing measurements: record at least 1 bend angle for Design ${i + 1}.`);
     }
 
-    // Session video REQUIRED by your validate() in A3ReflectionSubmit
     const sessionUri = run.evidence?.sessionVideo?.uri;
     if (!isNonEmptyString(sessionUri)) {
         throw new Error("Session video is required before submission.");
@@ -405,7 +394,6 @@ export async function submitActivity3({
 
     const {score, bestDesignIndex, perDesign} = scoreActivity3(run);
 
-    // 1) Upload session video
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -415,6 +403,7 @@ export async function submitActivity3({
         measurementId?: string;
     }> = [];
 
+    // 1) session video
     {
         const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.HAND_FAN}/${run.runId}/session.mp4`;
         const uploaded = await uploadVideoToStorage({
@@ -432,10 +421,8 @@ export async function submitActivity3({
         });
     }
 
-    // 2) Upload per-measurement videos (optional)
-    const withVideo = run.measurements.filter((m) => isNonEmptyString(m.video?.uri));
-
-    // If you want to be extra safe, you can keep it sequential (less memory pressure).
+    // 2) per-measurement videos (optional)
+    const withVideo = (run.measurements ?? []).filter((m) => isNonEmptyString(m.video?.uri));
     for (const m of withVideo) {
         const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.HAND_FAN}/${run.runId}/measurement_${m.id}.mp4`;
 
@@ -455,7 +442,6 @@ export async function submitActivity3({
         });
     }
 
-    // 3) Build submission payload (sanitize!)
     const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
@@ -470,13 +456,12 @@ export async function submitActivity3({
         reflection: text,
         rating,
 
-        score, // highest average bend angle
+        score,
         scoreBreakdown: {
             bestDesignIndex,
-            perDesign, // avg + n for each design
+            perDesign,
         },
 
-        // store full details
         session: run.session,
         prediction: run.prediction,
         measurements: run.measurements,
@@ -490,36 +475,29 @@ export async function submitActivity3({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    // 4) Write submission
     const newSubmission = await addDoc(submissionRef, payload);
 
-    // 5) Update team totals (same transactional method)
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HAND_FAN, score);
 
     return {submissionId: newSubmission.id, score};
 }
 
 /* =========================================================
-   ACTIVITY 4 SCORING (FR-A4-06: LOWEST movement score wins)
+   ACTIVITY 4 SCORING (LOWEST movement score wins)
 ========================================================= */
 
 export function scoreActivity4(run: Activity4RunDraft) {
-    const valid = run.measurements.filter(
-        (m) => isFiniteNumber(m.movementScore)
-    );
+    const valid = (run.measurements ?? []).filter((m) => isFiniteNumber(m.movementScore));
 
     if (valid.length === 0) {
         throw new Error("No valid movement scores found.");
     }
 
-    // Lowest score wins
     const best = valid.reduce((acc, cur) =>
-        (cur.movementScore! < acc.movementScore!)
-            ? cur
-            : acc
+        (cur.movementScore! < acc.movementScore!) ? cur : acc
     );
 
-    const score = Math.round(best.movementScore! * 1000) / 1000; // 3 decimal precision
+    const score = Math.round(best.movementScore! * 1000) / 1000;
 
     return {
         score,
@@ -529,7 +507,7 @@ export function scoreActivity4(run: Activity4RunDraft) {
 }
 
 /* =========================================================
-   SUBMIT ACTIVITY 4 (EARTHQUAKE RESISTANT STRUCTURE)
+   SUBMIT ACTIVITY 4 (EARTHQUAKE)
 ========================================================= */
 
 export async function submitActivity4({
@@ -548,68 +526,12 @@ export async function submitActivity4({
     if (!teamId) throw new Error("User has no team.");
     if (!createdBy) throw new Error("Missing user.");
 
-    // --- POLICY VALIDATION ---
+    const text = reflection.trim();
+    if (text.length < 20) throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
 
-    if (!run.prediction?.createdAt) {
-        throw new Error("Prediction must be entered before measurement.");
-    }
-
-    if (!run.session.gpsEnabled) {
-        throw new Error("GPS must be enabled before submission.");
-    }
-
-    if (run.session.gpsPermission !== "granted") {
-        throw new Error("GPS permission must be granted before submission.");
-    }
-
-    if (reflection.trim().length < 20) {
-        throw new Error("Reflection must be at least 20 characters.");
-    }
-
-    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
-        throw new Error("Rating must be between 1 and 5.");
-    }
-
-    if (!run.evidence?.sessionVideo?.uri) {
-        throw new Error("Session video evidence is required.");
-    }
-
-    if (run.measurements.length < run.session.designCount) {
-        throw new Error("All designs must be tested before submission.");
-    }
-
-    // --- SCORING ---
     const {score, bestDesignIndex, totalDesignsTested} = scoreActivity4(run);
 
-    // --- UPLOAD SESSION VIDEO ---
-    const evidence: Array<{
-        type: "video";
-        storagePath: string;
-        downloadURL: string;
-        contentType?: string;
-        kind: "session";
-    }> = [];
-
-    const sessionUri = run.evidence.sessionVideo.uri;
-
-    const storagePath =
-        `evidence/${teamId}/${ACTIVITY_KEYS.EARTHQUAKE}/${run.runId}/session.mp4`;
-
-    const uploaded = await uploadVideoToStorage({
-        uri: sessionUri,
-        storagePath,
-        contentType: "video/mp4",
-    });
-
-    evidence.push({
-        type: "video",
-        storagePath: uploaded.storagePath,
-        downloadURL: uploaded.downloadURL,
-        contentType: uploaded.contentType,
-        kind: "session",
-    });
-
-    // --- BUILD SUBMISSION PAYLOAD ---
     const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
@@ -621,10 +543,10 @@ export async function submitActivity4({
         createdBy,
         runId: run.runId,
 
-        reflection: reflection.trim(),
+        reflection: text,
         rating,
 
-        // Leaderboard score (LOWEST movement wins)
+        // A4: lower is better (your leaderboard handles asc ordering)
         score,
         scoreBreakdown: {
             bestDesignIndex,
@@ -632,10 +554,7 @@ export async function submitActivity4({
         },
 
         session: run.session,
-        prediction: run.prediction,
         measurements: run.measurements,
-
-        evidence,
 
         seasonId: DEFAULT_SEASON_ID,
         status: "submitted" as const,
@@ -644,18 +563,250 @@ export async function submitActivity4({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    // --- WRITE SUBMISSION ---
     const newSubmission = await addDoc(submissionRef, payload);
 
-    // --- UPDATE TEAM LEADERBOARD ---
-    await updateTeamScoresTransactional(
-        teamId,
-        ACTIVITY_KEYS.EARTHQUAKE,
-        score
-    );
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.EARTHQUAKE, score);
+
+    return {submissionId: newSubmission.id, score};
+}
+
+/* =========================================================
+   ACTIVITY 5 SCORING (HIGHEST improvement wins)
+   - UN-SCALED here; submit scales ×100 for leaderboard storage
+========================================================= */
+
+export function scoreActivity5(run: Activity5RunDraft) {
+    const imps = Array.isArray((run as any).improvements) ? ((run as any).improvements as any[]) : [];
+
+    let bestScoreUnscaled = 0;
+    let bestParticipantId = "";
+    let bestMovementType = "";
+    let baselineSmoothnessIndex = 0;
+    let feedbackSmoothnessIndex = 0;
+
+    // Prefer improvements array if present
+    for (const it of imps) {
+        const pid = safeStr(it?.participantId);
+        const mv = safeStr(it?.movementType);
+
+        const impScore = safeNum(it?.improvementScore, NaN);
+
+        const b = safeNum(it?.baselineSmoothnessIndex, NaN);
+        const f = safeNum(it?.feedbackSmoothnessIndex, NaN);
+        const computed = (Number.isFinite(b) && Number.isFinite(f)) ? (b - f) : 0;
+
+        const scoreUnscaled = Number.isFinite(impScore) ? impScore : computed;
+
+        if (scoreUnscaled > bestScoreUnscaled) {
+            bestScoreUnscaled = scoreUnscaled;
+            bestParticipantId = pid;
+            bestMovementType = mv;
+            baselineSmoothnessIndex = Number.isFinite(b) ? b : safeNum(it?.baselineSmoothnessIndex, 0);
+            feedbackSmoothnessIndex = Number.isFinite(f) ? f : safeNum(it?.feedbackSmoothnessIndex, 0);
+        }
+    }
+
+    // Fallback compute from trials if improvements missing/empty
+    if (bestScoreUnscaled <= 0) {
+        const trials = Array.isArray((run as any).trials) ? ((run as any).trials as any[]) : [];
+        const participants = Array.isArray(run.session?.participants) ? run.session.participants : [];
+        const movements = Array.isArray(run.session?.movements) ? run.session.movements : [];
+
+        function latestTrial(pid: string, mv: string, mode: "baseline" | "feedback") {
+            return trials
+                .filter((t) => t?.participantId === pid && t?.movementType === mv && t?.mode === mode)
+                .sort((a, b) => safeNum(b?.createdAt) - safeNum(a?.createdAt))[0];
+        }
+
+        for (const p of participants) {
+            for (const m of movements) {
+                const b = latestTrial(p.id, m.type, "baseline");
+                const f = latestTrial(p.id, m.type, "feedback");
+                const bs = b?.metrics?.smoothnessIndex;
+                const fs = f?.metrics?.smoothnessIndex;
+
+                if (!isFiniteNumber(bs) || !isFiniteNumber(fs)) continue;
+
+                const scoreUnscaled = bs - fs;
+                if (scoreUnscaled > bestScoreUnscaled) {
+                    bestScoreUnscaled = scoreUnscaled;
+                    bestParticipantId = p.id;
+                    bestMovementType = m.type;
+                    baselineSmoothnessIndex = bs;
+                    feedbackSmoothnessIndex = fs;
+                }
+            }
+        }
+    }
 
     return {
-        submissionId: newSubmission.id,
-        score,
+        score: Math.max(0, bestScoreUnscaled),
+        bestParticipantId,
+        bestMovementType,
+        baselineSmoothnessIndex,
+        feedbackSmoothnessIndex,
     };
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 5 (HUMAN PERFORMANCE)
+   - session video OPTIONAL
+   - leaderboard score STORED as scaled ×100
+========================================================= */
+
+export async function submitActivity5({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+
+                                          // Optional override if UI computed and already scaled
+                                          bestImprovementScore,
+                                          bestParticipantId: bestParticipantIdOverride,
+                                          bestMovementType: bestMovementTypeOverride,
+                                      }: {
+    run: Activity5RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+
+    bestImprovementScore?: number; // already scaled if provided
+    bestParticipantId?: string;
+    bestMovementType?: string;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    // Prediction required
+    if (!run.prediction?.createdAt) {
+        throw new Error("Prediction is required before starting trials.");
+    }
+
+    // Require at least one dataset
+    const hasAnyDataset = (run.trials ?? []).some(
+        (t) => t?.dataset && Array.isArray(t.dataset.samples) && t.dataset.samples.length > 0
+    );
+    if (!hasAnyDataset) {
+        throw new Error("Recorded sensor dataset (accelerometer) is required.");
+    }
+
+    // Require baseline + feedback with metrics
+    const hasBaseline = (run.trials ?? []).some((t) => t?.mode === "baseline" && !!t.metrics);
+    const hasFeedback = (run.trials ?? []).some((t) => t?.mode === "feedback" && !!t.metrics);
+    if (!hasBaseline) throw new Error("At least 1 Baseline trial with computed metrics is required.");
+    if (!hasFeedback) throw new Error("At least 1 Feedback trial with computed metrics is required.");
+
+    // GPS required only when enabled
+    if (run.session.gpsEnabled) {
+        if (run.session.gpsPermission !== "granted") {
+            throw new Error("GPS permission must be granted before submission.");
+        }
+        if (!run.session.geo) {
+            throw new Error("GPS coordinate not saved yet. Please capture location before submitting.");
+        }
+    }
+
+    // Reflection + rating
+    const text = reflection.trim();
+    if (text.length < 20) {
+        throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
+    }
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
+        throw new Error("Rating must be between 1 and 5.");
+    }
+
+    // Improvements required (your current policy)
+    if (!Array.isArray(run.improvements) || run.improvements.length === 0) {
+        throw new Error("Improvement score could not be computed. Ensure baseline + feedback trials have metrics.");
+    }
+
+    // Score (store scaled)
+    const SMOOTHNESS_SCORE_SCALE = 100;
+
+    const computed = scoreActivity5(run);
+    const computedScaled = computed.score * SMOOTHNESS_SCORE_SCALE;
+
+    const scoreRaw =
+        typeof bestImprovementScore === "number" && Number.isFinite(bestImprovementScore)
+            ? bestImprovementScore // already scaled
+            : computedScaled;
+
+    const score = Math.max(0, scoreRaw);
+
+    const bestParticipantId = bestParticipantIdOverride ?? computed.bestParticipantId;
+    const bestMovementType = bestMovementTypeOverride ?? computed.bestMovementType;
+
+    // Optional evidence upload
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+        kind: "session";
+    }> = [];
+
+    const sessionUri = run.evidence?.sessionVideo?.uri;
+    if (isNonEmptyString(sessionUri)) {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.HUMAN_PERFORMANCE}/${run.runId}/session.mp4`;
+
+        const uploaded = await uploadVideoToStorage({
+            uri: sessionUri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+            kind: "session",
+        });
+    }
+
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: run.session.activityId,
+        activityKey: ACTIVITY_KEYS.HUMAN_PERFORMANCE,
+        algorithmVersion: 2, // scaled score change
+
+        teamId,
+        createdBy,
+        runId: run.runId,
+
+        reflection: text,
+        rating,
+
+        score, // ✅ scaled leaderboard score
+        scoreBreakdown: {
+            bestParticipantId,
+            bestMovementType,
+            baselineSmoothnessIndex: computed.baselineSmoothnessIndex,
+            feedbackSmoothnessIndex: computed.feedbackSmoothnessIndex,
+            smoothnessScoreScale: SMOOTHNESS_SCORE_SCALE,
+            scoreUnscaled: computed.score,
+        },
+
+        session: run.session,
+        prediction: run.prediction,
+        trials: run.trials,
+        improvements: run.improvements,
+
+        evidence, // may be empty
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HUMAN_PERFORMANCE, score);
+
+    return {submissionId: newSubmission.id, score};
 }
