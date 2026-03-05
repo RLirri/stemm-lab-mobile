@@ -16,6 +16,7 @@
     "expo-auth-session": "~7.0.10",
     "expo-av": "~16.0.8",
     "expo-clipboard": "~8.0.8",
+    "expo-device": "^55.0.9",
     "expo-file-system": "~19.0.21",
     "expo-image-picker": "~17.0.10",
     "expo-location": "~19.0.8",
