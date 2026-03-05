@@ -1,4 +1,4 @@
-// src/screens/Leaderboard/LeaderboardScreen.tsx (or wherever it lives)
+// src/screens/Leaderboard/LeaderboardScreen.tsx
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     View,
@@ -19,9 +19,27 @@ import {subscribeLeaderboardRobust} from "../../services/leaderboardService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "Leaderboard">;
 
-type Mode = "global" | "parachute_drop" | "sound_hunter" | "hand_fan" | "earthquake_structure";
+/**
+ * NOTE:
+ * - Make sure `activityKeyForMode("human_performance")` matches submitActivity5 key
+ *   (the key written to stats.currentSeasonActivityScores.<key>).
+ */
+type Mode =
+    | "global"
+    | "parachute_drop"
+    | "sound_hunter"
+    | "hand_fan"
+    | "earthquake_structure"
+    | "human_performance";
 
-const MODES: Mode[] = ["global", "parachute_drop", "sound_hunter", "hand_fan", "earthquake_structure"];
+const MODES: Mode[] = [
+    "global",
+    "parachute_drop",
+    "sound_hunter",
+    "hand_fan",
+    "earthquake_structure",
+    "human_performance",
+];
 
 function medal(rank: number) {
     if (rank === 1) return "🥇";
@@ -39,7 +57,8 @@ function modeTitle(mode: Mode) {
     if (mode === "parachute_drop") return "Activity 1 Leaderboard";
     if (mode === "sound_hunter") return "Activity 2 Leaderboard";
     if (mode === "hand_fan") return "Activity 3 Leaderboard";
-    return "Activity 4 Leaderboard";
+    if (mode === "earthquake_structure") return "Activity 4 Leaderboard";
+    return "Activity 5 Leaderboard";
 }
 
 function modeTabLabel(mode: Mode) {
@@ -47,36 +66,59 @@ function modeTabLabel(mode: Mode) {
     if (mode === "parachute_drop") return "A1";
     if (mode === "sound_hunter") return "A2";
     if (mode === "hand_fan") return "A3";
-    return "A4";
+    if (mode === "earthquake_structure") return "A4";
+    return "A5";
 }
 
 function activityKeyForMode(mode: Mode): string | undefined {
     if (mode === "parachute_drop") return "parachute_drop";
     if (mode === "sound_hunter") return "sound_hunter";
     if (mode === "hand_fan") return "hand_fan";
-    if (mode === "earthquake_structure") return "earthquake_structure"; // ✅ MUST match submitActivity4 key
+    if (mode === "earthquake_structure") return "earthquake_structure";
+    if (mode === "human_performance") return "human_performance"; // ✅ MUST match submitActivity5 key
     return undefined;
 }
 
 function scoreOrderForMode(mode: Mode): "asc" | "desc" {
     // Activity 4 is "lower is better"
     if (mode === "earthquake_structure") return "asc";
-    // others: higher is better
+    // A1/A2/A3/A5: higher is better
     return "desc";
 }
 
 function helpLineForMode(mode: Mode) {
     if (mode === "global") return "Season total (current season).";
     if (mode === "earthquake_structure") return "Activity score (lower is better).";
+    if (mode === "human_performance") return "Activity score (higher is better).";
     return "Activity score (current season).";
 }
 
-function AnimatedNumber({value, style}: { value: number; style?: any }) {
+function scoreDigitsForMode(mode: Mode): 0 | 1 {
+    // A5 often produces decimals; keep 1dp for readability.
+    if (mode === "human_performance") return 1;
+    // global + A1..A4: integer-ish
+    return 0;
+}
+
+function fmtDelta(n: number, digits: number) {
+    const sign = n > 0 ? "+" : "";
+    return `${sign}${n.toFixed(digits)}`;
+}
+
+function AnimatedNumber({
+                            value,
+                            digits = 0,
+                            style,
+                        }: {
+    value: number;
+    digits?: number;
+    style?: any;
+}) {
     const animated = useRef(new Animated.Value(value)).current;
     const [display, setDisplay] = useState(value);
 
     useEffect(() => {
-        const subId = animated.addListener(({value: v}) => setDisplay(Math.round(v)));
+        const subId = animated.addListener(({value: v}) => setDisplay(v));
 
         Animated.timing(animated, {
             toValue: value,
@@ -89,7 +131,7 @@ function AnimatedNumber({value, style}: { value: number; style?: any }) {
         };
     }, [animated, value]);
 
-    return <Text style={style}>{display}</Text>;
+    return <Text style={style}>{Number.isFinite(display) ? display.toFixed(digits) : "0"}</Text>;
 }
 
 export default function LeaderboardScreen({navigation}: Props) {
@@ -102,6 +144,7 @@ export default function LeaderboardScreen({navigation}: Props) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Track deltas (support decimals)
     const prevScoreByTeamRef = useRef<Map<string, number>>(new Map());
     const [deltaByTeam, setDeltaByTeam] = useState<Record<string, number>>({});
 
@@ -194,9 +237,14 @@ export default function LeaderboardScreen({navigation}: Props) {
 
                 <View style={styles.tabs}>
                     {MODES.map((m) => (
-                        <Pressable key={m} onPress={() => setMode(m)}
-                                   style={[styles.tab, mode === m && styles.tabActive]}>
-                            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>{modeTabLabel(m)}</Text>
+                        <Pressable
+                            key={m}
+                            onPress={() => setMode(m)}
+                            style={[styles.tab, mode === m && styles.tabActive]}
+                        >
+                            <Text style={[styles.tabText, mode === m && styles.tabTextActive]}>
+                                {modeTabLabel(m)}
+                            </Text>
                         </Pressable>
                     ))}
                 </View>
@@ -230,6 +278,9 @@ export default function LeaderboardScreen({navigation}: Props) {
         );
     }, [error, mode, myRank, myTeamId]);
 
+    const digits = scoreDigitsForMode(mode);
+    const isA4 = mode === "earthquake_structure";
+
     return (
         <View style={styles.container}>
             {loading ? (
@@ -260,18 +311,10 @@ export default function LeaderboardScreen({navigation}: Props) {
                         const delta = safeNum(deltaByTeam[item.id], 0);
                         const isMine = myTeamId != null && item.id === myTeamId;
 
-                        // Optional: label deltas differently for A4 (since negative is “good”)
-                        const isA4 = mode === "earthquake_structure";
-                        const deltaText =
-                            delta === 0
-                                ? " "
-                                : isA4
-                                    ? delta < 0
-                                        ? `${delta}` // improved (lower)
-                                        : `+${delta}` // worse (higher)
-                                    : delta > 0
-                                        ? `+${delta}`
-                                        : `${delta}`;
+                        // Delta sign semantics:
+                        // - A4 (lower-is-better): negative delta => improved
+                        // - Others (higher-is-better): positive delta => improved
+                        const deltaIsGood = isA4 ? delta < 0 : delta > 0;
 
                         return (
                             <Pressable
@@ -284,22 +327,25 @@ export default function LeaderboardScreen({navigation}: Props) {
                                     <Text style={[styles.name, isMine && styles.nameMine]} numberOfLines={1}>
                                         {item.name}
                                     </Text>
-                                    <Text
-                                        style={[styles.meta, isMine && styles.metaMine]}>{safeNum(item.memberCount)} members</Text>
+                                    <Text style={[styles.meta, isMine && styles.metaMine]}>
+                                        {safeNum(item.memberCount)} members
+                                    </Text>
                                 </View>
 
-                                <View style={{alignItems: "flex-end", minWidth: 72}}>
-                                    <AnimatedNumber value={shownScore}
-                                                    style={[styles.score, isMine && styles.scoreMine]}/>
+                                <View style={{alignItems: "flex-end", minWidth: 88}}>
+                                    <AnimatedNumber
+                                        value={shownScore}
+                                        digits={digits}
+                                        style={[styles.score, isMine && styles.scoreMine]}
+                                    />
                                     {delta !== 0 ? (
                                         <Text
                                             style={[
                                                 styles.delta,
-                                                // For A4: negative is good; for others: positive is good
-                                                isA4 ? (delta < 0 ? styles.deltaGood : styles.deltaBad) : delta > 0 ? styles.deltaGood : styles.deltaBad,
+                                                deltaIsGood ? styles.deltaGood : styles.deltaBad,
                                             ]}
                                         >
-                                            {deltaText}
+                                            {fmtDelta(delta, digits)}
                                         </Text>
                                     ) : (
                                         <Text style={styles.deltaMute}> </Text>
