@@ -61,6 +61,17 @@ import A5ResultsScreen from "../screens/Activities/Activity5/A5ResultsScreen";
 import A5ComparisonScreen from "../screens/Activities/Activity5/A5ComparisonScreen";
 import A5ReflectionSubmitScreen from "../screens/Activities/Activity5/A5ReflectionSubmitScreen";
 
+/* ============================
+   Activity 6 (Reaction Board)
+============================ */
+import A6OverviewScreen from "../screens/Activities/Activity6/A6OverviewScreen";
+import A6SessionSetupScreen from "../screens/Activities/Activity6/A6SessionSetupScreen";
+import A6PredictionScreen from "../screens/Activities/Activity6/A6PredictionScreen";
+import A6ReactionTrialScreen from "../screens/Activities/Activity6/A6ReactionTrialScreen";
+import A6TracingChallengeScreen from "../screens/Activities/Activity6/A6TracingChallengeScreen";
+import A6ResultsScreen from "../screens/Activities/Activity6/A6ResultsScreen";
+import A6ReflectionSubmitScreen from "../screens/Activities/Activity6/A6ReflectionSubmitScreen";
+
 export type AppStackParamList = {
     Home: undefined;
     Profile: undefined;
@@ -124,6 +135,17 @@ export type AppStackParamList = {
     A5Results: { activityId: string; runId: string };
     A5Comparison: { activityId: string; runId: string };
     A5ReflectionSubmit: { activityId: string; runId: string };
+
+    /* ============================
+   Activity 6 Flow
+============================ */
+    A6Overview: { activityId: string; runId?: string };
+    A6SessionSetup: { activityId: string; runId?: string };
+    A6Prediction: { activityId: string; runId: string };
+    A6ReactionTrial: { activityId: string; runId: string };
+    A6TracingChallenge: { activityId: string; runId: string };
+    A6Results: { activityId: string; runId: string };
+    A6ReflectionSubmit: { activityId: string; runId: string };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -189,6 +211,18 @@ export default function AppStack() {
             <Stack.Screen name="A5Results" component={A5ResultsScreen} options={{title: "Results"}}/>
             <Stack.Screen name="A5ReflectionSubmit" component={A5ReflectionSubmitScreen}
                           options={{title: "Reflection & Submit"}}/>
+
+            {/* Activity 6 */}
+            <Stack.Screen name="A6Overview" component={A6OverviewScreen} options={{title: "Activity 6"}}/>
+            <Stack.Screen name="A6SessionSetup" component={A6SessionSetupScreen} options={{title: "Setup"}}/>
+            <Stack.Screen name="A6Prediction" component={A6PredictionScreen} options={{title: "Prediction"}}/>
+            <Stack.Screen name="A6ReactionTrial" component={A6ReactionTrialScreen} options={{title: "Reaction Trial"}}/>
+            <Stack.Screen name="A6TracingChallenge" component={A6TracingChallengeScreen}
+                          options={{title: "Tracing Challenge"}}/>
+            <Stack.Screen name="A6Results" component={A6ResultsScreen} options={{title: "Results"}}/>
+            <Stack.Screen name="A6ReflectionSubmit" component={A6ReflectionSubmitScreen}
+                          options={{title: "Reflection & Submit"}}/>
         </Stack.Navigator>
+
     );
 }

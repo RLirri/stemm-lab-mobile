@@ -30,6 +30,7 @@ import {createActivity4RunDraft} from "../../store/activity4RunDraftStore";
 
 import {createActivity5RunDraft} from "../../store/activity5RunDraftStore";
 
+import {createActivity6RunDraft} from "../../store/activity6RunDraftStore";
 
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
@@ -283,6 +284,50 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                     Alert.alert(
                         "Flow misconfigured",
                         "Activity 5 must start at Overview or Session Setup. Please set startRoute to A5Overview or A5SessionSetup."
+                    );
+                    return;
+                }
+                /* =========================
+   Activity 6
+========================= */
+
+// Recommended: overview-first UX
+                case "A6Overview": {
+                    navigation.navigate("A6Overview", {activityId});
+                    return;
+                }
+
+// If starting directly at Session Setup (also supported)
+                case "A6SessionSetup": {
+                    const draft = createActivity6RunDraft({
+                        activityId,
+                        createdBy: user.uid,
+
+                        participantCount: 1,
+                        trialsPerHand: 3,
+                        target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+
+                        tracingPathType: "circle",
+                        maxAllowedDeviationPx: 100,
+                        accuracyThresholdPct: 60,
+
+                        gpsEnabled: true,
+                        sessionLabel: undefined,
+                    });
+
+                    navigation.navigate("A6SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+// Guard against misconfigured startRoute
+                case "A6Prediction":
+                case "A6ReactionTrial":
+                case "A6TracingChallenge":
+                case "A6Results":
+                case "A6ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 6 must start at Overview or Session Setup. Please set startRoute to A6Overview or A6SessionSetup."
                     );
                     return;
                 }
