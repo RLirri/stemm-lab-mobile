@@ -30,7 +30,8 @@ type Mode =
     | "sound_hunter"
     | "hand_fan"
     | "earthquake_structure"
-    | "human_performance";
+    | "human_performance"
+    | "reaction_board";
 
 const MODES: Mode[] = [
     "global",
@@ -39,6 +40,7 @@ const MODES: Mode[] = [
     "hand_fan",
     "earthquake_structure",
     "human_performance",
+    "reaction_board",
 ];
 
 function medal(rank: number) {
@@ -58,7 +60,8 @@ function modeTitle(mode: Mode) {
     if (mode === "sound_hunter") return "Activity 2 Leaderboard";
     if (mode === "hand_fan") return "Activity 3 Leaderboard";
     if (mode === "earthquake_structure") return "Activity 4 Leaderboard";
-    return "Activity 5 Leaderboard";
+    if (mode === "human_performance") return "Activity 5 Leaderboard";
+    return "Activity 6 Leaderboard";
 }
 
 function modeTabLabel(mode: Mode) {
@@ -67,7 +70,8 @@ function modeTabLabel(mode: Mode) {
     if (mode === "sound_hunter") return "A2";
     if (mode === "hand_fan") return "A3";
     if (mode === "earthquake_structure") return "A4";
-    return "A5";
+    if (mode === "human_performance") return "A5";
+    return "A6";
 }
 
 function activityKeyForMode(mode: Mode): string | undefined {
@@ -75,7 +79,8 @@ function activityKeyForMode(mode: Mode): string | undefined {
     if (mode === "sound_hunter") return "sound_hunter";
     if (mode === "hand_fan") return "hand_fan";
     if (mode === "earthquake_structure") return "earthquake_structure";
-    if (mode === "human_performance") return "human_performance"; // ✅ MUST match submitActivity5 key
+    if (mode === "human_performance") return "human_performance";
+    if (mode === "reaction_board") return "reaction_board";
     return undefined;
 }
 
@@ -90,13 +95,14 @@ function helpLineForMode(mode: Mode) {
     if (mode === "global") return "Season total (current season).";
     if (mode === "earthquake_structure") return "Activity score (lower is better).";
     if (mode === "human_performance") return "Activity score (higher is better).";
+    if (mode === "reaction_board")
+        return "Activity score (higher is better). Requires tracing accuracy threshold to be eligible.";
     return "Activity score (current season).";
 }
 
 function scoreDigitsForMode(mode: Mode): 0 | 1 {
-    // A5 often produces decimals; keep 1dp for readability.
     if (mode === "human_performance") return 1;
-    // global + A1..A4: integer-ish
+    // A6 score recommended as integer points
     return 0;
 }
 

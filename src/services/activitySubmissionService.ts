@@ -1,3 +1,4 @@
+// src/services/activitySubmissionService.ts
 import {
     addDoc,
     collection,
@@ -16,6 +17,7 @@ import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
 import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
 import type {Activity4RunDraft} from "../store/activity4RunDraftStore";
 import type {Activity5RunDraft} from "../store/activity5RunDraftStore";
+import type {Activity6RunDraft} from "../store/activity6RunDraftStore";
 
 /* =========================================================
    Utilities
@@ -37,6 +39,10 @@ function safeStr(x: unknown): string {
     return typeof x === "string" ? x : "";
 }
 
+function clampInt(n: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, Math.round(n)));
+}
+
 /* =========================================================
    Activity Key Registry
    IMPORTANT: Leaderboard modes must use these keys.
@@ -48,6 +54,7 @@ export const ACTIVITY_KEYS = {
     HAND_FAN: "hand_fan",
     EARTHQUAKE: "earthquake_structure", // keep consistent with Leaderboard mode key
     HUMAN_PERFORMANCE: "human_performance",
+    REACTION_BOARD: "reaction_board",
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
@@ -780,7 +787,7 @@ export async function submitActivity5({
         reflection: text,
         rating,
 
-        score, // ✅ scaled leaderboard score
+        score, // scaled leaderboard score
         scoreBreakdown: {
             bestParticipantId,
             bestMovementType,
@@ -809,4 +816,273 @@ export async function submitActivity5({
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HUMAN_PERFORMANCE, score);
 
     return {submissionId: newSubmission.id, score};
+}
+
+/* =========================================================
+   ACTIVITY 6 HELPERS (Reaction Board)
+========================================================= */
+
+const A6_DEFAULT_ACCURACY_THRESHOLD = 60;
+
+function getA6ReactionTrials(run: Activity6RunDraft): any[] {
+    const list = (run as any)?.reactionTrials ?? (run as any)?.trials ?? [];
+    return Array.isArray(list) ? list : [];
+}
+
+function getA6TracingResults(run: Activity6RunDraft): any[] {
+    const list =
+        (run as any)?.tracingResults ??
+        (run as any)?.tracingResult ??
+        (run as any)?.tracing ??
+        [];
+    return Array.isArray(list) ? list : list ? [list] : [];
+}
+
+function getA6LatestTracing(run: Activity6RunDraft): any | null {
+    const list = getA6TracingResults(run);
+    if (list.length === 0) return null;
+
+    return [...list].sort((a, b) => safeNum(b?.endedAt) - safeNum(a?.endedAt))[0] ?? null;
+}
+
+function getA6AccuracyScorePercent(run: Activity6RunDraft): number | null {
+    const list = getA6TracingResults(run);
+
+    const accuracies = list
+        .map((tr) => {
+            const raw =
+                tr?.accuracyScorePct ??
+                tr?.accuracyScorePercent ??
+                tr?.accuracyPct ??
+                tr?.accuracyScore;
+            if (!isFiniteNumber(raw)) return null;
+            if (raw <= 1) return Math.max(0, Math.min(100, raw * 100));
+            return Math.max(0, Math.min(100, raw));
+        })
+        .filter((v): v is number => isFiniteNumber(v));
+
+    if (accuracies.length === 0) return null;
+
+    // Use average tracing accuracy across all saved tracing runs
+    return computeMean(accuracies);
+}
+
+function getA6MinAccuracyScorePercent(run: Activity6RunDraft): number | null {
+    const list = getA6TracingResults(run);
+
+    const accuracies = list
+        .map((tr) => {
+            const raw =
+                tr?.accuracyScorePct ??
+                tr?.accuracyScorePercent ??
+                tr?.accuracyPct ??
+                tr?.accuracyScore;
+            if (!isFiniteNumber(raw)) return null;
+            if (raw <= 1) return Math.max(0, Math.min(100, raw * 100));
+            return Math.max(0, Math.min(100, raw));
+        })
+        .filter((v): v is number => isFiniteNumber(v));
+
+    if (accuracies.length === 0) return null;
+    return Math.min(...accuracies);
+}
+
+function computeMean(arr: number[]): number {
+    if (arr.length === 0) return 0;
+    return arr.reduce((s, v) => s + v, 0) / arr.length;
+}
+
+function computeStdDev(arr: number[]): number {
+    if (arr.length === 0) return 0;
+    const mean = computeMean(arr);
+    const v = arr.reduce((s, x) => s + (x - mean) * (x - mean), 0) / arr.length;
+    return Math.sqrt(v);
+}
+
+/* =========================================================
+   ACTIVITY 6 SCORING (LOWEST mean reaction time wins)
+   Eligibility requires tracing accuracy >= threshold.
+========================================================= */
+
+export function scoreActivity6(run: Activity6RunDraft, opts?: { accuracyThreshold?: number }) {
+    const accuracyThreshold = clampInt(opts?.accuracyThreshold ?? A6_DEFAULT_ACCURACY_THRESHOLD, 0, 100);
+
+    const trials = getA6ReactionTrials(run);
+
+    const reactionMs: number[] = trials
+        .map((t) => safeNum(t?.reactionTimeMs ?? t?.reactionTime ?? t?.rtMs, NaN))
+        .filter((v) => Number.isFinite(v) && v >= 0);
+
+    if (reactionMs.length === 0) {
+        throw new Error("No valid reaction time trials found.");
+    }
+
+    const meanMs = computeMean(reactionMs);
+    const stdMs = computeStdDev(reactionMs);
+
+    const avgAccuracy = getA6AccuracyScorePercent(run);
+    const minAccuracy = getA6MinAccuracyScorePercent(run);
+
+    const eligible =
+        isFiniteNumber(minAccuracy) && minAccuracy >= accuracyThreshold;
+
+    // For now, store mean reaction time directly as score (lower is better).
+    // const score = Math.round(meanMs);
+    const score = Math.max(0, Math.round(100 - meanMs / 10));
+
+    return {
+        score,
+        meanReactionTimeMs: Math.round(meanMs),
+        stdDevReactionTimeMs: Math.round(stdMs),
+        trialCount: reactionMs.length,
+        avgAccuracyScorePercent: avgAccuracy,
+        minAccuracyScorePercent: minAccuracy,
+        accuracyThreshold,
+        eligible,
+    };
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 6 (Reaction Board Challenge)
+========================================================= */
+
+export async function submitActivity6({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+                                          accuracyThreshold,
+                                      }: {
+    run: Activity6RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+    accuracyThreshold?: number;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    if (!(run as any)?.prediction?.createdAt) {
+        throw new Error("Prediction is required before starting the reaction challenge.");
+    }
+
+    const trials = getA6ReactionTrials(run);
+    const hasAnyReaction = trials.some((t) => {
+        const rt = t?.reactionTimeMs ?? t?.reactionTime ?? t?.rtMs;
+        return isFiniteNumber(rt) && rt >= 0;
+    });
+    if (!hasAnyReaction) {
+        throw new Error("Recorded reaction time dataset is required.");
+    }
+
+    const tracingResults = getA6TracingResults(run);
+    if (tracingResults.length === 0) {
+        throw new Error("Tracing challenge results are required.");
+    }
+
+    const thr = clampInt(accuracyThreshold ?? A6_DEFAULT_ACCURACY_THRESHOLD, 0, 100);
+    const scored = scoreActivity6(run, {accuracyThreshold: thr});
+
+    if (!isFiniteNumber(scored.avgAccuracyScorePercent)) {
+        throw new Error("Tracing accuracy score is missing.");
+    }
+
+    if (!scored.eligible) {
+        throw new Error(`Tracing accuracy must be at least ${thr}% to be eligible for leaderboard.`);
+    }
+
+    if ((run as any)?.session?.gpsEnabled) {
+        if ((run as any)?.session?.gpsPermission !== "granted") {
+            throw new Error("GPS permission must be granted before submission.");
+        }
+        if (!(run as any)?.session?.geo) {
+            throw new Error("GPS coordinate not saved yet. Please capture location before submitting.");
+        }
+    }
+
+    const text = reflection.trim();
+    if (text.length < 20) throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
+
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+        kind: "session";
+    }> = [];
+
+    const sessionUri = (run as any)?.evidence?.sessionVideo?.uri ?? (run as any)?.evidence?.video?.uri;
+    if (isNonEmptyString(sessionUri)) {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.REACTION_BOARD}/${(run as any).runId}/session.mp4`;
+
+        const uploaded = await uploadVideoToStorage({
+            uri: sessionUri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+            kind: "session",
+        });
+    }
+
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: (run as any)?.session?.activityId ?? (run as any)?.activityId,
+        activityKey: ACTIVITY_KEYS.REACTION_BOARD,
+        algorithmVersion: 2,
+
+        teamId,
+        createdBy,
+        runId: (run as any).runId,
+
+        reflection: text,
+        rating,
+
+        score: scored.score,
+        scoreBreakdown: {
+            meanReactionTimeMs: scored.meanReactionTimeMs,
+            stdDevReactionTimeMs: scored.stdDevReactionTimeMs,
+            trialCount: scored.trialCount,
+            avgAccuracyScorePercent: scored.avgAccuracyScorePercent,
+            minAccuracyScorePercent: scored.minAccuracyScorePercent,
+            accuracyThreshold: scored.accuracyThreshold,
+            leaderboardEligible: scored.eligible,
+        },
+
+        session: (run as any)?.session,
+        prediction: (run as any)?.prediction,
+
+        reactionTrials: (run as any)?.reactionTrials ?? (run as any)?.trials,
+        tracingResults,
+        tracingResultLatest: getA6LatestTracing(run),
+
+        evidence,
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.REACTION_BOARD, scored.score);
+
+    return {
+        submissionId: newSubmission.id,
+        score: scored.score,
+        meanReactionTimeMs: scored.meanReactionTimeMs,
+        avgAccuracyPct: scored.avgAccuracyScorePercent,
+        minAccuracyPct: scored.minAccuracyScorePercent,
+    };
 }
