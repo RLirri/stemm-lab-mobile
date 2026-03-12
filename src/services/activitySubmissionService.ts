@@ -18,6 +18,7 @@ import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
 import type {Activity4RunDraft} from "../store/activity4RunDraftStore";
 import type {Activity5RunDraft} from "../store/activity5RunDraftStore";
 import type {Activity6RunDraft} from "../store/activity6RunDraftStore";
+import type {Activity7RunDraft} from "../store/activity7RunDraftStore";
 
 /* =========================================================
    Utilities
@@ -55,6 +56,7 @@ export const ACTIVITY_KEYS = {
     EARTHQUAKE: "earthquake_structure", // keep consistent with Leaderboard mode key
     HUMAN_PERFORMANCE: "human_performance",
     REACTION_BOARD: "reaction_board",
+    BREATHING_PACE: "breathing_pace",
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
@@ -1084,5 +1086,341 @@ export async function submitActivity6({
         meanReactionTimeMs: scored.meanReactionTimeMs,
         avgAccuracyPct: scored.avgAccuracyScorePercent,
         minAccuracyPct: scored.minAccuracyScorePercent,
+    };
+}
+
+/* =========================================================
+   ACTIVITY 7 HELPERS (Breathing Pace Trainer)
+========================================================= */
+
+function getA7Measurements(run: Activity7RunDraft): any[] {
+    const list = (run as any)?.measurements ?? [];
+    return Array.isArray(list) ? list : [];
+}
+
+function getA7Participants(run: Activity7RunDraft): any[] {
+    const list = (run as any)?.session?.participants ?? [];
+    return Array.isArray(list) ? list : [];
+}
+
+function getA7MeasurementForPhase(
+    run: Activity7RunDraft,
+    participantId: string,
+    phase: "rest" | "post_jog_1min" | "post_star_jumps_100"
+): any | null {
+    const rows = getA7Measurements(run)
+        .filter((m) => m?.participantId === participantId && m?.phase === phase)
+        .sort((a, b) => safeNum(b?.endedAt) - safeNum(a?.endedAt));
+
+    return rows[0] ?? null;
+}
+
+function getA7BreathingRate(m: any): number | null {
+    const v = m?.estimatedBreathsPerMin ?? m?.breathsPerMinute ?? m?.bpm;
+    return isFiniteNumber(v) ? v : null;
+}
+
+function getA7Prediction(run: Activity7RunDraft) {
+    return (run as any)?.prediction ?? null;
+}
+
+/**
+ * Lower is better.
+ * Recovery consistency compares how similarly post-exercise breathing relates back to rest.
+ */
+function computeA7RecoveryConsistency(args: {
+    restBpm?: number | null;
+    postJogBpm?: number | null;
+    postStarJumpBpm?: number | null;
+}): number | null {
+    const {restBpm, postJogBpm, postStarJumpBpm} = args;
+
+    if (!isFiniteNumber(restBpm) || !isFiniteNumber(postJogBpm) || !isFiniteNumber(postStarJumpBpm)) {
+        return null;
+    }
+
+    const d1 = Math.abs(postJogBpm - restBpm);
+    const d2 = Math.abs(postStarJumpBpm - restBpm);
+
+    const variability = Math.abs(d1 - d2);
+    const meanGap = (d1 + d2) / 2;
+
+    return Math.round((variability + meanGap * 0.25) * 1000) / 1000;
+}
+
+function computeA7PredictionErrors(run: Activity7RunDraft, participantId: string) {
+    const pred = getA7Prediction(run);
+
+    const rest = getA7MeasurementForPhase(run, participantId, "rest");
+    const jog = getA7MeasurementForPhase(run, participantId, "post_jog_1min");
+    const star = getA7MeasurementForPhase(run, participantId, "post_star_jumps_100");
+
+    const restBpm = getA7BreathingRate(rest);
+    const jogBpm = getA7BreathingRate(jog);
+    const starBpm = getA7BreathingRate(star);
+
+    const predictedRest = pred?.predictedRestBpm;
+    const predictedAfterExercise = pred?.predictedAfterExerciseBpm;
+
+    return {
+        restAbsError:
+            isFiniteNumber(predictedRest) && isFiniteNumber(restBpm)
+                ? Math.abs(restBpm - predictedRest)
+                : null,
+        postJogAbsError:
+            isFiniteNumber(predictedAfterExercise) && isFiniteNumber(jogBpm)
+                ? Math.abs(jogBpm - predictedAfterExercise)
+                : null,
+        postStarJumpAbsError:
+            isFiniteNumber(predictedAfterExercise) && isFiniteNumber(starBpm)
+                ? Math.abs(starBpm - predictedAfterExercise)
+                : null,
+    };
+}
+
+function buildA7ParticipantSummaries(run: Activity7RunDraft) {
+    const participants = getA7Participants(run);
+
+    return participants.map((p) => {
+        const participantId = safeStr(p?.id);
+        const participantName = safeStr(p?.name) || "Participant";
+
+        const rest = getA7MeasurementForPhase(run, participantId, "rest");
+        const jog = getA7MeasurementForPhase(run, participantId, "post_jog_1min");
+        const star = getA7MeasurementForPhase(run, participantId, "post_star_jumps_100");
+
+        const restBpm = getA7BreathingRate(rest);
+        const postJogBpm = getA7BreathingRate(jog);
+        const postStarJumpBpm = getA7BreathingRate(star);
+
+        const recoveryConsistencyScore = computeA7RecoveryConsistency({
+            restBpm,
+            postJogBpm,
+            postStarJumpBpm,
+        });
+
+        const predictionErrors = computeA7PredictionErrors(run, participantId);
+
+        return {
+            participantId,
+            participantName,
+
+            restBpm,
+            postJogBpm,
+            postStarJumpBpm,
+
+            deltaRestToJog:
+                isFiniteNumber(restBpm) && isFiniteNumber(postJogBpm)
+                    ? Math.round((postJogBpm - restBpm) * 10) / 10
+                    : null,
+            deltaRestToStarJump:
+                isFiniteNumber(restBpm) && isFiniteNumber(postStarJumpBpm)
+                    ? Math.round((postStarJumpBpm - restBpm) * 10) / 10
+                    : null,
+            deltaJogToStarJump:
+                isFiniteNumber(postJogBpm) && isFiniteNumber(postStarJumpBpm)
+                    ? Math.round((postStarJumpBpm - postJogBpm) * 10) / 10
+                    : null,
+
+            recoveryConsistencyScore,
+
+            prediction: predictionErrors,
+        };
+    });
+}
+
+function scoreActivity7(run: Activity7RunDraft) {
+    const summaries = buildA7ParticipantSummaries(run);
+
+    const valid = summaries.filter((s) => isFiniteNumber(s.recoveryConsistencyScore));
+    if (valid.length === 0) {
+        throw new Error("No valid recovery consistency score could be computed.");
+    }
+
+    valid.sort(
+        (a, b) =>
+            safeNum(a.recoveryConsistencyScore, Number.POSITIVE_INFINITY) -
+            safeNum(b.recoveryConsistencyScore, Number.POSITIVE_INFINITY)
+    );
+
+    const best = valid[0];
+
+    const teamRecoveryConsistencyScore =
+        valid.length > 0
+            ? Math.round(
+            (valid.reduce((sum, s) => sum + safeNum(s.recoveryConsistencyScore), 0) / valid.length) * 1000
+        ) / 1000
+            : null;
+
+    return {
+        /**
+         * Lower recovery score is better scientifically,
+         * but team totalScore system currently adds points.
+         * So store an inverse-style positive leaderboard score.
+         */
+        score: Math.max(0, Math.round(1000 - safeNum(best.recoveryConsistencyScore) * 100)),
+        bestParticipantId: best.participantId,
+        bestParticipantName: best.participantName,
+        bestParticipantRecoveryConsistencyScore: best.recoveryConsistencyScore,
+        teamRecoveryConsistencyScore,
+        participantSummaries: summaries,
+    };
+}
+
+/* =========================================================
+   SUBMIT ACTIVITY 7 (Breathing Pace Trainer)
+========================================================= */
+
+export async function submitActivity7({
+                                          run,
+                                          teamId,
+                                          createdBy,
+                                          reflection,
+                                          rating,
+                                      }: {
+    run: Activity7RunDraft;
+    teamId: string;
+    createdBy: string;
+    reflection: string;
+    rating: number;
+}) {
+    if (!teamId) throw new Error("User has no team.");
+    if (!createdBy) throw new Error("Missing user.");
+
+    if (!(run as any)?.prediction?.createdAt) {
+        throw new Error("Prediction is required before starting breathing measurements.");
+    }
+
+    const participants = getA7Participants(run);
+    if (participants.length === 0) {
+        throw new Error("No participants found in this session.");
+    }
+
+    for (const p of participants) {
+        const pid = safeStr(p?.id);
+        const pname = safeStr(p?.name) || "Participant";
+
+        const rest = getA7MeasurementForPhase(run, pid, "rest");
+        const jog = getA7MeasurementForPhase(run, pid, "post_jog_1min");
+        const star = getA7MeasurementForPhase(run, pid, "post_star_jumps_100");
+
+        if (!rest) throw new Error(`Missing rest measurement for ${pname}.`);
+        if (!jog) throw new Error(`Missing post-jog measurement for ${pname}.`);
+        if (!star) throw new Error(`Missing post-star-jumps measurement for ${pname}.`);
+
+        if (!Array.isArray(rest?.samples) || rest.samples.length === 0) {
+            throw new Error(`Rest sensor dataset is missing for ${pname}.`);
+        }
+        if (!Array.isArray(jog?.samples) || jog.samples.length === 0) {
+            throw new Error(`Post-jog sensor dataset is missing for ${pname}.`);
+        }
+        if (!Array.isArray(star?.samples) || star.samples.length === 0) {
+            throw new Error(`Post-star-jumps sensor dataset is missing for ${pname}.`);
+        }
+
+        if (!isFiniteNumber(getA7BreathingRate(rest))) {
+            throw new Error(`Rest breathing rate is missing for ${pname}.`);
+        }
+        if (!isFiniteNumber(getA7BreathingRate(jog))) {
+            throw new Error(`Post-jog breathing rate is missing for ${pname}.`);
+        }
+        if (!isFiniteNumber(getA7BreathingRate(star))) {
+            throw new Error(`Post-star-jumps breathing rate is missing for ${pname}.`);
+        }
+    }
+
+    if ((run as any)?.session?.gpsEnabled) {
+        if ((run as any)?.session?.gpsPermission !== "granted") {
+            throw new Error("GPS permission must be granted before submission.");
+        }
+        if (!(run as any)?.session?.geo) {
+            throw new Error("GPS coordinate not saved yet. Please capture location before submitting.");
+        }
+    }
+
+    const text = reflection.trim();
+    if (text.length < 20) {
+        throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
+    }
+    if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
+        throw new Error("Rating must be between 1 and 5.");
+    }
+
+    const scored = scoreActivity7(run);
+
+    const evidence: Array<{
+        type: "video";
+        storagePath: string;
+        downloadURL: string;
+        contentType?: string;
+        kind: "session";
+    }> = [];
+
+    const sessionUri = (run as any)?.evidence?.sessionVideo?.uri;
+    if (isNonEmptyString(sessionUri)) {
+        const storagePath = `evidence/${teamId}/${ACTIVITY_KEYS.BREATHING_PACE}/${(run as any).runId}/session.mp4`;
+
+        const uploaded = await uploadVideoToStorage({
+            uri: sessionUri,
+            storagePath,
+            contentType: "video/mp4",
+        });
+
+        evidence.push({
+            type: "video",
+            storagePath: uploaded.storagePath,
+            downloadURL: uploaded.downloadURL,
+            contentType: uploaded.contentType,
+            kind: "session",
+        });
+    }
+
+    const submissionRef = collection(db, "submissions");
+
+    const payloadRaw = {
+        activityId: (run as any)?.session?.activityId ?? (run as any)?.activityId,
+        activityKey: ACTIVITY_KEYS.BREATHING_PACE,
+        algorithmVersion: 1,
+
+        teamId,
+        createdBy,
+        runId: (run as any).runId,
+
+        reflection: text,
+        rating,
+
+        score: scored.score,
+        scoreBreakdown: {
+            bestParticipantId: scored.bestParticipantId,
+            bestParticipantName: scored.bestParticipantName,
+            bestParticipantRecoveryConsistencyScore: scored.bestParticipantRecoveryConsistencyScore,
+            teamRecoveryConsistencyScore: scored.teamRecoveryConsistencyScore,
+        },
+
+        session: (run as any)?.session,
+        prediction: (run as any)?.prediction,
+        measurements: getA7Measurements(run),
+        participantSummaries: scored.participantSummaries,
+
+        evidence,
+
+        seasonId: DEFAULT_SEASON_ID,
+        status: "submitted" as const,
+        createdAt: serverTimestamp(),
+    };
+
+    const payload = stripUndefinedDeep(payloadRaw);
+
+    const newSubmission = await addDoc(submissionRef, payload);
+
+    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.BREATHING_PACE, scored.score);
+
+    return {
+        submissionId: newSubmission.id,
+        score: scored.score,
+        teamRecoveryConsistencyScore: scored.teamRecoveryConsistencyScore,
+        bestParticipantId: scored.bestParticipantId,
+        bestParticipantName: scored.bestParticipantName,
+        bestParticipantRecoveryConsistencyScore: scored.bestParticipantRecoveryConsistencyScore,
     };
 }

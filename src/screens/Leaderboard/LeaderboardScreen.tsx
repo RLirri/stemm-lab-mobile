@@ -31,7 +31,8 @@ type Mode =
     | "hand_fan"
     | "earthquake_structure"
     | "human_performance"
-    | "reaction_board";
+    | "reaction_board"
+    | "breathing_pace";
 
 const MODES: Mode[] = [
     "global",
@@ -41,6 +42,7 @@ const MODES: Mode[] = [
     "earthquake_structure",
     "human_performance",
     "reaction_board",
+    "breathing_pace",
 ];
 
 function medal(rank: number) {
@@ -61,7 +63,8 @@ function modeTitle(mode: Mode) {
     if (mode === "hand_fan") return "Activity 3 Leaderboard";
     if (mode === "earthquake_structure") return "Activity 4 Leaderboard";
     if (mode === "human_performance") return "Activity 5 Leaderboard";
-    return "Activity 6 Leaderboard";
+    if (mode === "reaction_board") return "Activity 6 Leaderboard";
+    return "Activity 7 Leaderboard";
 }
 
 function modeTabLabel(mode: Mode) {
@@ -71,7 +74,8 @@ function modeTabLabel(mode: Mode) {
     if (mode === "hand_fan") return "A3";
     if (mode === "earthquake_structure") return "A4";
     if (mode === "human_performance") return "A5";
-    return "A6";
+    if (mode === "reaction_board") return "A6";
+    return "A7";
 }
 
 function activityKeyForMode(mode: Mode): string | undefined {
@@ -81,6 +85,7 @@ function activityKeyForMode(mode: Mode): string | undefined {
     if (mode === "earthquake_structure") return "earthquake_structure";
     if (mode === "human_performance") return "human_performance";
     if (mode === "reaction_board") return "reaction_board";
+    if (mode === "breathing_pace") return "breathing_pace";
     return undefined;
 }
 
@@ -97,6 +102,8 @@ function helpLineForMode(mode: Mode) {
     if (mode === "human_performance") return "Activity score (higher is better).";
     if (mode === "reaction_board")
         return "Activity score (higher is better). Requires tracing accuracy threshold to be eligible.";
+    if (mode === "breathing_pace")
+        return "Activity score (higher is better). Based on best recovery-consistency submission score.";
     return "Activity score (current season).";
 }
 
