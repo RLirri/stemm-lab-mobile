@@ -6,6 +6,7 @@ export type ActivityCategory =
     | "Engineering"
     | "Math"
     | "Medicine"
+    | "Medical Science"
     | "Environmental Science"
     | "Engineering + Earth Science"
     | "Medical Science + Biomechanics"
