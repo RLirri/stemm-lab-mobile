@@ -32,6 +32,8 @@ import {createActivity5RunDraft} from "../../store/activity5RunDraftStore";
 
 import {createActivity6RunDraft} from "../../store/activity6RunDraftStore";
 
+import {createActivity7RunDraft} from "../../store/activity7RunDraftStore";
+
 type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
 
 /**
@@ -331,6 +333,47 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                     );
                     return;
                 }
+                /* =========================
+   Activity 7
+========================= */
+
+                // Recommended: overview-first UX
+                case "A7Overview": {
+                    navigation.navigate("A7Overview", {activityId});
+                    return;
+                }
+
+                // If starting directly at Session Setup (also supported)
+                case "A7SessionSetup": {
+                    const draft = createActivity7RunDraft({
+                        activityId,
+                        createdBy: user.uid,
+
+                        participantCount: 1,
+                        measurementDurationSec: 30,
+                        targetSamplingHz: 25,
+                        smoothingWindowSec: 0.6,
+                        minPeakGapMs: 1500,
+
+                        gpsEnabled: true,
+                        sessionLabel: undefined,
+                    });
+
+                    navigation.navigate("A7SessionSetup", {activityId, runId: draft.runId});
+                    return;
+                }
+
+                // Guard against misconfigured startRoute
+                case "A7Prediction":
+                case "A7Measurements":
+                case "A7Results":
+                case "A7ReflectionSubmit": {
+                    Alert.alert(
+                        "Flow misconfigured",
+                        "Activity 7 must start at Overview or Session Setup. Please set startRoute to A7Overview or A7SessionSetup."
+                    );
+                    return;
+                }
 
                 /* =========================
                    App-level routes (don’t start activities here)
@@ -345,7 +388,7 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                 case "ActivityDetail": {
                     Alert.alert(
                         "Flow misconfigured",
-                        "startRoute must point to an activity flow screen (A1*/A2*/A3*/A4*)."
+                        "startRoute must point to an activity flow screen (A1*/A2*/A3*/A4*/A5*/A6*/A7*)."
                     );
                     return;
                 }

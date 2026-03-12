@@ -72,6 +72,16 @@ import A6TracingChallengeScreen from "../screens/Activities/Activity6/A6TracingC
 import A6ResultsScreen from "../screens/Activities/Activity6/A6ResultsScreen";
 import A6ReflectionSubmitScreen from "../screens/Activities/Activity6/A6ReflectionSubmitScreen";
 
+/* ============================
+   Activity 7 (Breathing Pace Trainer)
+============================ */
+import A7OverviewScreen from "../screens/Activities/Activity7/A7OverviewScreen";
+import A7SessionSetupScreen from "../screens/Activities/Activity7/A7SessionSetupScreen";
+import A7PredictionScreen from "../screens/Activities/Activity7/A7PredictionScreen";
+import A7MeasurementsScreen from "../screens/Activities/Activity7/A7MeasurementsScreen";
+import A7ResultsScreen from "../screens/Activities/Activity7/A7ResultsScreen";
+import A7ReflectionSubmitScreen from "../screens/Activities/Activity7/A7ReflectionSubmitScreen";
+
 export type AppStackParamList = {
     Home: undefined;
     Profile: undefined;
@@ -146,6 +156,16 @@ export type AppStackParamList = {
     A6TracingChallenge: { activityId: string; runId: string };
     A6Results: { activityId: string; runId: string };
     A6ReflectionSubmit: { activityId: string; runId: string };
+
+    /* ============================
+Activity 7 Flow
+============================ */
+    A7Overview: { activityId: string; runId?: string };
+    A7SessionSetup: { activityId: string; runId?: string };
+    A7Prediction: { activityId: string; runId: string };
+    A7Measurements: { activityId: string; runId: string };
+    A7Results: { activityId: string; runId: string };
+    A7ReflectionSubmit: { activityId: string; runId: string };
 };
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -221,6 +241,15 @@ export default function AppStack() {
                           options={{title: "Tracing Challenge"}}/>
             <Stack.Screen name="A6Results" component={A6ResultsScreen} options={{title: "Results"}}/>
             <Stack.Screen name="A6ReflectionSubmit" component={A6ReflectionSubmitScreen}
+                          options={{title: "Reflection & Submit"}}/>
+
+            {/* Activity 7 */}
+            <Stack.Screen name="A7Overview" component={A7OverviewScreen} options={{title: "Activity 7"}}/>
+            <Stack.Screen name="A7SessionSetup" component={A7SessionSetupScreen} options={{title: "Setup"}}/>
+            <Stack.Screen name="A7Prediction" component={A7PredictionScreen} options={{title: "Prediction"}}/>
+            <Stack.Screen name="A7Measurements" component={A7MeasurementsScreen} options={{title: "Measurements"}}/>
+            <Stack.Screen name="A7Results" component={A7ResultsScreen} options={{title: "Results"}}/>
+            <Stack.Screen name="A7ReflectionSubmit" component={A7ReflectionSubmitScreen}
                           options={{title: "Reflection & Submit"}}/>
         </Stack.Navigator>
 
