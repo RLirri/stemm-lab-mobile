@@ -1,0 +1,142 @@
+.
+├── App.tsx
+├── app.json
+├── assets
+│   ├── adaptive-icon.png
+│   ├── favicon.png
+│   ├── icon.png
+│   └── splash-icon.png
+├── index.ts
+├── package-lock.json
+├── package.json
+├── src
+│   ├── app
+│   ├── assets
+│   ├── components
+│   ├── features
+│   │   └── activities
+│   │       ├── activityCatalog.ts
+│   │       └── definitions
+│   │           ├── activity01_parachuteDrop.ts
+│   │           ├── activity02_soundPollution.ts
+│   │           ├── activity03_handFan.ts
+│   │           ├── activity04_earthquake.ts
+│   │           ├── activity05_humanPerformance.ts
+│   │           ├── activity06_reactionBoard.ts
+│   │           ├── activity07_breathingPaceTrainer.ts
+│   │           └── types.ts
+│   ├── navigation
+│   │   ├── AppStack.tsx
+│   │   ├── AuthStack.tsx
+│   │   └── RootNavigator.tsx
+│   ├── screens
+│   │   ├── Activities
+│   │   │   ├── ActivitiesListScreen.tsx
+│   │   │   ├── Activity1
+│   │   │   │   ├── A1AttemptPlanScreen.tsx
+│   │   │   │   ├── A1ComparisonScreen.tsx
+│   │   │   │   ├── A1MeasurementsScreen.tsx
+│   │   │   │   ├── A1ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A1ResultScreen.tsx
+│   │   │   │   └── A1SessionSetupScreen.tsx
+│   │   │   ├── Activity2
+│   │   │   │   ├── A2MapScreen.tsx
+│   │   │   │   ├── A2MeasurementScreen.tsx
+│   │   │   │   ├── A2OverviewScreen.tsx
+│   │   │   │   ├── A2PredictionScreen.tsx
+│   │   │   │   ├── A2ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A2ResultsScreen.tsx
+│   │   │   │   └── A2SessionSetupScreen.tsx
+│   │   │   ├── Activity3
+│   │   │   │   ├── A3ComparisonScreen.tsx
+│   │   │   │   ├── A3MeasurementsScreen.tsx
+│   │   │   │   ├── A3OverviewScreen.tsx
+│   │   │   │   ├── A3PredictionScreen.tsx
+│   │   │   │   ├── A3ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A3ResultsScreen.tsx
+│   │   │   │   └── A3SessionSetupScreen.tsx
+│   │   │   ├── Activity4
+│   │   │   │   ├── A4ComparisonScreen.tsx
+│   │   │   │   ├── A4MeasurementsScreen.tsx
+│   │   │   │   ├── A4OverviewScreen.tsx
+│   │   │   │   ├── A4PredictionScreen.tsx
+│   │   │   │   ├── A4ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A4ResultsScreen.tsx
+│   │   │   │   └── A4SessionSetupScreen.tsx
+│   │   │   ├── Activity5
+│   │   │   │   ├── A5ComparisonScreen.tsx
+│   │   │   │   ├── A5GuidedTrialsScreen.tsx
+│   │   │   │   ├── A5OverviewScreen.tsx
+│   │   │   │   ├── A5PredictionScreen.tsx
+│   │   │   │   ├── A5ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A5ResultsScreen.tsx
+│   │   │   │   └── A5SessionSetupScreen.tsx
+│   │   │   ├── Activity6
+│   │   │   │   ├── A6OverviewScreen.tsx
+│   │   │   │   ├── A6PredictionScreen.tsx
+│   │   │   │   ├── A6ReactionTrialScreen.tsx
+│   │   │   │   ├── A6ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A6ResultsScreen.tsx
+│   │   │   │   ├── A6SessionSetupScreen.tsx
+│   │   │   │   └── A6TracingChallengeScreen.tsx
+│   │   │   ├── Activity7
+│   │   │   │   ├── A7MeasurementsScreen.tsx
+│   │   │   │   ├── A7OverviewScreen.tsx
+│   │   │   │   ├── A7PredictionScreen.tsx
+│   │   │   │   ├── A7ReflectionSubmitScreen.tsx
+│   │   │   │   ├── A7ResultsScreen.tsx
+│   │   │   │   └── A7SessionSetupScreen.tsx
+│   │   │   └── ActivityDetailScreen.tsx
+│   │   ├── Auth
+│   │   │   ├── LoginScreen.tsx
+│   │   │   └── RegisterScreen.tsx
+│   │   ├── Home
+│   │   │   └── HomeScreen.tsx
+│   │   ├── Leaderboard
+│   │   │   └── LeaderboardScreen.tsx
+│   │   ├── Profile
+│   │   │   └── ProfileScreen.tsx
+│   │   └── Teams
+│   │       ├── ExploreTeamsScreen.tsx
+│   │       ├── TeamDetailScreen.tsx
+│   │       └── TeamUpScreen.tsx
+│   ├── services
+│   │   ├── activity3PhysicsService.ts
+│   │   ├── activity4PhysicsService.ts
+│   │   ├── activity5BiomechanicsService.ts
+│   │   ├── activity6ReactionBoardService.ts
+│   │   ├── activity7BreathingService.ts
+│   │   ├── activityAdminService.ts
+│   │   ├── activityService.ts
+│   │   ├── activitySubmissionService.ts
+│   │   ├── authService.ts
+│   │   ├── evidenceService.ts
+│   │   ├── firebase.ts
+│   │   ├── firestoreSanitize.ts
+│   │   ├── leaderboardService.ts
+│   │   ├── meService.ts
+│   │   ├── microphoneService.ts
+│   │   ├── scoringService.ts
+│   │   ├── teamMigrationService.ts
+│   │   ├── teamScoreService.ts
+│   │   ├── teamService.ts
+│   │   └── userService.ts
+│   ├── store
+│   │   ├── activity2RunDraftStore.ts
+│   │   ├── activity3RunDraftStore.ts
+│   │   ├── activity4RunDraftStore.ts
+│   │   ├── activity5RunDraftStore.ts
+│   │   ├── activity6RunDraftStore.ts
+│   │   ├── activity7RunDraftStore.ts
+│   │   └── activityRunDraftStore.ts
+│   ├── types
+│   │   ├── activity.ts
+│   │   ├── submission.ts
+│   │   ├── team.ts
+│   │   └── user.ts
+│   └── utils
+│       └── firebaseErrors.ts
+├── structure.txt
+└── tsconfig.json
+
+28 directories, 112 files

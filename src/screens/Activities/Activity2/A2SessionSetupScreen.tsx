@@ -12,6 +12,7 @@ import {
     View,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {useTranslation} from "react-i18next";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth} from "../../../services/firebase";
@@ -30,13 +31,13 @@ function normalizeLabel(x: string): string | undefined {
 }
 
 export default function A2SessionSetupScreen({route, navigation}: Props) {
+    const {t} = useTranslation(["common", "navigation"]);
     const user = auth.currentUser;
     const {activityId} = route.params;
 
     const [runId, setRunId] = useState<string | null>(route.params.runId ?? null);
     const [draft, setDraft] = useState<Activity2RunDraft | null>(null);
 
-    // Form fields
     const [sessionLabel, setSessionLabel] = useState<string>("");
     const [gpsEnabled, setGpsEnabled] = useState<boolean>(true);
 
@@ -45,7 +46,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
 
         const existingId = route.params.runId;
 
-        // Case A: route has runId -> try load
         if (existingId) {
             const existing = getActivity2RunDraft(existingId);
             if (existing) {
@@ -54,7 +54,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
                 return;
             }
 
-            // Store reset: recreate and replace params
             const recreated = createActivity2RunDraft(activityId, user.uid);
             setRunId(recreated.runId);
             setDraft(recreated);
@@ -62,7 +61,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // Case B: no runId -> create new
         const created = createActivity2RunDraft(activityId, user.uid);
         setRunId(created.runId);
         setDraft(created);
@@ -72,7 +70,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
     useEffect(() => {
         if (!draft) return;
 
-        // hydrate UI from draft
         setSessionLabel(draft.session.sessionLabel ?? "");
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
     }, [draft]);
@@ -84,8 +81,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
     }
 
     function validateBeforeContinue(): { ok: true } | { ok: false; message: string } {
-        // Label is optional, but strongly recommended (helps leaderboard / class sessions)
-        // We keep it optional per your spec; enforce only max length.
         const label = sessionLabel.trim();
         if (label.length > 60) {
             return {ok: false, message: "Session label is too long. Please keep it under 60 characters."};
@@ -104,13 +99,11 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // Persist session setup
         persistSessionPatch({
             sessionLabel: normalizeLabel(sessionLabel),
             gpsEnabled,
         });
 
-        // Next screen (we’ll build next): Prediction
         navigation.navigate("A2Prediction", {activityId, runId});
     }
 
@@ -119,7 +112,7 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
     if (!draft) {
         return (
             <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft…</Text>
+                <Text style={styles.loadingText}>Loading draft…</Text>
             </View>
         );
     }
@@ -127,7 +120,7 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
     return (
         <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Session Setup</Text>
+                <Text style={styles.title}>{t("navigation:sessionSetup")}</Text>
                 <Text style={styles.sub}>
                     Set a session label and choose whether GPS is enabled. GPS helps you map loud vs quiet zones.
                 </Text>
@@ -160,18 +153,13 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
                     </Text>
 
                     <View style={styles.rowBetween}>
-                        <View style={{flex: 1}}>
+                        <View style={styles.flexOne}>
                             <Text style={styles.label}>Enable GPS tagging</Text>
                             <Text style={styles.helpSmall}>
                                 Recommended for “loud vs quiet zone” mapping.
                             </Text>
                         </View>
-                        <Switch
-                            value={gpsEnabled}
-                            onValueChange={(v) => {
-                                setGpsEnabled(v);
-                            }}
-                        />
+                        <Switch value={gpsEnabled} onValueChange={setGpsEnabled}/>
                     </View>
 
                     {!gpsEnabled ? (
@@ -186,14 +174,14 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
                 </View>
 
                 <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue</Text>
+                    <Text style={styles.primaryBtnText}>{t("common:actions.continue")}</Text>
                 </Pressable>
 
                 <Text style={styles.footerHint}>
                     Next: Prediction → Measurement loop (min 3 actions) → Map → Results → Reflection & Submit.
                 </Text>
 
-                <View style={{height: 30}}/>
+                <View style={styles.bottomSpacer}/>
             </ScrollView>
         </KeyboardAvoidingView>
     );
@@ -202,6 +190,7 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20},
     center: {flex: 1, alignItems: "center", justifyContent: "center"},
+    loadingText: {fontWeight: "900"},
 
     title: {fontSize: 26, fontWeight: "900", marginTop: 6},
     sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
@@ -231,6 +220,7 @@ const styles = StyleSheet.create({
     },
 
     rowBetween: {flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12},
+    flexOne: {flex: 1},
 
     note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
 
@@ -255,4 +245,5 @@ const styles = StyleSheet.create({
     primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
     footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
+    bottomSpacer: {height: 30},
 });

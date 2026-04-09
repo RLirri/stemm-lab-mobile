@@ -1,4 +1,3 @@
-// src/screens/Activities/Activity1/A1AttemptPlanScreen.tsx
 import React, {useEffect, useMemo, useState} from "react";
 import {
     Alert,
@@ -12,6 +11,7 @@ import {
     View,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {useTranslation} from "react-i18next";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth} from "../../../services/firebase";
@@ -26,48 +26,106 @@ import {
 
 type Props = NativeStackScreenProps<AppStackParamList, "A1AttemptPlan">;
 
-function toNumberOrUndefined(raw: string): number | undefined {
-    const v = raw.trim();
-    if (!v) return undefined;
-    const n = Number(v);
-    if (Number.isNaN(n)) return undefined;
-    return n;
-}
-
-function clampInt(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, Math.round(n)));
-}
-
-function pctDiff(a: number, b: number) {
-    if (b === 0) return Infinity;
-    return Math.abs((a - b) / b);
-}
+type DesignTags = NonNullable<AttemptPlanDraft["designTags"]>;
+type CanopyMaterial = DesignTags["canopyMaterial"];
+type CanopyShape = DesignTags["canopyShape"];
 
 type ConfirmGate = {
     key: "height" | "mass";
     message: string;
 };
 
-function attemptLabel(index: number) {
-    if (index === 0) return "Baseline (No parachute)";
-    return `Prototype ${index}`;
+type AttemptPlanKey =
+    | "subtitle"
+    | "confirmationNeededTitle"
+    | "confirmationUnderstand"
+    | "predictionTitle"
+    | "predictionHelp"
+    | "predictionLabel"
+    | "predictionPlaceholder"
+    | "prototypeDesignTitle"
+    | "prototypeDesignHelp"
+    | "canopyMaterialLabel"
+    | "canopyMaterialPaper"
+    | "canopyMaterialPlastic"
+    | "canopyMaterialFabric"
+    | "canopyMaterialOther"
+    | "canopyShapeLabel"
+    | "canopyShapeCircle"
+    | "canopyShapeSquare"
+    | "canopyShapeOther"
+    | "stringsCountLabel"
+    | "stringsCountPlaceholder"
+    | "stringLengthLabel"
+    | "stringLengthPlaceholder"
+    | "canopySizeLabel"
+    | "canopySizePlaceholder"
+    | "notesLabel"
+    | "notesPlaceholder"
+    | "sketchUploadTitle"
+    | "sketchUploadHelp"
+    | "attemptTypeTitle"
+    | "attemptTypeHelp"
+    | "attemptTypeBaselinePill"
+    | "comparisonParametersTitle"
+    | "dropHeightLabel"
+    | "dropHeightPlaceholder"
+    | "baselineReferenceHeight"
+    | "payloadMassLabel"
+    | "payloadMassHelp"
+    | "payloadMassPlaceholder"
+    | "massUnknown"
+    | "massKnown"
+    | "baselineReferenceMass"
+    | "recordDropVideo"
+    | "footerHint"
+    | "validationDropHeight"
+    | "validationPayloadMass"
+    | "validationPrototypeDesign"
+    | "confirmHeightChanged"
+    | "confirmMassChanged";
+
+type A1CommonKey =
+    | "baselineLabel"
+    | "prototypeLabel"
+    | "attemptMissingTitle"
+    | "attemptMissingMessage";
+
+type ActivityCommonKey =
+    | "sessionExpiredTitle"
+    | "sessionExpiredMessage"
+    | "checkFieldsTitle"
+    | "loadingDraft";
+
+function toNumberOrUndefined(raw: string): number | undefined {
+    const value = raw.trim();
+    if (!value) return undefined;
+
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function clampInt(n: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function pctDiff(a: number, b: number): number {
+    if (b === 0) return Infinity;
+    return Math.abs((a - b) / b);
 }
 
 export default function A1AttemptPlanScreen({route, navigation}: Props) {
+    const {t} = useTranslation(["activities", "common", "navigation"]);
     const user = auth.currentUser;
     const {activityId, runId, attemptIndex} = route.params;
 
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
     const [attempt, setAttempt] = useState<AttemptDraft | null>(null);
 
-    // Form fields
     const [predictionRaw, setPredictionRaw] = useState<string>("");
 
-    const [canopyMaterial, setCanopyMaterial] =
-        useState<AttemptPlanDraft["designTags"] extends infer T ? (T extends object ? any : any) : any>(
-            undefined
-        );
-    const [canopyShape, setCanopyShape] = useState<any>(undefined);
+    const [canopyMaterial, setCanopyMaterial] = useState<CanopyMaterial | undefined>(undefined);
+    const [canopyShape, setCanopyShape] = useState<CanopyShape | undefined>(undefined);
     const [stringsCountRaw, setStringsCountRaw] = useState<string>("");
     const [canopySizeRaw, setCanopySizeRaw] = useState<string>("");
     const [stringLengthRaw, setStringLengthRaw] = useState<string>("");
@@ -77,46 +135,64 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
     const [massUnknown, setMassUnknown] = useState<boolean>(false);
     const [payloadMassRaw, setPayloadMassRaw] = useState<string>("");
 
-    // “warning confirmations” gating when height/mass differs from baseline.
     const [pendingConfirm, setPendingConfirm] = useState<ConfirmGate | null>(null);
     const [confirmed, setConfirmed] = useState<{ height: boolean; mass: boolean }>({
         height: false,
         mass: false,
     });
 
+    const isBaseline = attemptIndex === 0;
+
+    const tA1AttemptPlan = (key: AttemptPlanKey, options?: Record<string, unknown>) =>
+        t(`a1.attemptPlan.${key}`, {ns: "activities", ...options});
+
+    const tA1Common = (key: A1CommonKey, options?: Record<string, unknown>) =>
+        t(`a1.common.${key}`, {ns: "activities", ...options});
+
+    const tActivityCommon = (key: ActivityCommonKey, options?: Record<string, unknown>) =>
+        t(`common.${key}`, {ns: "activities", ...options});
+
+    const attemptTitle =
+        attemptIndex === 0
+            ? tA1Common("baselineLabel")
+            : tA1Common("prototypeLabel", {index: attemptIndex});
+
     useEffect(() => {
         if (!user) return;
 
-        const d = getRunDraft(runId);
-        if (!d) {
-            // If the store got reset, send them back to setup where we recreate.
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {
-                    text: "OK",
-                    onPress: () => navigation.replace("A1SessionSetup", {activityId}),
-                },
-            ]);
+        const loadedDraft = getRunDraft(runId);
+        if (!loadedDraft) {
+            Alert.alert(
+                tActivityCommon("sessionExpiredTitle"),
+                tActivityCommon("sessionExpiredMessage"),
+                [
+                    {
+                        text: t("common:actions.ok"),
+                        onPress: () => navigation.replace("A1SessionSetup", {activityId}),
+                    },
+                ]
+            );
             return;
         }
 
-        const a = d.attempts?.[attemptIndex];
-        if (!a) {
-            Alert.alert("Attempt missing", "This attempt slot does not exist.", [
-                {text: "OK", onPress: () => navigation.goBack()},
-            ]);
+        const loadedAttempt = loadedDraft.attempts?.[attemptIndex];
+        if (!loadedAttempt) {
+            Alert.alert(
+                tA1Common("attemptMissingTitle"),
+                tA1Common("attemptMissingMessage"),
+                [{text: t("common:actions.ok"), onPress: () => navigation.goBack()}]
+            );
             return;
         }
 
-        setDraft(d);
-        setAttempt(a);
-    }, [activityId, attemptIndex, navigation, runId, user]);
+        setDraft(loadedDraft);
+        setAttempt(loadedAttempt);
+    }, [activityId, attemptIndex, navigation, runId, t, user]);
 
     useEffect(() => {
         if (!draft || !attempt) return;
 
-        const s = draft.session;
-
-        // Prefill per-attempt parameters from attempt.plan if exists, else from session.
+        const session = draft.session;
         const plan = attempt.plan;
 
         setPredictionRaw(plan.predictionSec != null ? String(plan.predictionSec) : "");
@@ -129,54 +205,49 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         setStringLengthRaw(tags.stringLengthCm != null ? String(tags.stringLengthCm) : "");
         setDesignNotes(tags.notes ?? "");
 
-        const dropH = plan.dropHeightM ?? s.dropHeightM;
-        setDropHeightRaw(dropH != null ? String(dropH) : "");
+        const dropHeightM = plan.dropHeightM ?? session.dropHeightM;
+        setDropHeightRaw(dropHeightM != null ? String(dropHeightM) : "");
 
-        const massU = plan.payloadMassUnknown ?? s.payloadMassUnknown ?? false;
-        setMassUnknown(Boolean(massU));
+        const resolvedMassUnknown = plan.payloadMassUnknown ?? session.payloadMassUnknown ?? false;
+        setMassUnknown(Boolean(resolvedMassUnknown));
 
-        const m = plan.payloadMassG ?? s.payloadMassG;
-        setPayloadMassRaw(m != null ? String(m) : "");
+        const payloadMassG = plan.payloadMassG ?? session.payloadMassG;
+        setPayloadMassRaw(payloadMassG != null ? String(payloadMassG) : "");
     }, [attempt, draft]);
 
     const baselineRefs = useMemo(() => {
         if (!draft) return null;
-        const base = draft.attempts?.[0];
+
+        const baselineAttempt = draft.attempts?.[0];
         const session = draft.session;
 
-        // baseline reference: prefer baseline plan values, fallback to session values.
-        const baseHeight = base?.plan?.dropHeightM ?? session.dropHeightM;
-        const baseMassUnknown = base?.plan?.payloadMassUnknown ?? session.payloadMassUnknown ?? false;
-        const baseMassG = base?.plan?.payloadMassG ?? session.payloadMassG;
-
         return {
-            baseHeight,
-            baseMassUnknown,
-            baseMassG,
+            baseHeight: baselineAttempt?.plan?.dropHeightM ?? session.dropHeightM,
+            baseMassUnknown:
+                baselineAttempt?.plan?.payloadMassUnknown ?? session.payloadMassUnknown ?? false,
+            baseMassG: baselineAttempt?.plan?.payloadMassG ?? session.payloadMassG,
         };
     }, [draft]);
 
-    const isBaseline = attemptIndex === 0;
-
     function persistAttemptPlan(nextPlan: AttemptPlanDraft) {
-        const next = updateAttempt(runId, attemptIndex, {
-            plan: nextPlan,
-        });
-        setDraft(next);
-        setAttempt(next.attempts[attemptIndex]);
+        const nextDraft = updateAttempt(runId, attemptIndex, {plan: nextPlan});
+        setDraft(nextDraft);
+        setAttempt(nextDraft.attempts[attemptIndex]);
     }
 
-    function buildPlanFromForm(session: SessionDraft, existingPlan: AttemptPlanDraft): AttemptPlanDraft {
+    function buildPlanFromForm(
+        _session: SessionDraft,
+        existingPlan: AttemptPlanDraft
+    ): AttemptPlanDraft {
         const predictionSec = toNumberOrUndefined(predictionRaw);
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
-
         const payloadMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
 
-        const designTags = isBaseline
+        const designTags: AttemptPlanDraft["designTags"] = isBaseline
             ? undefined
             : {
-                canopyMaterial: canopyMaterial,
-                canopyShape: canopyShape,
+                canopyMaterial,
+                canopyShape,
                 stringsCount:
                     toNumberOrUndefined(stringsCountRaw) != null
                         ? clampInt(toNumberOrUndefined(stringsCountRaw)!, 1, 16)
@@ -197,24 +268,21 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         };
     }
 
-    function validateRequired(session: SessionDraft) {
+    function validateRequired(_session: SessionDraft): string | null {
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
         if (dropHeightM == null || dropHeightM <= 0) {
-            return "Drop Height (m) is required and must be > 0.";
+            return tA1AttemptPlan("validationDropHeight");
         }
 
-        // session setup said you can "measure later" BUT must be filled before attempt saved.
-        // So here we enforce.
         if (!massUnknown) {
             const massG = toNumberOrUndefined(payloadMassRaw);
             if (massG == null || massG <= 0) {
-                return "Payload Mass (g) is required unless you set it as Unknown.";
+                return tA1AttemptPlan("validationPayloadMass");
             }
         }
 
         if (!isBaseline) {
-            // For prototypes, encourage at least one design descriptor (material/shape/notes)
-            const anyTag =
+            const hasAnyDesignDetail =
                 Boolean(canopyMaterial) ||
                 Boolean(canopyShape) ||
                 Boolean(designNotes.trim()) ||
@@ -222,8 +290,8 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
                 Boolean(canopySizeRaw.trim()) ||
                 Boolean(stringLengthRaw.trim());
 
-            if (!anyTag) {
-                return "Please add at least one prototype design detail (material/shape/size/notes).";
+            if (!hasAnyDesignDetail) {
+                return tA1AttemptPlan("validationPrototypeDesign");
             }
         }
 
@@ -234,33 +302,35 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         if (!baselineRefs) return [];
 
         const gates: ConfirmGate[] = [];
-        const curHeight = toNumberOrUndefined(dropHeightRaw);
+        const currentHeight = toNumberOrUndefined(dropHeightRaw);
         const baseHeight = baselineRefs.baseHeight;
 
-        if (!isBaseline && curHeight != null && baseHeight != null && baseHeight > 0) {
-            const diff = pctDiff(curHeight, baseHeight);
-            if (diff > 0.05 && !confirmed.height) {
+        if (!isBaseline && currentHeight != null && baseHeight != null && baseHeight > 0) {
+            const heightDiff = pctDiff(currentHeight, baseHeight);
+            if (heightDiff > 0.05 && !confirmed.height) {
                 gates.push({
                     key: "height",
-                    message:
-                        "Height changed; comparisons may be unfair. Please confirm you still want to continue.",
+                    message: tA1AttemptPlan("confirmHeightChanged"),
                 });
             }
         }
 
-        const curMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
-        const baseMassUnknown = baselineRefs.baseMassUnknown;
-        const baseMassG = baselineRefs.baseMassG;
+        const currentMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
+        const {baseMassUnknown, baseMassG} = baselineRefs;
 
         if (!isBaseline) {
-            // Only gate if both are known numeric masses
-            if (!massUnknown && !baseMassUnknown && curMassG != null && baseMassG != null && baseMassG > 0) {
-                const diff = pctDiff(curMassG, baseMassG);
-                if (diff > 0.1 && !confirmed.mass) {
+            if (
+                !massUnknown &&
+                !baseMassUnknown &&
+                currentMassG != null &&
+                baseMassG != null &&
+                baseMassG > 0
+            ) {
+                const massDiff = pctDiff(currentMassG, baseMassG);
+                if (massDiff > 0.1 && !confirmed.mass) {
                     gates.push({
                         key: "mass",
-                        message:
-                            "Payload changed; speed/force comparison changes. Please confirm you still want to continue.",
+                        message: tA1AttemptPlan("confirmMassChanged"),
                     });
                 }
             }
@@ -270,43 +340,40 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
     }
 
     function openNextConfirmIfNeeded(gates: ConfirmGate[]): boolean {
-        const next = gates[0] ?? null;
-        if (!next) return false;
-        setPendingConfirm(next);
+        const nextGate = gates[0] ?? null;
+        if (!nextGate) return false;
+        setPendingConfirm(nextGate);
         return true;
     }
 
     function onConfirmGateYes() {
         if (!pendingConfirm) return;
-        const key = pendingConfirm.key;
-        setConfirmed((prev) => ({...prev, [key]: true}));
+
+        const gateKey = pendingConfirm.key;
+        setConfirmed((prev) => ({...prev, [gateKey]: true}));
         setPendingConfirm(null);
 
-        // After confirming, try continue again automatically.
-        // We call onRecordVideo via a microtask so state updates apply.
-        queueMicrotask(() => onRecordVideo());
+        queueMicrotask(() => {
+            onRecordVideo();
+        });
     }
 
     function onRecordVideo() {
-        if (!user) return;
-        if (!draft || !attempt) return;
+        if (!user || !draft || !attempt) return;
 
-        const err = validateRequired(draft.session);
-        if (err) {
-            Alert.alert("Check fields", err);
+        const validationError = validateRequired(draft.session);
+        if (validationError) {
+            Alert.alert(tActivityCommon("checkFieldsTitle"), validationError);
             return;
         }
 
         const gates = computeConfirmGates();
-        const opened = openNextConfirmIfNeeded(gates);
-        if (opened) return;
+        const didOpenConfirm = openNextConfirmIfNeeded(gates);
+        if (didOpenConfirm) return;
 
-        // Persist plan
         const nextPlan = buildPlanFromForm(draft.session, attempt.plan);
         persistAttemptPlan(nextPlan);
 
-        // v1: we haven’t implemented camera screen yet, so route directly to Measurements.
-        // Next step: A1RecordVideo screen (you asked "metadata only for now"; we’ll add later if you want).
         navigation.navigate("A1Measurements", {activityId, runId, attemptIndex});
     }
 
@@ -315,47 +382,77 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
     if (!draft || !attempt) {
         return (
             <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
+                <Text style={styles.loadingDraftText}>{tActivityCommon("loadingDraft")}</Text>
             </View>
         );
     }
 
-    return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>{attemptLabel(attemptIndex)}</Text>
-                <Text style={styles.sub}>
-                    Plan this attempt before recording. Keep height and payload consistent for fair comparison.
-                </Text>
+    const materialOptions: ReadonlyArray<{
+        value: CanopyMaterial;
+        labelKey:
+            | "canopyMaterialPaper"
+            | "canopyMaterialPlastic"
+            | "canopyMaterialFabric"
+            | "canopyMaterialOther";
+    }> = [
+        {value: "paper", labelKey: "canopyMaterialPaper"},
+        {value: "plastic", labelKey: "canopyMaterialPlastic"},
+        {value: "fabric", labelKey: "canopyMaterialFabric"},
+        {value: "other", labelKey: "canopyMaterialOther"},
+    ];
 
-                {/* Confirm modal-like card (simple, no extra deps) */}
+    const shapeOptions: ReadonlyArray<{
+        value: CanopyShape;
+        labelKey:
+            | "canopyShapeCircle"
+            | "canopyShapeSquare"
+            | "canopyShapeOther";
+    }> = [
+        {value: "circle", labelKey: "canopyShapeCircle"},
+        {value: "square", labelKey: "canopyShapeSquare"},
+        {value: "other", labelKey: "canopyShapeOther"},
+    ];
+
+    return (
+        <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+                <Text style={styles.title}>{attemptTitle}</Text>
+                <Text style={styles.sub}>{tA1AttemptPlan("subtitle")}</Text>
+
                 {pendingConfirm ? (
                     <View style={styles.confirmCard}>
-                        <Text style={styles.confirmTitle}>Confirmation needed</Text>
+                        <Text style={styles.confirmTitle}>{tA1AttemptPlan("confirmationNeededTitle")}</Text>
                         <Text style={styles.confirmBody}>{pendingConfirm.message}</Text>
-                        <View style={{flexDirection: "row", gap: 10, marginTop: 12}}>
+
+                        <View style={styles.confirmActionsRow}>
                             <Pressable
-                                style={[styles.secondaryBtn, {flex: 1}]}
+                                style={[styles.secondaryBtn, styles.confirmAction]}
                                 onPress={() => setPendingConfirm(null)}
                             >
-                                <Text style={styles.secondaryBtnText}>Cancel</Text>
+                                <Text style={styles.secondaryBtnText}>{t("common:actions.cancel")}</Text>
                             </Pressable>
-                            <Pressable style={[styles.primaryBtn, {flex: 1}]} onPress={onConfirmGateYes}>
-                                <Text style={styles.primaryBtnText}>I Understand</Text>
+
+                            <Pressable
+                                style={[styles.primaryBtn, styles.confirmAction]}
+                                onPress={onConfirmGateYes}
+                            >
+                                <Text style={styles.primaryBtnText}>
+                                    {tA1AttemptPlan("confirmationUnderstand")}
+                                </Text>
                             </Pressable>
                         </View>
                     </View>
                 ) : null}
 
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Prediction</Text>
-                    <Text style={styles.help}>Estimate how many seconds until first ground contact.</Text>
+                    <Text style={styles.cardTitle}>{tA1AttemptPlan("predictionTitle")}</Text>
+                    <Text style={styles.help}>{tA1AttemptPlan("predictionHelp")}</Text>
 
-                    <Text style={styles.label}>Prediction (seconds)</Text>
+                    <Text style={styles.label}>{tA1AttemptPlan("predictionLabel")}</Text>
                     <TextInput
                         value={predictionRaw}
                         onChangeText={setPredictionRaw}
-                        placeholder="e.g. 1.2"
+                        placeholder={tA1AttemptPlan("predictionPlaceholder")}
                         keyboardType="decimal-pad"
                         style={styles.input}
                     />
@@ -363,179 +460,230 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
 
                 {!isBaseline ? (
                     <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Prototype Design</Text>
-                        <Text style={styles.help}>
-                            Choose a few tags and/or write notes. This helps your comparison dashboard later.
-                        </Text>
+                        <Text style={styles.cardTitle}>{tA1AttemptPlan("prototypeDesignTitle")}</Text>
+                        <Text style={styles.help}>{tA1AttemptPlan("prototypeDesignHelp")}</Text>
 
-                        <Text style={styles.label}>Canopy material</Text>
+                        <Text style={styles.label}>{tA1AttemptPlan("canopyMaterialLabel")}</Text>
                         <View style={styles.segment}>
-                            {(["paper", "plastic", "fabric", "other"] as const).map((v) => (
+                            {materialOptions.map((option) => (
                                 <Pressable
-                                    key={v}
-                                    style={[styles.segmentBtn, canopyMaterial === v && styles.segmentBtnActive]}
-                                    onPress={() => setCanopyMaterial(v)}
+                                    key={option.value}
+                                    style={[
+                                        styles.segmentBtn,
+                                        canopyMaterial === option.value && styles.segmentBtnActive,
+                                    ]}
+                                    onPress={() => setCanopyMaterial(option.value)}
                                 >
                                     <Text
-                                        style={[styles.segmentText, canopyMaterial === v && styles.segmentTextActive]}>
-                                        {v}
+                                        style={[
+                                            styles.segmentText,
+                                            canopyMaterial === option.value && styles.segmentTextActive,
+                                        ]}
+                                    >
+                                        {tA1AttemptPlan(option.labelKey)}
                                     </Text>
                                 </Pressable>
                             ))}
                         </View>
 
-                        <Text style={[styles.label, {marginTop: 12}]}>Canopy shape</Text>
+                        <Text style={[styles.label, styles.labelSpacing]}>
+                            {tA1AttemptPlan("canopyShapeLabel")}
+                        </Text>
                         <View style={styles.segment}>
-                            {(["circle", "square", "other"] as const).map((v) => (
+                            {shapeOptions.map((option) => (
                                 <Pressable
-                                    key={v}
-                                    style={[styles.segmentBtn, canopyShape === v && styles.segmentBtnActive]}
-                                    onPress={() => setCanopyShape(v)}
+                                    key={option.value}
+                                    style={[
+                                        styles.segmentBtn,
+                                        canopyShape === option.value && styles.segmentBtnActive,
+                                    ]}
+                                    onPress={() => setCanopyShape(option.value)}
                                 >
-                                    <Text style={[styles.segmentText, canopyShape === v && styles.segmentTextActive]}>
-                                        {v}
+                                    <Text
+                                        style={[
+                                            styles.segmentText,
+                                            canopyShape === option.value && styles.segmentTextActive,
+                                        ]}
+                                    >
+                                        {tA1AttemptPlan(option.labelKey)}
                                     </Text>
                                 </Pressable>
                             ))}
                         </View>
 
-                        <View style={{flexDirection: "row", gap: 10}}>
-                            <View style={{flex: 1}}>
-                                <Text style={styles.label}>Strings count</Text>
+                        <View style={styles.twoColRow}>
+                            <View style={styles.flexOne}>
+                                <Text style={styles.label}>{tA1AttemptPlan("stringsCountLabel")}</Text>
                                 <TextInput
                                     value={stringsCountRaw}
                                     onChangeText={setStringsCountRaw}
-                                    placeholder="e.g. 4"
+                                    placeholder={tA1AttemptPlan("stringsCountPlaceholder")}
                                     keyboardType="number-pad"
                                     style={styles.input}
                                 />
                             </View>
-                            <View style={{flex: 1}}>
-                                <Text style={styles.label}>String length (cm)</Text>
+
+                            <View style={styles.flexOne}>
+                                <Text style={styles.label}>{tA1AttemptPlan("stringLengthLabel")}</Text>
                                 <TextInput
                                     value={stringLengthRaw}
                                     onChangeText={setStringLengthRaw}
-                                    placeholder="e.g. 20"
+                                    placeholder={tA1AttemptPlan("stringLengthPlaceholder")}
                                     keyboardType="decimal-pad"
                                     style={styles.input}
                                 />
                             </View>
                         </View>
 
-                        <Text style={styles.label}>Canopy diameter / side length (cm)</Text>
+                        <Text style={styles.label}>{tA1AttemptPlan("canopySizeLabel")}</Text>
                         <TextInput
                             value={canopySizeRaw}
                             onChangeText={setCanopySizeRaw}
-                            placeholder="e.g. 25"
+                            placeholder={tA1AttemptPlan("canopySizePlaceholder")}
                             keyboardType="decimal-pad"
                             style={styles.input}
                         />
 
-                        <Text style={styles.label}>Notes</Text>
+                        <Text style={styles.label}>{tA1AttemptPlan("notesLabel")}</Text>
                         <TextInput
                             value={designNotes}
                             onChangeText={setDesignNotes}
-                            placeholder="What changed and why?"
-                            style={[styles.input, {height: 90, textAlignVertical: "top"}]}
+                            placeholder={tA1AttemptPlan("notesPlaceholder")}
+                            style={[styles.input, styles.notesInput]}
                             multiline
                         />
 
                         <View style={styles.sketchBox}>
-                            <Text style={{fontWeight: "900"}}>Sketch upload (photo)</Text>
-                            <Text style={{marginTop: 6, opacity: 0.75, lineHeight: 18}}>
-                                v1: we’ll add camera/gallery picker later. For now, keep your sketch photo ready.
-                            </Text>
+                            <Text style={styles.sketchTitle}>{tA1AttemptPlan("sketchUploadTitle")}</Text>
+                            <Text style={styles.sketchHelp}>{tA1AttemptPlan("sketchUploadHelp")}</Text>
                         </View>
                     </View>
                 ) : (
                     <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Attempt Type</Text>
-                        <Text style={styles.help}>
-                            Baseline is always “No parachute”. You’ll build prototypes after this.
-                        </Text>
+                        <Text style={styles.cardTitle}>{tA1AttemptPlan("attemptTypeTitle")}</Text>
+                        <Text style={styles.help}>{tA1AttemptPlan("attemptTypeHelp")}</Text>
                         <View style={styles.pill}>
-                            <Text style={styles.pillText}>Baseline (No parachute)</Text>
+                            <Text style={styles.pillText}>{tA1AttemptPlan("attemptTypeBaselinePill")}</Text>
                         </View>
                     </View>
                 )}
 
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Comparison Parameters</Text>
+                    <Text style={styles.cardTitle}>{tA1AttemptPlan("comparisonParametersTitle")}</Text>
 
-                    <Text style={styles.label}>Drop Height (m)</Text>
+                    <Text style={styles.label}>{tA1AttemptPlan("dropHeightLabel")}</Text>
                     <TextInput
                         value={dropHeightRaw}
-                        onChangeText={(t) => {
-                            setDropHeightRaw(t);
-                            if (!isBaseline) setConfirmed((prev) => ({...prev, height: false}));
+                        onChangeText={(text) => {
+                            setDropHeightRaw(text);
+                            if (!isBaseline) {
+                                setConfirmed((prev) => ({...prev, height: false}));
+                            }
                         }}
-                        placeholder="e.g. 1.5"
+                        placeholder={tA1AttemptPlan("dropHeightPlaceholder")}
                         keyboardType="decimal-pad"
                         style={styles.input}
                     />
                     {!isBaseline && baselineRefs?.baseHeight != null ? (
-                        <Text style={styles.help}>Baseline reference height: {baselineRefs.baseHeight} m</Text>
+                        <Text style={styles.help}>
+                            {tA1AttemptPlan("baselineReferenceHeight", {
+                                value: baselineRefs.baseHeight,
+                            })}
+                        </Text>
                     ) : null}
 
-                    <Text style={[styles.label, {marginTop: 12}]}>Payload Mass (g)</Text>
-                    <Text style={styles.help}>If unknown, force/drag/g-force may not be computed.</Text>
+                    <Text style={[styles.label, styles.labelSpacing]}>
+                        {tA1AttemptPlan("payloadMassLabel")}
+                    </Text>
+                    <Text style={styles.help}>{tA1AttemptPlan("payloadMassHelp")}</Text>
 
-                    <View style={{flexDirection: "row", gap: 10}}>
-                        <View style={{flex: 1}}>
+                    <View style={styles.twoColRow}>
+                        <View style={styles.flexOne}>
                             <TextInput
                                 value={payloadMassRaw}
-                                onChangeText={(t) => {
-                                    setPayloadMassRaw(t);
-                                    if (!isBaseline) setConfirmed((prev) => ({...prev, mass: false}));
+                                onChangeText={(text) => {
+                                    setPayloadMassRaw(text);
+                                    if (!isBaseline) {
+                                        setConfirmed((prev) => ({...prev, mass: false}));
+                                    }
                                 }}
-                                placeholder="e.g. 20"
+                                placeholder={tA1AttemptPlan("payloadMassPlaceholder")}
                                 keyboardType="number-pad"
-                                style={[styles.input, massUnknown && {opacity: 0.5}]}
+                                style={[styles.input, massUnknown && styles.disabledInput]}
                                 editable={!massUnknown}
                             />
                         </View>
+
                         <Pressable
                             style={[styles.toggleChip, massUnknown && styles.toggleChipOn]}
                             onPress={() => {
-                                setMassUnknown((v) => {
-                                    const next = !v;
-                                    if (!isBaseline) setConfirmed((prev) => ({...prev, mass: false}));
-                                    return next;
+                                setMassUnknown((prev) => {
+                                    const nextValue = !prev;
+                                    if (!isBaseline) {
+                                        setConfirmed((current) => ({...current, mass: false}));
+                                    }
+                                    return nextValue;
                                 });
                             }}
                         >
                             <Text style={[styles.toggleChipText, massUnknown && styles.toggleChipTextOn]}>
-                                {massUnknown ? "Unknown" : "Known"}
+                                {massUnknown
+                                    ? tA1AttemptPlan("massUnknown")
+                                    : tA1AttemptPlan("massKnown")}
                             </Text>
                         </Pressable>
                     </View>
 
-                    {!isBaseline && !massUnknown && baselineRefs?.baseMassG != null && !baselineRefs.baseMassUnknown ? (
-                        <Text style={styles.help}>Baseline reference mass: {baselineRefs.baseMassG} g</Text>
+                    {!isBaseline &&
+                    !massUnknown &&
+                    baselineRefs?.baseMassG != null &&
+                    !baselineRefs.baseMassUnknown ? (
+                        <Text style={styles.help}>
+                            {tA1AttemptPlan("baselineReferenceMass", {
+                                value: baselineRefs.baseMassG,
+                            })}
+                        </Text>
                     ) : null}
                 </View>
 
                 <Pressable style={styles.primaryBtn} onPress={onRecordVideo}>
-                    <Text style={styles.primaryBtnText}>Record Drop Video</Text>
+                    <Text style={styles.primaryBtnText}>{tA1AttemptPlan("recordDropVideo")}</Text>
                 </Pressable>
 
-                <Text style={styles.footerHint}>
-                    Next: video capture (v1 placeholder) → measurements → results. You can add up to 3 prototypes.
-                </Text>
+                <Text style={styles.footerHint}>{tA1AttemptPlan("footerHint")}</Text>
 
-                <View style={{height: 30}}/>
+                <View style={styles.bottomSpacer}/>
             </ScrollView>
         </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
+    screen: {
+        flex: 1,
+    },
+    container: {
+        flexGrow: 1,
+        padding: 20,
+    },
+    center: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    loadingDraftText: {
+        fontWeight: "900",
+    },
+    title: {
+        fontSize: 26,
+        fontWeight: "900",
+        marginTop: 6,
+    },
+    sub: {
+        marginTop: 8,
+        opacity: 0.75,
+        lineHeight: 18,
+    },
     card: {
         marginTop: 14,
         borderWidth: 1,
@@ -544,20 +692,38 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         padding: 14,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: "900",
+    },
+    label: {
+        marginTop: 12,
+        fontWeight: "800",
+    },
+    labelSpacing: {
+        marginTop: 12,
+    },
+    help: {
+        marginTop: 6,
+        opacity: 0.7,
+        lineHeight: 18,
+    },
     input: {
         marginTop: 8,
         borderWidth: 1,
         borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        backgroundColor: "#fff",
         borderRadius: 12,
         paddingHorizontal: 12,
         paddingVertical: Platform.OS === "ios" ? 12 : 10,
     },
-
+    disabledInput: {
+        opacity: 0.5,
+    },
+    notesInput: {
+        height: 90,
+        textAlignVertical: "top",
+    },
     segment: {
         marginTop: 8,
         flexDirection: "row",
@@ -567,15 +733,30 @@ const styles = StyleSheet.create({
     segmentBtn: {
         borderWidth: 1,
         borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        backgroundColor: "#fff",
         borderRadius: 999,
         paddingVertical: 8,
         paddingHorizontal: 12,
     },
-    segmentBtnActive: {backgroundColor: "#111", borderColor: "#111"},
-    segmentText: {fontWeight: "800", opacity: 0.85, textTransform: "capitalize"},
-    segmentTextActive: {color: "white", opacity: 1},
-
+    segmentBtnActive: {
+        backgroundColor: "#111",
+        borderColor: "#111",
+    },
+    segmentText: {
+        fontWeight: "800",
+        opacity: 0.85,
+    },
+    segmentTextActive: {
+        color: "#fff",
+        opacity: 1,
+    },
+    twoColRow: {
+        flexDirection: "row",
+        gap: 10,
+    },
+    flexOne: {
+        flex: 1,
+    },
     pill: {
         marginTop: 10,
         alignSelf: "flex-start",
@@ -584,17 +765,26 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 12,
     },
-    pillText: {color: "white", fontWeight: "900"},
-
+    pillText: {
+        color: "#fff",
+        fontWeight: "900",
+    },
     sketchBox: {
         marginTop: 14,
         borderWidth: 1,
         borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        backgroundColor: "#fff",
         borderRadius: 12,
         padding: 12,
     },
-
+    sketchTitle: {
+        fontWeight: "900",
+    },
+    sketchHelp: {
+        marginTop: 6,
+        opacity: 0.75,
+        lineHeight: 18,
+    },
     toggleChip: {
         alignSelf: "stretch",
         justifyContent: "center",
@@ -602,12 +792,20 @@ const styles = StyleSheet.create({
         borderColor: "#e5e5e5",
         borderRadius: 12,
         paddingHorizontal: 12,
-        backgroundColor: "white",
+        backgroundColor: "#fff",
     },
-    toggleChipOn: {backgroundColor: "#111", borderColor: "#111"},
-    toggleChipText: {fontWeight: "900", opacity: 0.8},
-    toggleChipTextOn: {color: "white", opacity: 1},
-
+    toggleChipOn: {
+        backgroundColor: "#111",
+        borderColor: "#111",
+    },
+    toggleChipText: {
+        fontWeight: "900",
+        opacity: 0.8,
+    },
+    toggleChipTextOn: {
+        color: "#fff",
+        opacity: 1,
+    },
     primaryBtn: {
         marginTop: 14,
         backgroundColor: "#111",
@@ -615,19 +813,23 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         alignItems: "center",
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
-
+    primaryBtnText: {
+        color: "#fff",
+        fontWeight: "900",
+        fontSize: 16,
+    },
     secondaryBtn: {
         marginTop: 14,
-        backgroundColor: "white",
+        backgroundColor: "#fff",
         borderWidth: 1,
         borderColor: "#e5e5e5",
         paddingVertical: 14,
         borderRadius: 14,
         alignItems: "center",
     },
-    secondaryBtnText: {fontWeight: "900"},
-
+    secondaryBtnText: {
+        fontWeight: "900",
+    },
     confirmCard: {
         marginTop: 14,
         borderWidth: 1,
@@ -636,8 +838,29 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         padding: 14,
     },
-    confirmTitle: {fontSize: 16, fontWeight: "900"},
-    confirmBody: {marginTop: 8, opacity: 0.85, lineHeight: 18},
-
-    footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
+    confirmTitle: {
+        fontSize: 16,
+        fontWeight: "900",
+    },
+    confirmBody: {
+        marginTop: 8,
+        opacity: 0.85,
+        lineHeight: 18,
+    },
+    confirmActionsRow: {
+        flexDirection: "row",
+        gap: 10,
+        marginTop: 12,
+    },
+    confirmAction: {
+        flex: 1,
+    },
+    footerHint: {
+        marginTop: 10,
+        opacity: 0.7,
+        lineHeight: 18,
+    },
+    bottomSpacer: {
+        height: 30,
+    },
 });

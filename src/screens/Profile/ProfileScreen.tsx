@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useState} from "react";
 import {
     View,
     Text,
@@ -7,10 +7,14 @@ import {
     StyleSheet,
     ActivityIndicator,
     Alert,
+    ScrollView,
 } from "react-native";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { auth, db } from "../../services/firebase";
-import { logout } from "../../services/authService";
+import {doc, onSnapshot, updateDoc} from "firebase/firestore";
+import {useTranslation} from "react-i18next";
+
+import {auth, db} from "../../services/firebase";
+import {logout} from "../../services/authService";
+import LanguageSwitcher from "../../components/common/LanguageSwitcher";
 
 type UserProfileDoc = {
     uid: string;
@@ -23,6 +27,7 @@ type UserProfileDoc = {
 };
 
 export default function ProfileScreen() {
+    const {t} = useTranslation(["common", "profile"]);
     const user = auth.currentUser;
 
     const [profile, setProfile] = useState<UserProfileDoc | null>(null);
@@ -43,27 +48,19 @@ export default function ProfileScreen() {
         return unsub;
     }, [user?.uid]);
 
-    if (!user) {
-        return (
-            <View style={styles.container}>
-                <Text style={styles.title}>Not logged in</Text>
-            </View>
-        );
-    }
-
-    if (!profile) {
-        return (
-            <View style={[styles.container, { alignItems: "center" }]}>
-                <ActivityIndicator />
-                <Text style={{ marginTop: 10 }}>Loading profile...</Text>
-            </View>
-        );
-    }
-
     const saveName = async () => {
+        if (!user) {
+            Alert.alert(t("common:feedback.error"), t("profile:notLoggedIn"));
+            return;
+        }
+
         const trimmed = name.trim();
+
         if (trimmed.length < 2) {
-            Alert.alert("Invalid name", "Name must be at least 2 characters.");
+            Alert.alert(
+                t("profile:invalidNameTitle"),
+                t("profile:invalidNameMessage")
+            );
             return;
         }
 
@@ -72,30 +69,69 @@ export default function ProfileScreen() {
             await updateDoc(doc(db, "users", user.uid), {
                 displayName: trimmed,
             });
-            Alert.alert("Saved", "Your name has been updated.");
+
+            Alert.alert(
+                t("common:feedback.saved"),
+                t("profile:updatedMessage")
+            );
         } catch (e: any) {
-            Alert.alert("Update failed", e?.message ?? "Please try again.");
+            Alert.alert(
+                t("common:feedback.updateFailed"),
+                e?.message ?? t("common:actions.retry")
+            );
         } finally {
             setSaving(false);
         }
     };
 
+    if (!user) {
+        return (
+            <View style={styles.centerContainer}>
+                <Text style={styles.title}>{t("profile:notLoggedIn")}</Text>
+            </View>
+        );
+    }
+
+    if (!profile) {
+        return (
+            <View style={styles.centerContainer}>
+                <ActivityIndicator/>
+                <Text style={styles.loadingText}>{t("common:states.loadingProfile")}</Text>
+            </View>
+        );
+    }
+
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Profile</Text>
+        <ScrollView contentContainerStyle={styles.container}>
+            <Text style={styles.title}>{t("profile:title")}</Text>
 
             <View style={styles.card}>
-                <Text style={styles.row}><Text style={styles.k}>Email: </Text>{profile.email ?? "-"}</Text>
-                <Text style={styles.row}><Text style={styles.k}>Provider: </Text>{profile.provider}</Text>
-                <Text style={styles.row}><Text style={styles.k}>Team ID: </Text>{profile.teamId ?? "Not in a team"}</Text>
-                <Text style={styles.row}><Text style={styles.k}>UID: </Text>{profile.uid}</Text>
+                <Text style={styles.row}>
+                    <Text style={styles.k}>{t("profile:email")}: </Text>
+                    {profile.email ?? "-"}
+                </Text>
+
+                <Text style={styles.row}>
+                    <Text style={styles.k}>{t("profile:provider")}: </Text>
+                    {profile.provider}
+                </Text>
+
+                <Text style={styles.row}>
+                    <Text style={styles.k}>{t("profile:teamId")}: </Text>
+                    {profile.teamId ?? t("profile:notInTeam")}
+                </Text>
+
+                <Text style={styles.row}>
+                    <Text style={styles.k}>{t("profile:uid")}: </Text>
+                    {profile.uid}
+                </Text>
             </View>
 
-            <Text style={styles.label}>Display name</Text>
+            <Text style={styles.label}>{t("profile:displayName")}</Text>
             <TextInput
                 style={styles.input}
                 value={name}
-                placeholder="Your name"
+                placeholder={t("profile:placeholderName")}
                 onChangeText={setName}
             />
 
@@ -104,19 +140,40 @@ export default function ProfileScreen() {
                 disabled={saving}
                 onPress={saveName}
             >
-                <Text style={styles.buttonText}>{saving ? "Saving..." : "Save"}</Text>
+                <Text style={styles.buttonText}>
+                    {saving ? t("common:states.saving") : t("common:actions.save")}
+                </Text>
             </Pressable>
 
+            <LanguageSwitcher/>
+
             <Pressable style={[styles.button, styles.logout]} onPress={logout}>
-                <Text style={styles.buttonText}>Logout</Text>
+                <Text style={styles.buttonText}>{t("common:actions.logout")}</Text>
             </Pressable>
-        </View>
+        </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20, justifyContent: "center" },
-    title: { fontSize: 28, fontWeight: "800", marginBottom: 18 },
+    container: {
+        flexGrow: 1,
+        padding: 20,
+        justifyContent: "center",
+    },
+    centerContainer: {
+        flex: 1,
+        padding: 20,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    loadingText: {
+        marginTop: 10,
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: "800",
+        marginBottom: 18,
+    },
     card: {
         borderWidth: 1,
         borderColor: "#e5e5e5",
@@ -125,15 +182,24 @@ const styles = StyleSheet.create({
         marginBottom: 18,
         backgroundColor: "#fafafa",
     },
-    row: { marginBottom: 6 },
-    k: { fontWeight: "700" },
-    label: { fontSize: 14, fontWeight: "700", marginTop: 6 },
+    row: {
+        marginBottom: 6,
+    },
+    k: {
+        fontWeight: "700",
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: "700",
+        marginTop: 6,
+    },
     input: {
         borderWidth: 1,
         borderColor: "#ddd",
         borderRadius: 12,
         padding: 12,
         marginTop: 8,
+        backgroundColor: "white",
     },
     button: {
         backgroundColor: "#111",
@@ -142,7 +208,14 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginTop: 14,
     },
-    buttonDisabled: { opacity: 0.6 },
-    buttonText: { color: "white", fontWeight: "800" },
-    logout: { backgroundColor: "#444" },
+    buttonDisabled: {
+        opacity: 0.6,
+    },
+    buttonText: {
+        color: "white",
+        fontWeight: "800",
+    },
+    logout: {
+        backgroundColor: "#444",
+    },
 });

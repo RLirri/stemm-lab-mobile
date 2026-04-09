@@ -1,14 +1,18 @@
 import React, {useEffect, useState} from "react";
 import {NavigationContainer} from "@react-navigation/native";
 import {onAuthStateChanged, User} from "firebase/auth";
+import {ActivityIndicator, StyleSheet, View} from "react-native";
+
 import {auth} from "../services/firebase";
 import AuthStack from "./AuthStack";
 import AppStack from "./AppStack";
 import {ensureUserProfile} from "../services/userService";
+import {useAppLanguage} from "../hooks/useAppLanguage";
 
 export default function RootNavigator() {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const {isReady} = useAppLanguage();
 
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, async (u) => {
@@ -30,7 +34,13 @@ export default function RootNavigator() {
         return unsub;
     }, []);
 
-    if (loading) return null;
+    if (!isReady || loading) {
+        return (
+            <View style={styles.center}>
+                <ActivityIndicator size="large"/>
+            </View>
+        );
+    }
 
     return (
         <NavigationContainer>
@@ -38,3 +48,12 @@ export default function RootNavigator() {
         </NavigationContainer>
     );
 }
+
+const styles = StyleSheet.create({
+    center: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "white",
+    },
+});

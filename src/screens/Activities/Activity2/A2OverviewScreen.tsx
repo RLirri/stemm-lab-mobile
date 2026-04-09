@@ -9,6 +9,7 @@ import {
     View,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {useTranslation} from "react-i18next";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {getActivityById} from "../../../services/activityService";
@@ -40,12 +41,12 @@ function safeStringArray(x: unknown): string[] {
 }
 
 function formatDbRange(minDb: number, maxDb: number | null): string {
-    // matches your spec formatting, handles null/infinity
     if (maxDb == null) return `${minDb}+ dB`;
     return `${minDb}–${maxDb} dB`;
 }
 
 export default function A2OverviewScreen({route, navigation}: Props) {
+    const {t} = useTranslation(["common", "activities"]);
     const user = auth.currentUser;
     const {activityId} = route.params;
 
@@ -65,57 +66,60 @@ export default function A2OverviewScreen({route, navigation}: Props) {
             } catch (e: any) {
                 if (!mounted) return;
                 setActivity(null);
-                Alert.alert("Load error", e?.message ?? "Failed to load activity.");
+                Alert.alert(
+                    t("common:feedback.error"),
+                    e?.message ?? t("activities:listLoadFailed")
+                );
             } finally {
                 if (!mounted) return;
                 setLoading(false);
             }
         }
 
-        load();
+        void load();
+
         return () => {
             mounted = false;
         };
-    }, [activityId]);
+    }, [activityId, t]);
 
     const title = useMemo(
-        () => normalizeText(activity?.title) ?? "Sound Pollution Hunter",
-        [activity?.title]
+        () => normalizeText(activity?.title) ?? t("activities:a2.fallbackTitle"),
+        [activity?.title, t]
     );
 
-    // NOTE: Activity type might not include shortDescription/description/instructions strongly.
-    // Use casting, but always normalize.
     const shortDesc = useMemo(() => {
         const a = activity as any;
         return (
             normalizeText(a?.shortDescription) ??
-            "Measure and compare classroom sound levels (dB), record locations, and map loud vs quiet zones."
+            t("activities:a2.fallbackShortDescription")
         );
-    }, [activity]);
+    }, [activity, t]);
 
     const overview = useMemo(() => {
         const a = activity as any;
         return (
             normalizeText(a?.description) ??
-            "Students measure noise from different actions (dropping objects, talking, walking, stamping), record sound levels with GPS, then map loud and quiet zones. They predict the loudest action and reflect on whether earmuffs are needed."
+            t("activities:a2.fallbackOverview")
         );
-    }, [activity]);
+    }, [activity, t]);
 
     const equipment: string[] = useMemo(() => {
         const a = activity as any;
         const list = safeStringArray(a?.equipment);
         if (list.length) return list;
 
-        // fallback if Firestore doc doesn’t include equipment yet
-        return ["Mobile phone with STEMM Lab app", "Everyday objects (pens/books)"];
-    }, [activity]);
+        return [
+            t("activities:a2.equipmentFallback1"),
+            t("activities:a2.equipmentFallback2"),
+        ];
+    }, [activity, t]);
 
     const instructionLines: string[] = useMemo(() => {
         const a = activity as any;
         const inst = normalizeText(a?.instructions);
         if (inst) return splitLines(inst);
 
-        // fallback aligned to your spec
         return [
             "Measure noise from different actions (drop pens/books, talking, walking, stamping).",
             "Record sound levels (dB) and locations (GPS if enabled).",
@@ -127,19 +131,23 @@ export default function A2OverviewScreen({route, navigation}: Props) {
 
     async function onStart() {
         if (!user) {
-            Alert.alert("Sign in required", "Please sign in to start this activity.");
+            Alert.alert(
+                t("common:feedback.signInRequired"),
+                "Please sign in to start this activity."
+            );
             return;
         }
 
         try {
             setStarting(true);
 
-            // Create a run draft now so the rest of A2 flow always has runId.
             const draft = createActivity2RunDraft(activityId, user.uid);
-
             navigation.navigate("A2SessionSetup", {activityId, runId: draft.runId});
         } catch (e: any) {
-            Alert.alert("Start failed", e?.message ?? "Unable to start Activity 2.");
+            Alert.alert(
+                t("activities:detail.startFailed"),
+                e?.message ?? "Unable to start Activity 2."
+            );
         } finally {
             setStarting(false);
         }
@@ -153,7 +161,7 @@ export default function A2OverviewScreen({route, navigation}: Props) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
-                <Text style={styles.loadingText}>Loading activity…</Text>
+                <Text style={styles.loadingText}>{t("common:states.loadingActivity")}</Text>
             </View>
         );
     }
@@ -161,13 +169,13 @@ export default function A2OverviewScreen({route, navigation}: Props) {
     if (!activity) {
         return (
             <View style={styles.center}>
-                <Text style={styles.errorTitle}>Activity not found</Text>
+                <Text style={styles.errorTitle}>{t("activities:detail.notFound")}</Text>
                 <Text style={styles.errorSub}>
                     This activity may be missing from Firestore or the provided activityId is invalid.
                 </Text>
 
                 <Pressable style={styles.primaryBtn} onPress={onBack}>
-                    <Text style={styles.primaryBtnText}>Back</Text>
+                    <Text style={styles.primaryBtnText}>{t("common:actions.back")}</Text>
                 </Pressable>
             </View>
         );
@@ -179,30 +187,27 @@ export default function A2OverviewScreen({route, navigation}: Props) {
             <Text style={styles.sub}>{shortDesc}</Text>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Overview</Text>
+                <Text style={styles.cardTitle}>{t("activities:detail.overview")}</Text>
                 <Text style={styles.help}>{overview}</Text>
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Equipment</Text>
-                {(equipment ?? []).map((it, idx) => (
+                <Text style={styles.cardTitle}>{t("activities:detail.equipment")}</Text>
+                {equipment.map((it, idx) => (
                     <Bullet key={`${it}-${idx}`} text={it}/>
                 ))}
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Instructions</Text>
-                {(instructionLines ?? []).map((line, idx) => (
+                <Text style={styles.cardTitle}>{t("activities:detail.instructions")}</Text>
+                {instructionLines.map((line, idx) => (
                     <Bullet key={`${line}-${idx}`} text={line}/>
                 ))}
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Hearing Damage Risk (dB)</Text>
-                <Text style={styles.help}>
-                    Use this table to assign a risk category for each measurement. Then answer: “Should we
-                    wear earmuffs in your classroom?”
-                </Text>
+                <Text style={styles.cardTitle}>{t("activities:a2.hearingRiskTitle")}</Text>
+                <Text style={styles.help}>{t("activities:a2.hearingRiskHelp")}</Text>
 
                 <View style={styles.table}>
                     <View style={[styles.tableRow, styles.tableHeader]}>
@@ -218,19 +223,16 @@ export default function A2OverviewScreen({route, navigation}: Props) {
                     ))}
                 </View>
 
-                <Text style={styles.note}>
-                    Submission policy: minimum <Text style={styles.bold}>3 valid measurements</Text> +{" "}
-                    <Text style={styles.bold}>1 session video evidence</Text>.
-                </Text>
+                <Text style={styles.note}>{t("activities:a2.submissionPolicy")}</Text>
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Write-up Prompts</Text>
-                <Bullet text="Predict which action created the loudest sound."/>
-                <Bullet text="Record results (dB) for at least 3 actions."/>
-                <Bullet text="Were you right? Why or why not?"/>
-                <Bullet text="Any surprises? Explain using surface/material/energy."/>
-                <Bullet text="Should we wear earmuffs in your classroom? Use the risk table as evidence."/>
+                <Text style={styles.cardTitle}>{t("activities:a2.promptsTitle")}</Text>
+                <Bullet text={t("activities:a2.prompt1")}/>
+                <Bullet text={t("activities:a2.prompt2")}/>
+                <Bullet text={t("activities:a2.prompt3")}/>
+                <Bullet text={t("activities:a2.prompt4")}/>
+                <Bullet text={t("activities:a2.prompt5")}/>
             </View>
 
             <Pressable
@@ -238,19 +240,25 @@ export default function A2OverviewScreen({route, navigation}: Props) {
                 onPress={onStart}
                 disabled={starting}
             >
-                <Text style={styles.primaryBtnText}>{starting ? "Starting…" : "Start Activity"}</Text>
+                <Text style={styles.primaryBtnText}>
+                    {starting ? t("common:states.starting") : t("common:actions.startActivity")}
+                </Text>
             </Pressable>
 
             <Pressable
                 style={styles.secondaryBtn}
                 onPress={() =>
-                    Alert.alert("Back", "Return to the previous screen?", [
-                        {text: "Cancel", style: "cancel"},
-                        {text: "OK", onPress: onBack},
-                    ])
+                    Alert.alert(
+                        t("common:actions.back"),
+                        "Return to the previous screen?",
+                        [
+                            {text: t("common:actions.cancel"), style: "cancel"},
+                            {text: t("common:actions.ok"), onPress: onBack},
+                        ]
+                    )
                 }
             >
-                <Text style={styles.secondaryBtnText}>Back</Text>
+                <Text style={styles.secondaryBtnText}>{t("common:actions.back")}</Text>
             </Pressable>
 
             <View style={{height: 30}}/>
@@ -317,7 +325,6 @@ const styles = StyleSheet.create({
     cellHeader: {fontWeight: "900", opacity: 0.85},
 
     note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
-    bold: {fontWeight: "900", opacity: 0.95},
 
     primaryBtn: {
         marginTop: 14,
