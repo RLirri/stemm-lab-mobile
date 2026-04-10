@@ -1,5 +1,8 @@
 // src/store/activity7RunDraftStore.ts
 
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
+
 export type GpsPermissionStatus = "unknown" | "granted" | "denied";
 
 /* =========================================================
@@ -33,11 +36,11 @@ export type A7PhaseLabel =
     | "Post-Exercise Measurement 2";
 
 export type A7SensorSample = {
-    timestamp: number; // epoch ms
+    timestamp: number;
     x: number;
     y: number;
     z: number;
-    magnitude?: number; // optional cached magnitude
+    magnitude?: number;
 };
 
 export type A7SamplingMetadata = {
@@ -48,24 +51,18 @@ export type A7SamplingMetadata = {
 
 export type A7MeasurementDraft = {
     id: string;
-
     participantId: string;
     phase: A7MeasurementPhase;
-
     startedAt: number;
     endedAt: number;
     durationMs: number;
-
     samples: A7SensorSample[];
     sampling: A7SamplingMetadata;
-
     estimatedBreathsPerMin?: number;
     detectedCycles?: number;
-
     video?: EvidenceDraft;
     geo?: GeoPointDraft;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
@@ -99,7 +96,7 @@ export type A7ReflectionDraft = {
     highestBreathingRate?: string;
     surprises?: string;
     exerciseEffect?: string;
-    rating?: number; // 1..5
+    rating?: number;
 };
 
 /* =========================================================
@@ -114,25 +111,20 @@ export type A7PredictionComparison = {
 
 export type A7ParticipantSummary = {
     participantId: string;
-
     restBpm?: number;
     postJogBpm?: number;
     postStarJumpBpm?: number;
-
     deltaRestToJog?: number;
     deltaRestToStarJump?: number;
     deltaJogToStarJump?: number;
-
     recoveryConsistencyScore?: number;
     prediction?: A7PredictionComparison;
 };
 
 export type A7SessionMetrics = {
     participantSummaries: A7ParticipantSummary[];
-
     bestParticipantId?: string;
     teamRecoveryConsistencyScore?: number;
-
     avgRestBpm?: number;
     avgPostJogBpm?: number;
     avgPostStarJumpBpm?: number;
@@ -144,20 +136,15 @@ export type A7SessionMetrics = {
 
 export type A7SessionDraft = {
     activityId: string;
-
     sessionLabel?: string;
-
-    participantCount: number; // 1..6
+    participantCount: number;
     participants: A7ParticipantDraft[];
-
-    measurementDurationSec: number; // e.g. 30
+    measurementDurationSec: number;
     targetSamplingHz?: number;
     smoothingWindowSec?: number;
     minPeakGapMs?: number;
-
     startedAt: number;
     endsAt?: number;
-
     gpsEnabled: boolean;
     geo?: {
         lat: number;
@@ -171,28 +158,35 @@ export type A7SessionDraft = {
 export type Activity7RunDraft = {
     runId: string;
     session: A7SessionDraft;
-
     prediction?: A7PredictionDraft;
-
     measurements: A7MeasurementDraft[];
-
     metrics?: A7SessionMetrics;
-
     evidence?: {
         sessionVideo?: EvidenceDraft;
     };
-
     reflection?: A7ReflectionDraft;
-
     createdBy?: string;
     updatedAt: number;
+};
+
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
 };
 
 /* =========================================================
    In-memory store
 ========================================================= */
 
-const drafts = new Map<string, Activity7RunDraft>();
+const DRAFTS_KEY = "__STEMM_A7_RUN_DRAFTS__";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any;
+
+const drafts: Map<string, Activity7RunDraft> =
+    (g[DRAFTS_KEY] ?? new Map<string, Activity7RunDraft>()) as Map<string, Activity7RunDraft>;
+
+g[DRAFTS_KEY] = drafts;
 
 function now() {
     return Date.now();
@@ -228,6 +222,10 @@ function mean(xs: number[]): number {
     let s = 0;
     for (const x of xs) s += x;
     return s / xs.length;
+}
+
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
 }
 
 /* =========================================================
@@ -358,11 +356,6 @@ function computePhaseDelta(from?: number, to?: number): number | undefined {
     return to - from;
 }
 
-/**
- * Lower is better:
- * - variability between post-exercise recovery gaps is better when smaller
- * - average distance from resting rate is also better when smaller
- */
 function computeRecoveryConsistencyScore(args: {
     restBpm?: number;
     postJogBpm?: number;
@@ -429,21 +422,17 @@ function computeSessionMetrics(d: Activity7RunDraft): A7SessionMetrics {
 
         const summary: A7ParticipantSummary = {
             participantId: p.id,
-
             restBpm,
             postJogBpm,
             postStarJumpBpm,
-
             deltaRestToJog: computePhaseDelta(restBpm, postJogBpm),
             deltaRestToStarJump: computePhaseDelta(restBpm, postStarJumpBpm),
             deltaJogToStarJump: computePhaseDelta(postJogBpm, postStarJumpBpm),
-
             recoveryConsistencyScore: computeRecoveryConsistencyScore({
                 restBpm,
                 postJogBpm,
                 postStarJumpBpm,
             }),
-
             prediction: computePredictionComparison(
                 d.prediction,
                 restBpm,
@@ -487,6 +476,66 @@ function computeSessionMetrics(d: Activity7RunDraft): A7SessionMetrics {
     };
 }
 
+function normalizeRecoveredActivity7Draft(payload: Activity7RunDraft): Activity7RunDraft {
+    const participantCount = clampInt(payload.session?.participantCount ?? 1, 1, 6);
+    const normalizedMeasurements = Array.isArray(payload.measurements) ? payload.measurements : [];
+
+    const normalized: Activity7RunDraft = {
+        ...payload,
+        session: {
+            ...payload.session,
+            participantCount,
+            participants: normalizeParticipantsForCount(payload.session?.participants ?? [], participantCount),
+            measurementDurationSec: clampInt(payload.session?.measurementDurationSec ?? 30, 10, 120),
+            targetSamplingHz: isFiniteNumber(payload.session?.targetSamplingHz)
+                ? clampNum(payload.session!.targetSamplingHz!, 1, 500)
+                : undefined,
+            smoothingWindowSec: isFiniteNumber(payload.session?.smoothingWindowSec)
+                ? clampNum(payload.session!.smoothingWindowSec!, 0.1, 5)
+                : undefined,
+            minPeakGapMs: isFiniteNumber(payload.session?.minPeakGapMs)
+                ? clampInt(payload.session!.minPeakGapMs!, 500, 10_000)
+                : undefined,
+            gpsEnabled: payload.session?.gpsEnabled ?? true,
+            gpsPermission: payload.session?.gpsPermission ?? "unknown",
+        },
+        measurements: normalizedMeasurements,
+    };
+
+    return {
+        ...normalized,
+        metrics: payload.metrics ?? computeSessionMetrics(normalized),
+    };
+}
+
+async function persistDraftInternal(
+    draft: Activity7RunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<Activity7RunDraft>({
+        runId: draft.runId,
+        activityId: draft.session.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy ?? null,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.session.startedAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: Activity7RunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activity7RunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
+}
+
 /* =========================================================
    CRUD: Run draft
 ========================================================= */
@@ -494,13 +543,11 @@ function computeSessionMetrics(d: Activity7RunDraft): A7SessionMetrics {
 export function createActivity7RunDraft(params: {
     activityId: string;
     createdBy?: string;
-
     participantCount?: number;
     measurementDurationSec?: number;
     targetSamplingHz?: number;
     smoothingWindowSec?: number;
     minPeakGapMs?: number;
-
     gpsEnabled?: boolean;
     sessionLabel?: string;
 }): Activity7RunDraft {
@@ -512,10 +559,8 @@ export function createActivity7RunDraft(params: {
         session: {
             activityId: params.activityId,
             sessionLabel: trimOrUndef(params.sessionLabel),
-
             participantCount,
             participants: buildParticipants(participantCount),
-
             measurementDurationSec: clampInt(params.measurementDurationSec ?? 30, 10, 120),
             targetSamplingHz: isFiniteNumber(params.targetSamplingHz)
                 ? clampNum(params.targetSamplingHz, 1, 500)
@@ -526,13 +571,10 @@ export function createActivity7RunDraft(params: {
             minPeakGapMs: isFiniteNumber(params.minPeakGapMs)
                 ? clampInt(params.minPeakGapMs, 500, 10_000)
                 : undefined,
-
             startedAt: now(),
-
             gpsEnabled: params.gpsEnabled ?? true,
             gpsPermission: "unknown",
         },
-
         prediction: undefined,
         measurements: [],
         metrics: {participantSummaries: []},
@@ -543,11 +585,16 @@ export function createActivity7RunDraft(params: {
     };
 
     drafts.set(runId, d);
+    fireAndForgetPersist(d);
     return d;
 }
 
 export function getActivity7RunDraft(runId: string): Activity7RunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllActivity7RunDrafts(): Activity7RunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function clearActivity7RunDraft(runId: string) {
@@ -607,6 +654,7 @@ export function updateActivity7Session(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -651,6 +699,7 @@ export function updateActivity7Participant(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -701,6 +750,7 @@ export function setActivity7Prediction(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -712,19 +762,14 @@ export function upsertActivity7Measurement(
     runId: string,
     input: {
         id?: string;
-
         participantId: string;
         phase: A7MeasurementPhase;
-
         startedAt: number;
         endedAt: number;
-
         samples: A7SensorSample[];
         sampling?: Partial<A7SamplingMetadata>;
-
         estimatedBreathsPerMin?: number;
         detectedCycles?: number;
-
         video?: EvidenceDraft;
         geo?: GeoPointDraft;
         notes?: string;
@@ -770,37 +815,26 @@ export function upsertActivity7Measurement(
 
     const nextItem: A7MeasurementDraft = {
         id,
-
         participantId: input.participantId,
         phase,
-
         startedAt,
         endedAt,
         durationMs,
-
         samples,
         sampling,
-
         estimatedBreathsPerMin: isFiniteNumber(input.estimatedBreathsPerMin)
             ? clampNum(input.estimatedBreathsPerMin, 0, 200)
             : prev?.estimatedBreathsPerMin,
         detectedCycles: isFiniteNumber(input.detectedCycles)
             ? clampInt(input.detectedCycles, 0, 10_000)
             : prev?.detectedCycles,
-
         video: input.video ?? prev?.video,
         geo: input.geo ?? prev?.geo,
         notes: trimOrUndef(input.notes) ?? prev?.notes,
-
         createdAt: prev ? prev.createdAt : ts,
         updatedAt: prev ? ts : undefined,
     };
 
-    /**
-     * Uniqueness policy:
-     * keep one active record per participant + phase by replacing the latest matching record
-     * unless explicit id is used for update.
-     */
     let nextMeasurements = [...d.measurements];
 
     if (existingIndex >= 0) {
@@ -828,6 +862,7 @@ export function upsertActivity7Measurement(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -847,6 +882,7 @@ export function removeActivity7Measurement(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -885,6 +921,7 @@ export function setActivity7SessionGeo(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -905,6 +942,7 @@ export function setActivity7GpsPermission(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -925,6 +963,7 @@ export function setActivity7SessionVideo(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -958,7 +997,73 @@ export function setActivity7Reflection(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
+}
+
+/* =========================================================
+   Explicit persistence / recovery helpers
+========================================================= */
+
+export async function saveActivity7RunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<Activity7RunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("Activity 7 draft not found.");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+export async function hydrateActivity7RunDraftFromLocalDb(
+    runId: string
+): Promise<Activity7RunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<Activity7RunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity7Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function getLatestRecoverableActivity7RunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<Activity7RunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<Activity7RunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity7Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function markActivity7RunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+export async function discardActivity7RunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
 }
 
 /* =========================================================
@@ -1127,20 +1232,6 @@ export function validateA7MeasurementDatasets(d: Activity7RunDraft): string[] {
     return missing;
 }
 
-/**
- * Submission-level validation.
- * Required:
- * - valid session
- * - prediction
- * - all required participant/phase measurements
- * - sensor dataset for each measurement
- * - reflection text
- * - rating
- * - GPS permission + coordinates when gpsEnabled
- *
- * Optional:
- * - video evidence
- */
 export function validateA7Submission(d: Activity7RunDraft): string[] {
     const missing: string[] = [];
 
@@ -1170,12 +1261,6 @@ export function validateA7Submission(d: Activity7RunDraft): string[] {
    Leaderboard helpers
 ========================================================= */
 
-/**
- * Activity 7 leaderboard philosophy:
- * lower recoveryConsistencyScore is better.
- * A run is eligible only if every participant has all 3 required phases completed
- * and each summary has a computed recovery consistency score.
- */
 export function isA7LeaderboardEligible(d: Activity7RunDraft): boolean {
     const participants = d.session.participants ?? [];
     if (participants.length === 0) return false;

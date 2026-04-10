@@ -1,6 +1,4 @@
-// src/screens/Activities/Activity7/A7SessionSetupScreen.tsx
-
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -21,7 +19,10 @@ import {auth} from "../../../services/firebase";
 
 import {
     createActivity7RunDraft,
+    discardActivity7RunDraft,
     getActivity7RunDraft,
+    getLatestRecoverableActivity7RunDraft,
+    hydrateActivity7RunDraftFromLocalDb,
     updateActivity7Participant,
     updateActivity7Session,
     validateA7Session,
@@ -135,9 +136,13 @@ type Props = NativeStackScreenProps<AppStackParamList, "A7SessionSetup">;
 
 export default function A7SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
-    const {activityId, runId} = route.params;
+    const {activityId} = route.params;
+    const routeRunId = route.params.runId;
 
     const [draft, setDraft] = useState<Activity7RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // UI buffers
     const [sessionLabel, setSessionLabel] = useState("");
@@ -158,33 +163,127 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
     // participant add input
     const [newParticipantName, setNewParticipantName] = useState("");
 
-    /* ----------------------------
-       Hydrate / Create draft
-    ---------------------------- */
-
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        let d = runId ? getActivity7RunDraft(runId) : null;
-        if (!d) {
-            d = createActivity7RunDraft({
-                activityId,
-                createdBy: user.uid,
-                gpsEnabled: true,
-                participantCount: 1,
-                measurementDurationSec: 30,
-                targetSamplingHz: 25,
-                smoothingWindowSec: 0.6,
-                minPeakGapMs: 1500,
-            });
+        hasBootstrappedRef.current = true;
+
+        const userId = user.uid;
+
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                if (routeRunId) {
+                    const existing = getActivity7RunDraft(routeRunId);
+                    if (existing) {
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity7RunDraftFromLocalDb(routeRunId);
+                    if (hydrated) {
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity7RunDraft({
+                        activityId,
+                        createdBy: userId,
+                        gpsEnabled: true,
+                        participantCount: 1,
+                        measurementDurationSec: 30,
+                        targetSamplingHz: 25,
+                        smoothingWindowSec: 0.6,
+                        minPeakGapMs: 1500,
+                    });
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                const recoverable = await getLatestRecoverableActivity7RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 7 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity7RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A7SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity7RunDraft({
+                                        activityId,
+                                        createdBy: userId,
+                                        gpsEnabled: true,
+                                        participantCount: 1,
+                                        measurementDurationSec: 30,
+                                        targetSamplingHz: 25,
+                                        smoothingWindowSec: 0.6,
+                                        minPeakGapMs: 1500,
+                                    });
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                const created = createActivity7RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    participantCount: 1,
+                    measurementDurationSec: 30,
+                    targetSamplingHz: 25,
+                    smoothingWindowSec: 0.6,
+                    minPeakGapMs: 1500,
+                });
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A7SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity7RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    participantCount: 1,
+                    measurementDurationSec: 30,
+                    targetSamplingHz: 25,
+                    smoothingWindowSec: 0.6,
+                    minPeakGapMs: 1500,
+                });
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
+            }
         }
 
-        setDraft(d);
-    }, [activityId, runId, user]);
-
-    /* ----------------------------
-       Draft -> UI sync
-    ---------------------------- */
+        void bootstrap();
+    }, [activityId, navigation, routeRunId, user]);
 
     useEffect(() => {
         if (!draft) return;
@@ -208,10 +307,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         !!draft?.session.geo &&
         isFiniteNumber(draft?.session.geo.lat) &&
         isFiniteNumber(draft?.session.geo.lng);
-
-    /* ----------------------------
-       Validation (shadow object)
-    ---------------------------- */
 
     const sessionError = useMemo(() => {
         if (!draft) return null;
@@ -274,10 +369,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         gpsPermission,
     ]);
 
-    /* ----------------------------
-       Persist helpers
-    ---------------------------- */
-
     function persistSessionBase(): Activity7RunDraft | null {
         if (!draft) return null;
 
@@ -313,15 +404,12 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
         const next = updateActivity7Session(draft.runId, {
             sessionLabel: trimOrEmpty(sessionLabel) || undefined,
-
             participantCount: nextParticipantCount,
             participants: draft.session.participants,
-
             measurementDurationSec: nextMeasurementDurationSec,
             targetSamplingHz: nextTargetSamplingHz,
             smoothingWindowSec: nextSmoothingWindowSec,
             minPeakGapMs: nextMinPeakGapMs,
-
             gpsEnabled,
             geo: gpsEnabled ? draft.session.geo : undefined,
             gpsPermission,
@@ -330,10 +418,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         setDraft(next);
         return next;
     }
-
-    /* ----------------------------
-       Participants
-    ---------------------------- */
 
     function onRenameParticipant(participantId: string, name: string) {
         if (!draft) return;
@@ -413,10 +497,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         ]);
     }
 
-    /* ----------------------------
-       GPS
-    ---------------------------- */
-
     function onToggleGps(nextVal: boolean) {
         setGpsEnabled(nextVal);
         if (!draft) return;
@@ -486,10 +566,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    /* ----------------------------
-       Continue -> Prediction
-    ---------------------------- */
-
     function onContinue() {
         if (!user || !draft) return;
 
@@ -508,17 +584,14 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         });
     }
 
-    /* ----------------------------
-       Render guards
-    ---------------------------- */
-
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
                 <Text style={{marginTop: 10, opacity: 0.7}}>Loading session…</Text>
+                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
             </View>
         );
     }
@@ -535,7 +608,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                     policy before entering prediction.
                 </Text>
 
-                {/* Session */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Session</Text>
 
@@ -551,7 +623,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Participants */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Participants</Text>
 
@@ -620,7 +691,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                     )}
                 </View>
 
-                {/* Measurement config */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Measurement Settings</Text>
                     <Text style={styles.help}>
@@ -669,7 +739,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
                     <Text style={styles.help}>
@@ -700,7 +769,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Continue */}
                 <Pressable style={styles.primaryBtn} onPress={onContinue}>
                     <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
                 </Pressable>
@@ -712,10 +780,6 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         </KeyboardAvoidingView>
     );
 }
-
-/* =========================================================
-   Styles
-========================================================= */
 
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
