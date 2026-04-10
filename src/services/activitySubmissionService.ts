@@ -20,6 +20,8 @@ import type {Activity5RunDraft} from "../store/activity5RunDraftStore";
 import type {Activity6RunDraft} from "../store/activity6RunDraftStore";
 import type {Activity7RunDraft} from "../store/activity7RunDraftStore";
 
+import {markRunDraftSubmittedInLocalDb} from "../store/activityRunDraftStore";
+
 /* =========================================================
    Utilities
 ========================================================= */
@@ -234,6 +236,7 @@ export async function submitActivity1({
     const newSubmission = await addDoc(submissionRef, payload);
 
     await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.PARACHUTE_DROP, score);
+    await markRunDraftSubmittedInLocalDb(run.runId, newSubmission.id);
 
     return {submissionId: newSubmission.id, score};
 }

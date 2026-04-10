@@ -1,30 +1,30 @@
 // src/store/activityRunDraftStore.ts
 
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
+
 export type EvidenceDraft = {
     type: "video" | "image";
-    uri?: string;          // local uri for now (later upload to Storage)
-    storagePath?: string;  // future
-    downloadUrl?: string;  // future
-    createdAt: number;     // ms
+    uri?: string;
+    storagePath?: string;
+    downloadUrl?: string;
+    createdAt: number;
 };
 
 export type SessionDraft = {
-    durationMin: number;          // default 20
-    startedAt?: number;           // ms
-    endsAt?: number;              // ms
+    durationMin: number;
+    startedAt?: number;
+    endsAt?: number;
 
-    // Setup inputs
-    dropHeightM?: number;         // required before attempt save (can "measure later" initially)
+    dropHeightM?: number;
     targetZoneEnabled?: boolean;
     targetPreset?: "50cm_circle" | "1m_circle" | "none";
     environment?: "indoor" | "outdoor";
     payloadType?: string;
 
-    // Mass can be unknown (then some physics is not computed)
-    payloadMassG?: number;        // grams
+    payloadMassG?: number;
     payloadMassUnknown?: boolean;
 
-    // Safety checklist confirmations
     safety: {
         stableSurface: boolean;
         keepAreaClear: boolean;
@@ -35,58 +35,50 @@ export type SessionDraft = {
 export type AttemptType = "baseline" | "prototype";
 
 export type AttemptPlanDraft = {
-    attemptType: AttemptType; // baseline/prototype
+    attemptType: AttemptType;
     predictionSec?: number;
 
-    // Design tags (for prototype)
     designTags?: {
         canopyMaterial?: "paper" | "plastic" | "fabric" | "other";
         canopyShape?: "circle" | "square" | "other";
         stringsCount?: number;
-        canopySizeCm?: number;    // diameter or side length
+        canopySizeCm?: number;
         stringLengthCm?: number;
         notes?: string;
     };
 
-    // Per-attempt parameters (prefill from session, but editable)
     dropHeightM?: number;
     payloadMassG?: number;
     payloadMassUnknown?: boolean;
 
-    sketch?: EvidenceDraft; // optional photo
+    sketch?: EvidenceDraft;
 };
 
 export type AttemptMeasurementsDraft = {
-    tHitSec?: number;       // time to first ground contact
-    tStopSec?: number;      // time from contact to stop moving
-    inTargetZone?: boolean; // required if target enabled
-    distanceFromCenterCm?: number; // optional
+    tHitSec?: number;
+    tStopSec?: number;
+    inTargetZone?: boolean;
+    distanceFromCenterCm?: number;
     bounceOccurred?: boolean;
-    bounceTimeToPeakSec?: number; // optional if bounceOccurred
+    bounceTimeToPeakSec?: number;
 };
 
 export type AttemptComputedDraft = {
-    // computed values (optional)
-    velocity?: number;     // m/s
-    acceleration?: number; // m/s^2
-    netForce?: number;     // N
-    weight?: number;       // N
-    dragForce?: number;    // N
-    gForce?: number;       // unitless (multiples of g)
+    velocity?: number;
+    acceleration?: number;
+    netForce?: number;
+    weight?: number;
+    dragForce?: number;
+    gForce?: number;
 };
 
 export type AttemptDraft = {
-    index: number; // 0..3
-    label: string; // "Baseline" / "Prototype 1" etc.
+    index: number;
+    label: string;
 
     plan: AttemptPlanDraft;
-
-    // Video evidence (always expected in SRS; v1 we store metadata only)
     video?: EvidenceDraft;
-
-    // Optional GPS metadata (if permission granted later)
     gps?: { lat: number; lng: number; accuracyM?: number };
-
     measurements?: AttemptMeasurementsDraft;
     computed?: AttemptComputedDraft;
 
@@ -102,9 +94,13 @@ export type ActivityRunDraft = {
     updatedAt: number;
 
     session: SessionDraft;
-
-    // Attempt 0..3
     attempts: Record<number, AttemptDraft>;
+};
+
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
 };
 
 const DRAFTS_KEY = "__STEMM_RUN_DRAFTS__";
@@ -133,6 +129,61 @@ function makeAttempt(index: number): AttemptDraft {
         createdAt: now,
         updatedAt: now,
     };
+}
+
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
+}
+
+function normalizeRecoveredDraft(payload: ActivityRunDraft): ActivityRunDraft {
+    return {
+        ...payload,
+        attempts: payload.attempts ?? {
+            0: makeAttempt(0),
+            1: makeAttempt(1),
+            2: makeAttempt(2),
+            3: makeAttempt(3),
+        },
+        session: payload.session ?? {
+            durationMin: 20,
+            targetZoneEnabled: false,
+            targetPreset: "none",
+            payloadMassUnknown: false,
+            safety: {
+                stableSurface: false,
+                keepAreaClear: false,
+                doNotThrow: false,
+            },
+        },
+    };
+}
+
+async function persistDraftInternal(
+    draft: ActivityRunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<ActivityRunDraft>({
+        runId: draft.runId,
+        activityId: draft.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.createdAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: ActivityRunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activityRunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
 }
 
 export function createRunDraft(activityId: string, createdBy: string): ActivityRunDraft {
@@ -165,11 +216,17 @@ export function createRunDraft(activityId: string, createdBy: string): ActivityR
     };
 
     drafts.set(runId, draft);
+    fireAndForgetPersist(draft);
+
     return draft;
 }
 
 export function getRunDraft(runId: string): ActivityRunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllRunDrafts(): ActivityRunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function updateRunDraft(runId: string, patch: Partial<ActivityRunDraft>): ActivityRunDraft {
@@ -183,6 +240,8 @@ export function updateRunDraft(runId: string, patch: Partial<ActivityRunDraft>):
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -200,6 +259,8 @@ export function updateSession(runId: string, patch: Partial<SessionDraft>): Acti
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -230,13 +291,103 @@ export function updateAttempt(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
+/**
+ * Explicit save hook for screens that want to persist after navigation milestones
+ * such as "prediction completed", "measurement completed", "results viewed", etc.
+ */
+export async function saveRunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<ActivityRunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("Run draft not found");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+/**
+ * Hydrate one known run from SQLite into in-memory store.
+ * Safe for app restart / crash recovery.
+ */
+export async function hydrateRunDraftFromLocalDb(
+    runId: string
+): Promise<ActivityRunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<ActivityRunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredDraft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+/**
+ * Find the latest recoverable Activity 1 draft for a given user/activity.
+ * This is the main entry point for "Resume previous draft?" UX later.
+ */
+export async function getLatestRecoverableRunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<ActivityRunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<ActivityRunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredDraft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+/**
+ * Mark as submitted in local DB after successful remote submission.
+ * Keep in-memory state available until caller decides to clear it.
+ */
+export async function markRunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+/**
+ * Remove from both memory and SQLite.
+ * Use this for explicit discard or final cleanup.
+ */
+export async function discardRunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
+}
+
+/**
+ * Existing memory-only clear preserved for compatibility.
+ * Use discardRunDraft() when you want local DB cleanup too.
+ */
 export function clearRunDraft(runId: string) {
     drafts.delete(runId);
 }
 
+/**
+ * Existing memory-only clear preserved for compatibility.
+ */
 export function clearAllRunDrafts() {
     drafts.clear();
 }
