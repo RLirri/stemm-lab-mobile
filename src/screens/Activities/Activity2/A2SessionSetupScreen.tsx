@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {
     Alert,
     KeyboardAvoidingView,
@@ -17,7 +17,10 @@ import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth} from "../../../services/firebase";
 import {
     createActivity2RunDraft,
+    discardActivity2RunDraft,
     getActivity2RunDraft,
+    getLatestRecoverableActivity2RunDraft,
+    hydrateActivity2RunDraftFromLocalDb,
     updateActivity2Session,
     type Activity2RunDraft,
 } from "../../../store/activity2RunDraftStore";
@@ -35,6 +38,9 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
 
     const [runId, setRunId] = useState<string | null>(route.params.runId ?? null);
     const [draft, setDraft] = useState<Activity2RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // Form fields
     const [sessionLabel, setSessionLabel] = useState<string>("");
@@ -42,37 +48,104 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
 
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        const existingId = route.params.runId;
+        hasBootstrappedRef.current = true;
+        const userId = user.uid;
 
-        // Case A: route has runId -> try load
-        if (existingId) {
-            const existing = getActivity2RunDraft(existingId);
-            if (existing) {
-                setRunId(existingId);
-                setDraft(existing);
-                return;
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                const existingId = route.params.runId;
+
+                // Case 1: route already has runId
+                if (existingId) {
+                    const existing = getActivity2RunDraft(existingId);
+                    if (existing) {
+                        setRunId(existingId);
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity2RunDraftFromLocalDb(existingId);
+                    if (hydrated) {
+                        setRunId(hydrated.runId);
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity2RunDraft(activityId, userId);
+                    setRunId(recreated.runId);
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                // Case 2: no runId -> try recovery
+                const recoverable = await getLatestRecoverableActivity2RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 2 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity2RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A2SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity2RunDraft(activityId, userId);
+                                    setRunId(created.runId);
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setRunId(recoverable.runId);
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                // Case 3: create fresh
+                const created = createActivity2RunDraft(activityId, userId);
+                setRunId(created.runId);
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A2SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity2RunDraft(activityId, userId);
+                setRunId(fallback.runId);
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
             }
-
-            // Store reset: recreate and replace params
-            const recreated = createActivity2RunDraft(activityId, user.uid);
-            setRunId(recreated.runId);
-            setDraft(recreated);
-            navigation.setParams({runId: recreated.runId});
-            return;
         }
 
-        // Case B: no runId -> create new
-        const created = createActivity2RunDraft(activityId, user.uid);
-        setRunId(created.runId);
-        setDraft(created);
-        navigation.setParams({runId: created.runId});
+        void bootstrap();
     }, [activityId, navigation, route.params.runId, user]);
 
     useEffect(() => {
         if (!draft) return;
 
-        // hydrate UI from draft
         setSessionLabel(draft.session.sessionLabel ?? "");
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
     }, [draft]);
@@ -84,8 +157,6 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
     }
 
     function validateBeforeContinue(): { ok: true } | { ok: false; message: string } {
-        // Label is optional, but strongly recommended (helps leaderboard / class sessions)
-        // We keep it optional per your spec; enforce only max length.
         const label = sessionLabel.trim();
         if (label.length > 60) {
             return {ok: false, message: "Session label is too long. Please keep it under 60 characters."};
@@ -104,22 +175,21 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // Persist session setup
         persistSessionPatch({
             sessionLabel: normalizeLabel(sessionLabel),
             gpsEnabled,
         });
 
-        // Next screen (we’ll build next): Prediction
         navigation.navigate("A2Prediction", {activityId, runId});
     }
 
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <Text style={{fontWeight: "900"}}>Loading draft…</Text>
+                <Text style={{marginTop: 8, opacity: 0.7}}>Checking for unfinished session...</Text>
             </View>
         );
     }

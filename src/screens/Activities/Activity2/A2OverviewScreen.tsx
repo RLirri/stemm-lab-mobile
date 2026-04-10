@@ -16,7 +16,6 @@ import {SOUND_RISK_BANDS} from "../../../services/scoringService";
 import type {Activity} from "../../../types/activity";
 
 import {auth} from "../../../services/firebase";
-import {createActivity2RunDraft} from "../../../store/activity2RunDraftStore";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A2Overview">;
 
@@ -40,7 +39,6 @@ function safeStringArray(x: unknown): string[] {
 }
 
 function formatDbRange(minDb: number, maxDb: number | null): string {
-    // matches your spec formatting, handles null/infinity
     if (maxDb == null) return `${minDb}+ dB`;
     return `${minDb}–${maxDb} dB`;
 }
@@ -72,7 +70,7 @@ export default function A2OverviewScreen({route, navigation}: Props) {
             }
         }
 
-        load();
+        void load();
         return () => {
             mounted = false;
         };
@@ -83,8 +81,6 @@ export default function A2OverviewScreen({route, navigation}: Props) {
         [activity?.title]
     );
 
-    // NOTE: Activity type might not include shortDescription/description/instructions strongly.
-    // Use casting, but always normalize.
     const shortDesc = useMemo(() => {
         const a = activity as any;
         return (
@@ -106,7 +102,6 @@ export default function A2OverviewScreen({route, navigation}: Props) {
         const list = safeStringArray(a?.equipment);
         if (list.length) return list;
 
-        // fallback if Firestore doc doesn’t include equipment yet
         return ["Mobile phone with STEMM Lab app", "Everyday objects (pens/books)"];
     }, [activity]);
 
@@ -115,7 +110,6 @@ export default function A2OverviewScreen({route, navigation}: Props) {
         const inst = normalizeText(a?.instructions);
         if (inst) return splitLines(inst);
 
-        // fallback aligned to your spec
         return [
             "Measure noise from different actions (drop pens/books, talking, walking, stamping).",
             "Record sound levels (dB) and locations (GPS if enabled).",
@@ -133,11 +127,7 @@ export default function A2OverviewScreen({route, navigation}: Props) {
 
         try {
             setStarting(true);
-
-            // Create a run draft now so the rest of A2 flow always has runId.
-            const draft = createActivity2RunDraft(activityId, user.uid);
-
-            navigation.navigate("A2SessionSetup", {activityId, runId: draft.runId});
+            navigation.navigate("A2SessionSetup", {activityId});
         } catch (e: any) {
             Alert.alert("Start failed", e?.message ?? "Unable to start Activity 2.");
         } finally {

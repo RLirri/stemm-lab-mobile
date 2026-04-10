@@ -1,6 +1,8 @@
 // Activity 2 draft store (in-memory, Fast Refresh safe).
 // Pure state store — no Firebase, no Expo side effects.
 import type {SoundRiskCategory} from "../services/scoringService";
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
 
 /* =========================================================
    Types
@@ -87,6 +89,12 @@ export type Activity2RunDraft = {
     };
 };
 
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
+};
+
 /* =========================================================
    In-memory store (Fast Refresh safe)
 ========================================================= */
@@ -117,6 +125,49 @@ function normalizeLabel(x: unknown): string {
     return s;
 }
 
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
+}
+
+function normalizeRecoveredActivity2Draft(payload: Activity2RunDraft): Activity2RunDraft {
+    return {
+        ...payload,
+        session: {
+            ...payload.session,
+            gpsEnabled: payload.session?.gpsEnabled ?? true,
+        },
+        actions: Array.isArray(payload.actions) ? payload.actions : [],
+    };
+}
+
+async function persistDraftInternal(
+    draft: Activity2RunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<Activity2RunDraft>({
+        runId: draft.runId,
+        activityId: draft.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.createdAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: Activity2RunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activity2RunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
+}
+
 /* =========================================================
    CRUD
 ========================================================= */
@@ -138,11 +189,17 @@ export function createActivity2RunDraft(activityId: string, createdBy: string): 
     };
 
     drafts.set(runId, draft);
+    fireAndForgetPersist(draft);
+
     return draft;
 }
 
 export function getActivity2RunDraft(runId: string): Activity2RunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllActivity2RunDrafts(): Activity2RunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function updateActivity2RunDraft(
@@ -159,6 +216,8 @@ export function updateActivity2RunDraft(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -179,6 +238,8 @@ export function updateActivity2Session(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -211,6 +272,8 @@ export function addA2Measurement(runId: string, actionLabel: string): Activity2R
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -244,6 +307,8 @@ export function updateA2Measurement(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -258,6 +323,8 @@ export function removeA2Measurement(runId: string, measurementId: string): Activ
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -275,6 +342,8 @@ export function setA2Measurements(runId: string, actions: A2MeasurementDraft[]):
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
 }
 
@@ -301,7 +370,74 @@ export function setA2Computed(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
+
     return next;
+}
+
+/* =========================================================
+   Explicit persistence / recovery helpers
+========================================================= */
+
+export async function saveActivity2RunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<Activity2RunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("A2 run draft not found");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+export async function hydrateActivity2RunDraftFromLocalDb(
+    runId: string
+): Promise<Activity2RunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<Activity2RunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity2Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function getLatestRecoverableActivity2RunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<Activity2RunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<Activity2RunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity2Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function markActivity2RunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+export async function discardActivity2RunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
 }
 
 /* =========================================================
