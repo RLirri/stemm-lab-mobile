@@ -1,5 +1,4 @@
-// src/screens/Activities/Activity3/A3SessionSetupScreen.tsx
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -20,7 +19,10 @@ import {auth} from "../../../services/firebase";
 
 import {
     createActivity3RunDraft,
+    discardActivity3RunDraft,
     getActivity3RunDraft,
+    getLatestRecoverableActivity3RunDraft,
+    hydrateActivity3RunDraftFromLocalDb,
     updateActivity3Session,
     updateActivity3FanDesign,
     setActivity3SessionVideo,
@@ -57,9 +59,13 @@ async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
 
 export default function A3SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
-    const {activityId, runId} = route.params;
+    const {activityId} = route.params;
+    const routeRunId = route.params.runId;
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // session fields
     const [surface, setSurface] = useState<SurfaceContext | undefined>(undefined);
@@ -72,23 +78,113 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
     const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
     const [askingGps, setAskingGps] = useState(false);
 
-    // evidence state (stored in draft, but we show local UI)
     const [attachingVideo, setAttachingVideo] = useState(false);
 
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        let d = runId ? getActivity3RunDraft(runId) : null;
-        if (!d) {
-            d = createActivity3RunDraft({
-                activityId,
-                createdBy: user.uid,
-                fanDesignCount: 3,
-                advancedMode: false,
-            });
+        hasBootstrappedRef.current = true;
+
+        const userId = user.uid;
+
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                if (routeRunId) {
+                    const existing = getActivity3RunDraft(routeRunId);
+                    if (existing) {
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity3RunDraftFromLocalDb(routeRunId);
+                    if (hydrated) {
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity3RunDraft({
+                        activityId,
+                        createdBy: userId,
+                        fanDesignCount: 3,
+                        advancedMode: false,
+                    });
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                const recoverable = await getLatestRecoverableActivity3RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 3 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity3RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A3SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity3RunDraft({
+                                        activityId,
+                                        createdBy: userId,
+                                        fanDesignCount: 3,
+                                        advancedMode: false,
+                                    });
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                const created = createActivity3RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    fanDesignCount: 3,
+                    advancedMode: false,
+                });
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A3SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity3RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    fanDesignCount: 3,
+                    advancedMode: false,
+                });
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
+            }
         }
-        setDraft(d);
-    }, [activityId, runId, user]);
+
+        void bootstrap();
+    }, [activityId, navigation, routeRunId, user]);
 
     useEffect(() => {
         if (!draft) return;
@@ -116,7 +212,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                 ...draft.session,
                 surfaceContext: surface,
                 fanDesignCount,
-                // IMPORTANT: updateActivity3Session will normalize fanDesigns for count
                 advancedMode,
                 stiffnessK,
                 gpsEnabled,
@@ -161,7 +256,7 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
             if (status !== "granted") {
                 Alert.alert(
                     "GPS not granted",
-                    "You can still run the activity, but submission will be blocked unless GPS is enabled and granted (per policy)."
+                    "You can still run the activity, but submission will be blocked unless GPS is enabled and granted."
                 );
             }
         } finally {
@@ -180,7 +275,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     ? await recordVideoWithCamera()
                     : await pickVideoFromLibrary();
 
-            // user cancelled
             if (!picked) return;
 
             const next = setActivity3SessionVideo(draft.runId, {
@@ -230,11 +324,12 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
 
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
                 <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
+                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
             </View>
         );
     }
@@ -249,7 +344,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     Configure the Hand Fan Challenge. You’ll set design details, predict first, then record bend angles.
                 </Text>
 
-                {/* Context */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Context (optional)</Text>
                     <Text style={styles.help}>Airflow behaves differently on floor vs table.</Text>
@@ -277,7 +371,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                {/* Fan Designs count */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Fan Designs</Text>
                     <Text style={styles.help}>
@@ -295,12 +388,10 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     />
 
                     <Text style={styles.note}>
-                        After changing this, press “Continue” to normalize designs (the store will add/remove design
-                        entries).
+                        After changing this, press “Continue” to normalize designs.
                     </Text>
                 </View>
 
-                {/* Design metadata editor */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Design Details (for airflow)</Text>
                     <Text style={styles.help}>
@@ -325,10 +416,12 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                                     <Text style={styles.label}>Has folds?</Text>
                                     <Switch
                                         value={Boolean(d.hasFolds)}
-                                        onValueChange={(v) => onUpdateDesign(d.index, {
-                                            hasFolds: v,
-                                            foldType: v ? d.foldType : undefined
-                                        })}
+                                        onValueChange={(v) =>
+                                            onUpdateDesign(d.index, {
+                                                hasFolds: v,
+                                                foldType: v ? d.foldType : undefined,
+                                            })
+                                        }
                                     />
                                 </View>
 
@@ -341,12 +434,13 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                                                 key={v}
                                                 onPress={() => onUpdateDesign(d.index, {
                                                     foldType: v,
-                                                    hasFolds: v !== "flat"
+                                                    hasFolds: v !== "flat",
                                                 })}
                                                 style={[styles.segmentBtn, on && styles.segmentBtnActive]}
                                             >
-                                                <Text
-                                                    style={[styles.segmentText, on && styles.segmentTextActive]}>{v}</Text>
+                                                <Text style={[styles.segmentText, on && styles.segmentTextActive]}>
+                                                    {v}
+                                                </Text>
                                             </Pressable>
                                         );
                                     })}
@@ -355,7 +449,13 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                                 <Text style={styles.label}>Fold count (0–60)</Text>
                                 <TextInput
                                     value={d.foldCount == null ? "" : String(d.foldCount)}
-                                    onChangeText={(t) => onUpdateDesign(d.index, {foldCount: t ? clampInt(Number(t.replace(/[^\d]/g, "")), 0, 60) : undefined})}
+                                    onChangeText={(t) =>
+                                        onUpdateDesign(d.index, {
+                                            foldCount: t
+                                                ? clampInt(Number(t.replace(/[^\d]/g, "")), 0, 60)
+                                                : undefined,
+                                        })
+                                    }
                                     placeholder="e.g. 12"
                                     keyboardType="number-pad"
                                     style={styles.input}
@@ -364,7 +464,13 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                                 <Text style={styles.label}>Layers (1–5)</Text>
                                 <TextInput
                                     value={d.layers == null ? "" : String(d.layers)}
-                                    onChangeText={(t) => onUpdateDesign(d.index, {layers: t ? clampInt(Number(t.replace(/[^\d]/g, "")), 1, 5) : undefined})}
+                                    onChangeText={(t) =>
+                                        onUpdateDesign(d.index, {
+                                            layers: t
+                                                ? clampInt(Number(t.replace(/[^\d]/g, "")), 1, 5)
+                                                : undefined,
+                                        })
+                                    }
                                     placeholder="e.g. 1"
                                     keyboardType="number-pad"
                                     style={styles.input}
@@ -383,7 +489,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                {/* Advanced mode */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Advanced Mode</Text>
                     <Text style={styles.help}>
@@ -416,12 +521,10 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     )}
                 </View>
 
-                {/* Session video */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Session Video (Required for submission)</Text>
                     <Text style={styles.help}>
-                        Record one video showing your setup and how you test the designs fairly (same distance rule,
-                        stable hand, no hitting others).
+                        Record one video showing your setup and how you test the designs fairly.
                     </Text>
 
                     <View style={styles.gpsRow}>
@@ -450,7 +553,7 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     </View>
 
                     {sessionVideoAttached ? (
-                        <Pressable style={[styles.dangerBtn]} onPress={onRemoveSessionVideo}>
+                        <Pressable style={styles.dangerBtn} onPress={onRemoveSessionVideo}>
                             <Text style={styles.dangerBtnText}>Remove video</Text>
                         </Pressable>
                     ) : null}
@@ -460,7 +563,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for submission)</Text>
                     <Text style={styles.help}>
@@ -505,7 +607,6 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
                     ) : null}
                 </View>
 
-                {/* errors */}
                 {sessionError ? (
                     <View style={styles.errorCard}>
                         <Text style={{fontWeight: "900"}}>Fix before continuing</Text>
