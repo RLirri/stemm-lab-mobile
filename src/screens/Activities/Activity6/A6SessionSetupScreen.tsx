@@ -1,5 +1,4 @@
-// src/screens/Activities/Activity6/A6SessionSetupScreen.tsx
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -20,7 +19,10 @@ import {auth} from "../../../services/firebase";
 
 import {
     createActivity6RunDraft,
+    discardActivity6RunDraft,
     getActivity6RunDraft,
+    getLatestRecoverableActivity6RunDraft,
+    hydrateActivity6RunDraftFromLocalDb,
     updateActivity6Participant,
     updateActivity6Session,
     validateA6Session,
@@ -117,9 +119,13 @@ const PATH_OPTIONS: Array<{ label: string; value: A6TracingPathType }> = [
 
 export default function A6SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
-    const {activityId, runId} = route.params;
+    const {activityId} = route.params;
+    const routeRunId = route.params.runId;
 
     const [draft, setDraft] = useState<Activity6RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // UI buffers
     const [sessionLabel, setSessionLabel] = useState("");
@@ -143,36 +149,130 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
     // participant add input
     const [newParticipantName, setNewParticipantName] = useState("");
 
-    /* ----------------------------
-       Hydrate / Create draft
-    ---------------------------- */
-
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        let d = runId ? getActivity6RunDraft(runId) : null;
-        if (!d) {
-            d = createActivity6RunDraft({
-                activityId,
-                createdBy: user.uid,
-                gpsEnabled: true,
+        hasBootstrappedRef.current = true;
+        const userId = user.uid;
 
-                participantCount: 1,
-                trialsPerHand: 3,
-                target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
 
-                tracingPathType: "circle",
-                maxAllowedDeviationPx: 100,
-                accuracyThresholdPct: 60,
-            });
+                if (routeRunId) {
+                    const existing = getActivity6RunDraft(routeRunId);
+                    if (existing) {
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity6RunDraftFromLocalDb(routeRunId);
+                    if (hydrated) {
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity6RunDraft({
+                        activityId,
+                        createdBy: userId,
+                        gpsEnabled: true,
+                        participantCount: 1,
+                        trialsPerHand: 3,
+                        target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+                        tracingPathType: "circle",
+                        maxAllowedDeviationPx: 100,
+                        accuracyThresholdPct: 60,
+                    });
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                const recoverable = await getLatestRecoverableActivity6RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 6 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity6RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A6SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity6RunDraft({
+                                        activityId,
+                                        createdBy: userId,
+                                        gpsEnabled: true,
+                                        participantCount: 1,
+                                        trialsPerHand: 3,
+                                        target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+                                        tracingPathType: "circle",
+                                        maxAllowedDeviationPx: 100,
+                                        accuracyThresholdPct: 60,
+                                    });
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                const created = createActivity6RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    participantCount: 1,
+                    trialsPerHand: 3,
+                    target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+                    tracingPathType: "circle",
+                    maxAllowedDeviationPx: 100,
+                    accuracyThresholdPct: 60,
+                });
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A6SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity6RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    participantCount: 1,
+                    trialsPerHand: 3,
+                    target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
+                    tracingPathType: "circle",
+                    maxAllowedDeviationPx: 100,
+                    accuracyThresholdPct: 60,
+                });
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
+            }
         }
 
-        setDraft(d);
-    }, [activityId, runId, user]);
-
-    /* ----------------------------
-       Draft -> UI sync
-    ---------------------------- */
+        void bootstrap();
+    }, [activityId, navigation, routeRunId, user]);
 
     useEffect(() => {
         if (!draft) return;
@@ -202,15 +302,10 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         return validateA6Session(draft);
     }, [draft]);
 
-    /* ----------------------------
-       Persist helpers
-    ---------------------------- */
-
     function persistSessionBase(): Activity6RunDraft | null {
         if (!draft) return null;
 
         const nextParticipantCount = clampInt(parseInt(digitsOnly(participantCountRaw || "1"), 10), 1, 6);
-
         const nextTrialsPerHand = clampInt(parseInt(digitsOnly(trialsPerHandRaw || "3"), 10), 1, 10);
 
         const minSec = clampNum(parseFloat(delayMinSecRaw || "1.0"), 0.5, 10);
@@ -224,24 +319,18 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
         const next = updateActivity6Session(draft.runId, {
             sessionLabel: trimOrEmpty(sessionLabel) || undefined,
-
             participantCount: nextParticipantCount,
-            // keep current participant list; store normalizes length
             participants: draft.session.participants,
-
             trialsPerHand: nextTrialsPerHand,
             target: {
                 delayMinSec: minSec,
                 delayMaxSec: fixedMax,
                 targetSizePx,
             },
-
             tracingPathType,
             maxAllowedDeviationPx: maxDev,
             accuracyThresholdPct: accThreshold,
-
             gpsEnabled,
-            // mirror A4/A5 policy: clear geo when disabled (for clarity), keep if enabled
             geo: gpsEnabled ? draft.session.geo : undefined,
             gpsPermission,
         });
@@ -249,10 +338,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         setDraft(next);
         return next;
     }
-
-    /* ----------------------------
-       Participants
-    ---------------------------- */
 
     function onRenameParticipant(participantId: string, name: string) {
         if (!draft) return;
@@ -276,10 +361,8 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // 1) Increase count
         const afterCount = updateActivity6Session(draft.runId, {participantCount: currentCount + 1});
 
-        // 2) Store appends a new participant
         const appended = afterCount.session.participants?.[afterCount.session.participants.length - 1];
         if (!appended?.id) {
             setDraft(afterCount);
@@ -288,7 +371,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // 3) Rename appended participant
         const afterRename = updateActivity6Participant(afterCount.runId, appended.id, {name});
 
         setDraft(afterRename);
@@ -327,10 +409,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         ]);
     }
 
-    /* ----------------------------
-       GPS
-    ---------------------------- */
-
     function onToggleGps(nextVal: boolean) {
         setGpsEnabled(nextVal);
         if (!draft) return;
@@ -354,7 +432,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         try {
             setCapturingGps(true);
 
-            // ensure permission
             let status = gpsPermission;
             if (status === "unknown" || status === "denied") {
                 status = await requestGpsPermissionSafe();
@@ -372,7 +449,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                 return;
             }
 
-            // capture coordinate
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
@@ -400,10 +476,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    /* ----------------------------
-       Continue -> Prediction
-    ---------------------------- */
-
     function onContinue() {
         if (!user || !draft) return;
 
@@ -422,17 +494,14 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         });
     }
 
-    /* ----------------------------
-       Render guards
-    ---------------------------- */
-
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
                 <Text style={{marginTop: 10, opacity: 0.7}}>Loading session…</Text>
+                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
             </View>
         );
     }
@@ -448,7 +517,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     Configure participants, reaction trials, tracing difficulty, and GPS policy before starting.
                 </Text>
 
-                {/* Session */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Session</Text>
 
@@ -464,7 +532,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Participants */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Participants</Text>
 
@@ -484,7 +551,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                         Tip: you can also add/remove participants using the controls below.
                     </Text>
 
-                    {/* Quick add */}
                     <View style={styles.addRow}>
                         <View style={{flex: 1}}>
                             <Text style={styles.label}>Add participant (name)</Text>
@@ -500,7 +566,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                         </Pressable>
                     </View>
 
-                    {/* Participant list */}
                     {participants.length === 0 ? (
                         <Text style={styles.muted}>No participants initialized.</Text>
                     ) : (
@@ -531,7 +596,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     )}
                 </View>
 
-                {/* Reaction config */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reaction Trials</Text>
                     <Text style={styles.help}>
@@ -580,7 +644,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Tracing config */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Tracing Challenge</Text>
                     <Text style={styles.help}>
@@ -622,11 +685,10 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     />
 
                     <Text style={styles.note}>
-                        A higher threshold makes leaderboard eligibility stricter (more fair if tracing is too easy).
+                        A higher threshold makes leaderboard eligibility stricter.
                     </Text>
                 </View>
 
-                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
                     <Text style={styles.help}>
@@ -655,7 +717,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Continue */}
                 <Pressable style={styles.primaryBtn} onPress={onContinue}>
                     <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
                 </Pressable>
@@ -667,10 +728,6 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         </KeyboardAvoidingView>
     );
 }
-
-/* =========================================================
-   Styles (aligned with A4/A5 visual system)
-========================================================= */
 
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},

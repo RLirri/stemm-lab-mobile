@@ -1,9 +1,12 @@
 // src/store/activity6RunDraftStore.ts
 
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
+
 export type GpsPermissionStatus = "unknown" | "granted" | "denied";
 
 /* =========================================================
-   Evidence + GPS (match A4/A5 style)
+   Evidence + GPS
 ========================================================= */
 
 export type EvidenceDraft = {
@@ -25,79 +28,56 @@ export type GeoPointDraft = {
 export type A6HandType = "dominant" | "non_dominant";
 
 export type A6TargetConfig = {
-    delayMinSec: number; // e.g. 1.0
-    delayMaxSec: number; // e.g. 3.0
-    targetSizePx: number; // e.g. 56
+    delayMinSec: number;
+    delayMaxSec: number;
+    targetSizePx: number;
 };
 
 export type A6TargetPresentation = {
-    // randomized per trial
-    delayMs: number; // computed from delayMin/max
-    appearedAt: number; // epoch ms
-    location: { x: number; y: number }; // normalized 0..1 screen coords (UI maps to px)
+    delayMs: number;
+    appearedAt: number;
+    location: { x: number; y: number };
 };
 
 export type A6ReactionTrialDraft = {
     id: string;
-
     participantId: string;
     hand: A6HandType;
-    trialNumber: number; // 1..N (per hand)
-    timestamp: number; // epoch ms when trial completed (tap registered)
-
-    // stimulus + tap timing
+    trialNumber: number;
+    timestamp: number;
     target?: A6TargetPresentation;
-    tapAt?: number; // epoch ms
-    reactionTimeMs?: number; // TapTimestamp - TargetAppearanceTimestamp (FR-A6-02)
-
-    // optional per-trial evidence
+    tapAt?: number;
+    reactionTimeMs?: number;
     video?: EvidenceDraft;
-
-    // optional metadata
     geo?: GeoPointDraft;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
 
 export type A6TracePoint = {
-    tMs: number; // relative to tracing start
-    x: number; // normalized 0..1
-    y: number; // normalized 0..1
+    tMs: number;
+    x: number;
+    y: number;
 };
 
 export type A6TracingPathType = "circle" | "wave" | "zigzag" | "figure8";
 
 export type A6TracingResultDraft = {
     id: string;
-
     participantId: string;
     pathType: A6TracingPathType;
-
-    startedAt: number; // epoch ms
-    endedAt: number; // epoch ms
-
+    startedAt: number;
+    endedAt: number;
     durationMs: number;
-
-    // captured coordinates
     userPath: A6TracePoint[];
     referencePath: A6TracePoint[];
-
-    // deviation metrics
     avgDeviationPx: number;
     maxAllowedDeviationPx: number;
-
-    // normalized accuracy score (%)
-    accuracyScorePct: number; // 0..100
-
-    // optional per-tracing evidence
+    accuracyScorePct: number;
     video?: EvidenceDraft;
-
-    // optional metadata
     geo?: GeoPointDraft;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
@@ -109,44 +89,36 @@ export type A6TracingResultDraft = {
 export type A6ParticipantDraft = {
     id: string;
     name: string;
-    dominantHand?: "left" | "right"; // optional, helpful UX
+    dominantHand?: "left" | "right";
     createdAt: number;
     updatedAt?: number;
 };
 
 /* =========================================================
-   Computed Metrics (FR-A6-05)
+   Computed Metrics
 ========================================================= */
 
 export type A6ReactionStats = {
     participantId: string;
     hand: A6HandType;
-
     n: number;
-    meanReactionTimeMs: number; // Σ / N
-    stdDevReactionTimeMs: number; // sqrt( Σ (x-mean)^2 / N )
+    meanReactionTimeMs: number;
+    stdDevReactionTimeMs: number;
     fastestReactionTimeMs?: number;
 };
 
 export type A6ParticipantSummary = {
     participantId: string;
-
     dominant?: A6ReactionStats;
     nonDominant?: A6ReactionStats;
-
     tracingAccuracyPct?: number;
-
-    // convenience: overall mean across both hands (if present)
     overallMeanReactionTimeMs?: number;
 };
 
 export type A6SessionMetrics = {
     participantSummaries: A6ParticipantSummary[];
-
-    fastestParticipantId?: string; // based on lowest overall mean (eligible or not)
-    mostAccurateParticipantId?: string; // based on highest tracing accuracy
-
-    // optional team aggregates
+    fastestParticipantId?: string;
+    mostAccurateParticipantId?: string;
     teamMeanReactionTimeMs?: number;
 };
 
@@ -156,27 +128,16 @@ export type A6SessionMetrics = {
 
 export type A6SessionDraft = {
     activityId: string;
-
     sessionLabel?: string;
-
-    participantCount: number; // 1..6
+    participantCount: number;
     participants: A6ParticipantDraft[];
-
-    // configs
-    trialsPerHand: number; // >= 1
+    trialsPerHand: number;
     target: A6TargetConfig;
-
     tracingPathType: A6TracingPathType;
     maxAllowedDeviationPx: number;
-
-    // leaderboard eligibility threshold (FR-A6-06)
     accuracyThresholdPct: number;
-
-    // metadata / timing
     startedAt: number;
     endsAt?: number;
-
-    // GPS policy: allow running if denied; block submission later
     gpsEnabled: boolean;
     geo?: {
         lat: number;
@@ -188,7 +149,7 @@ export type A6SessionDraft = {
 };
 
 export type A6PredictionDraft = {
-    predictedReactionTimeMs?: number; // required by validator
+    predictedReactionTimeMs?: number;
     predictedHandFaster?: "Dominant" | "Non-dominant" | "Same";
     createdAt: number;
     updatedAt?: number;
@@ -196,38 +157,42 @@ export type A6PredictionDraft = {
 
 export type A6ReflectionDraft = {
     reflectionText?: string;
-    rating?: number; // 1..5
+    rating?: number;
 };
 
 export type Activity6RunDraft = {
     runId: string;
     session: A6SessionDraft;
-
-    // FR-A6-06: prediction required before trials begin
     prediction?: A6PredictionDraft;
-
     reactionTrials: A6ReactionTrialDraft[];
     tracingResults: A6TracingResultDraft[];
-
-    // cached computed metrics for UI/leaderboard
     metrics?: A6SessionMetrics;
-
-    // FR-A6-07: video optional; allow 1 session-level video if you want to support it
     evidence?: {
         sessionVideo?: EvidenceDraft;
     };
-
     reflection?: A6ReflectionDraft;
-
     createdBy?: string;
     updatedAt: number;
+};
+
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
 };
 
 /* =========================================================
    In-memory store
 ========================================================= */
 
-const drafts = new Map<string, Activity6RunDraft>();
+const DRAFTS_KEY = "__STEMM_A6_RUN_DRAFTS__";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any;
+
+const drafts: Map<string, Activity6RunDraft> =
+    (g[DRAFTS_KEY] ?? new Map<string, Activity6RunDraft>()) as Map<string, Activity6RunDraft>;
+
+g[DRAFTS_KEY] = drafts;
 
 function now() {
     return Date.now();
@@ -252,6 +217,10 @@ function clampNum(n: number, min: number, max: number) {
 function trimOrUndef(s?: string) {
     const t = s?.trim();
     return t ? t : undefined;
+}
+
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
 }
 
 /* =========================================================
@@ -293,7 +262,7 @@ function normalizeParticipantsForCount(
 function sanitizeTargetConfig(t: Partial<A6TargetConfig> | undefined): A6TargetConfig {
     const min = clampNum(t?.delayMinSec ?? 1.0, 0.5, 10);
     const max = clampNum(t?.delayMaxSec ?? 3.0, 0.5, 10);
-    const fixedMax = Math.max(max, min + 0.1); // ensure > min
+    const fixedMax = Math.max(max, min + 0.1);
     return {
         delayMinSec: min,
         delayMaxSec: fixedMax,
@@ -313,7 +282,7 @@ function sanitizeTracePointList(list: A6TracePoint[] | undefined): A6TracePoint[
 }
 
 /* =========================================================
-   Metrics helpers (FR-A6-05)
+   Metrics helpers
 ========================================================= */
 
 function mean(xs: number[]): number {
@@ -367,7 +336,6 @@ function computeSessionMetrics(d: Activity6RunDraft): A6SessionMetrics {
         const dominant = computeReactionStatsFor(d.reactionTrials, p.id, "dominant");
         const nonDominant = computeReactionStatsFor(d.reactionTrials, p.id, "non_dominant");
 
-        // tracing: pick latest per participant (if multiple)
         const tracing = [...d.tracingResults]
             .filter((r) => r.participantId === p.id)
             .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0];
@@ -387,17 +355,14 @@ function computeSessionMetrics(d: Activity6RunDraft): A6SessionMetrics {
         });
     }
 
-    // fastest participant: lowest overall mean among those who have data
     const fastest = [...summaries]
         .filter((s) => Number.isFinite(s.overallMeanReactionTimeMs))
         .sort((a, b) => (a.overallMeanReactionTimeMs! - b.overallMeanReactionTimeMs!))[0];
 
-    // most accurate: highest tracing accuracy
     const accurate = [...summaries]
         .filter((s) => Number.isFinite(s.tracingAccuracyPct))
         .sort((a, b) => (b.tracingAccuracyPct! - a.tracingAccuracyPct!))[0];
 
-    // team mean (optional)
     const teamMeans = summaries
         .map((s) => s.overallMeanReactionTimeMs)
         .filter((v): v is number => Number.isFinite(v));
@@ -411,6 +376,63 @@ function computeSessionMetrics(d: Activity6RunDraft): A6SessionMetrics {
     };
 }
 
+function normalizeRecoveredActivity6Draft(payload: Activity6RunDraft): Activity6RunDraft {
+    const participantCount = clampInt(payload.session?.participantCount ?? 1, 1, 6);
+    const reactionTrials = Array.isArray(payload.reactionTrials) ? payload.reactionTrials : [];
+    const tracingResults = Array.isArray(payload.tracingResults) ? payload.tracingResults : [];
+
+    const normalized: Activity6RunDraft = {
+        ...payload,
+        session: {
+            ...payload.session,
+            participantCount,
+            participants: normalizeParticipantsForCount(payload.session?.participants ?? [], participantCount),
+            trialsPerHand: clampInt(payload.session?.trialsPerHand ?? 3, 1, 10),
+            target: sanitizeTargetConfig(payload.session?.target),
+            tracingPathType: payload.session?.tracingPathType ?? "circle",
+            maxAllowedDeviationPx: clampInt(payload.session?.maxAllowedDeviationPx ?? 40, 10, 200),
+            accuracyThresholdPct: clampInt(payload.session?.accuracyThresholdPct ?? 70, 0, 100),
+            gpsEnabled: payload.session?.gpsEnabled ?? true,
+            gpsPermission: payload.session?.gpsPermission ?? "unknown",
+        },
+        reactionTrials,
+        tracingResults,
+    };
+
+    return {
+        ...normalized,
+        metrics: payload.metrics ?? computeSessionMetrics(normalized),
+    };
+}
+
+async function persistDraftInternal(
+    draft: Activity6RunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<Activity6RunDraft>({
+        runId: draft.runId,
+        activityId: draft.session.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy ?? null,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.session.startedAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: Activity6RunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activity6RunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
+}
+
 /* =========================================================
    CRUD: Run draft
 ========================================================= */
@@ -418,25 +440,20 @@ function computeSessionMetrics(d: Activity6RunDraft): A6SessionMetrics {
 export function createActivity6RunDraft(params: {
     activityId: string;
     createdBy?: string;
-
-    participantCount?: number; // default 1
-    trialsPerHand?: number; // default 3
-    target?: Partial<A6TargetConfig>; // delay range + size
-
-    tracingPathType?: A6TracingPathType; // default circle
-    maxAllowedDeviationPx?: number; // default 40
-    accuracyThresholdPct?: number; // default 70
-
-    gpsEnabled?: boolean; // default true
+    participantCount?: number;
+    trialsPerHand?: number;
+    target?: Partial<A6TargetConfig>;
+    tracingPathType?: A6TracingPathType;
+    maxAllowedDeviationPx?: number;
+    accuracyThresholdPct?: number;
+    gpsEnabled?: boolean;
     sessionLabel?: string;
 }): Activity6RunDraft {
     const runId = genRunId();
 
     const participantCount = clampInt(params.participantCount ?? 1, 1, 6);
-
     const trialsPerHand = clampInt(params.trialsPerHand ?? 3, 1, 10);
     const target = sanitizeTargetConfig(params.target);
-
     const tracingPathType: A6TracingPathType = params.tracingPathType ?? "circle";
     const maxAllowedDeviationPx = clampInt(params.maxAllowedDeviationPx ?? 40, 10, 200);
     const accuracyThresholdPct = clampInt(params.accuracyThresholdPct ?? 70, 0, 100);
@@ -446,43 +463,38 @@ export function createActivity6RunDraft(params: {
         session: {
             activityId: params.activityId,
             sessionLabel: trimOrUndef(params.sessionLabel),
-
             participantCount,
             participants: buildParticipants(participantCount),
-
             trialsPerHand,
             target,
-
             tracingPathType,
             maxAllowedDeviationPx,
             accuracyThresholdPct,
-
             startedAt: now(),
-
             gpsEnabled: params.gpsEnabled ?? true,
             gpsPermission: "unknown",
         },
-
         prediction: undefined,
-
         reactionTrials: [],
         tracingResults: [],
-
         metrics: {participantSummaries: []},
-
         evidence: undefined,
         reflection: undefined,
-
         createdBy: params.createdBy,
         updatedAt: now(),
     };
 
     drafts.set(runId, d);
+    fireAndForgetPersist(d);
     return d;
 }
 
 export function getActivity6RunDraft(runId: string): Activity6RunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllActivity6RunDrafts(): Activity6RunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function clearActivity6RunDraft(runId: string) {
@@ -539,10 +551,10 @@ export function updateActivity6Session(
         updatedAt: now(),
     };
 
-    // recompute metrics for UI after session changes (safe, lightweight)
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -587,11 +599,12 @@ export function updateActivity6Participant(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Prediction (FR-A6-06)
+   Updates: Prediction
 ========================================================= */
 
 export function setActivity6Prediction(
@@ -622,25 +635,23 @@ export function setActivity6Prediction(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Reaction Trials (FR-A6-01/02/03)
+   Updates: Reaction Trials
 ========================================================= */
 
 export function upsertActivity6ReactionTrial(
     runId: string,
     input: {
         id?: string;
-
         participantId: string;
         hand: A6HandType;
         trialNumber: number;
-
         target?: A6TargetPresentation;
         tapAt?: number;
-
         video?: EvidenceDraft;
         geo?: GeoPointDraft;
         notes?: string;
@@ -649,12 +660,10 @@ export function upsertActivity6ReactionTrial(
     const d = drafts.get(runId);
     if (!d) throw new Error("Activity 6 draft not found.");
 
-    // prediction required before trials can be recorded
     if (!d.prediction) {
         throw new Error("Prediction is required before starting reaction trials (FR-A6-06).");
     }
 
-    // validate participant exists
     const hasParticipant = d.session.participants.some((p) => p.id === input.participantId);
     if (!hasParticipant) throw new Error("Participant not found for this session.");
 
@@ -664,7 +673,6 @@ export function upsertActivity6ReactionTrial(
     const existingIndex = d.reactionTrials.findIndex((t) => t.id === id);
     const prev = existingIndex >= 0 ? d.reactionTrials[existingIndex] : undefined;
 
-    // compute reaction time if both timestamps exist
     const appearedAt = input.target?.appearedAt ?? prev?.target?.appearedAt;
     const tapAt = input.tapAt ?? prev?.tapAt;
     const reactionTimeMs =
@@ -672,21 +680,16 @@ export function upsertActivity6ReactionTrial(
 
     const nextItem: A6ReactionTrialDraft = {
         id,
-
         participantId: input.participantId,
         hand: input.hand,
         trialNumber: clampInt(input.trialNumber, 1, 100),
         timestamp: tapAt ?? ts,
-
         target: input.target ?? prev?.target,
         tapAt: tapAt ?? prev?.tapAt,
         reactionTimeMs,
-
         video: input.video ?? prev?.video,
-
         geo: input.geo ?? prev?.geo,
         notes: trimOrUndef(input.notes) ?? prev?.notes,
-
         createdAt: prev ? prev.createdAt : ts,
         updatedAt: prev ? ts : undefined,
     };
@@ -705,6 +708,7 @@ export function upsertActivity6ReactionTrial(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -723,30 +727,26 @@ export function removeActivity6ReactionTrial(runId: string, trialId: string): Ac
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Tracing Results (FR-A6-04)
+   Updates: Tracing Results
 ========================================================= */
 
 export function upsertActivity6TracingResult(
     runId: string,
     input: {
         id?: string;
-
         participantId: string;
         pathType: A6TracingPathType;
-
         startedAt: number;
         endedAt: number;
-
         userPath: A6TracePoint[];
         referencePath: A6TracePoint[];
-
         avgDeviationPx: number;
-        maxAllowedDeviationPx?: number; // default from session if omitted
-
+        maxAllowedDeviationPx?: number;
         video?: EvidenceDraft;
         geo?: GeoPointDraft;
         notes?: string;
@@ -754,9 +754,6 @@ export function upsertActivity6TracingResult(
 ): Activity6RunDraft {
     const d = drafts.get(runId);
     if (!d) throw new Error("Activity 6 draft not found.");
-
-    // prediction not strictly required for tracing (spec says prediction before reaction challenge),
-    // but for consistent flow we still allow tracing regardless.
 
     const hasParticipant = d.session.participants.some((p) => p.id === input.participantId);
     if (!hasParticipant) throw new Error("Participant not found for this session.");
@@ -781,33 +778,24 @@ export function upsertActivity6TracingResult(
 
     const avgDeviationPx = clampNum(input.avgDeviationPx ?? prev?.avgDeviationPx ?? 0, 0, 1e9);
 
-    // AccuracyScore = 1 - (avgDeviation / maxAllowedDeviation), normalized to 0..100
     const normalized = avgDeviationPx / Math.max(1, maxAllowedDeviationPx);
     const accuracyScorePct = clampNum(100 - normalized * 45, 0, 100);
-    //const accuracyScorePct = clampNum(raw * 100, 0, 100);
 
     const nextItem: A6TracingResultDraft = {
         id,
-
         participantId: input.participantId,
         pathType: input.pathType,
-
         startedAt,
         endedAt,
         durationMs,
-
         userPath: sanitizeTracePointList(input.userPath ?? prev?.userPath),
         referencePath: sanitizeTracePointList(input.referencePath ?? prev?.referencePath),
-
         avgDeviationPx,
         maxAllowedDeviationPx,
         accuracyScorePct,
-
         video: input.video ?? prev?.video,
-
         geo: input.geo ?? prev?.geo,
         notes: trimOrUndef(input.notes) ?? prev?.notes,
-
         createdAt: prev ? prev.createdAt : ts,
         updatedAt: prev ? ts : undefined,
     };
@@ -826,6 +814,7 @@ export function upsertActivity6TracingResult(
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -844,11 +833,12 @@ export function removeActivity6TracingResult(runId: string, tracingId: string): 
     next.metrics = computeSessionMetrics(next);
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Evidence + Reflection (FR-A6-07)
+   Updates: Evidence + Reflection
 ========================================================= */
 
 export function setActivity6SessionVideo(
@@ -868,6 +858,7 @@ export function setActivity6SessionVideo(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -893,7 +884,73 @@ export function setActivity6Reflection(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
+}
+
+/* =========================================================
+   Explicit persistence / recovery helpers
+========================================================= */
+
+export async function saveActivity6RunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<Activity6RunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("Activity 6 draft not found.");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+export async function hydrateActivity6RunDraftFromLocalDb(
+    runId: string
+): Promise<Activity6RunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<Activity6RunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity6Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function getLatestRecoverableActivity6RunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<Activity6RunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<Activity6RunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity6Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function markActivity6RunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+export async function discardActivity6RunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
 }
 
 /* =========================================================
@@ -916,7 +973,7 @@ export function validateA6Session(d: Activity6RunDraft): string | null {
 
     if (!s.target) return "Target configuration missing.";
     if (s.target.delayMinSec < 0.5 || s.target.delayMaxSec > 10 || s.target.delayMaxSec <= s.target.delayMinSec) {
-        return "Target delay range must be valid (e.g., 1.0–3.0 seconds).";
+        return "Target delay range must be valid (e.g. 1.0–3.0 seconds).";
     }
     if (s.target.targetSizePx < 24 || s.target.targetSizePx > 120) {
         return "Target size must be between 24 and 120 px.";
@@ -940,11 +997,6 @@ export function validateA6Prediction(d: Activity6RunDraft): string | null {
     return null;
 }
 
-/**
- * Trial coverage validation:
- * Each participant should have at least one dominant + one non-dominant reaction trial,
- * and at least one tracing result. (FR-A6-07 / Participant Trials)
- */
 export function validateA6MinimumTrials(d: Activity6RunDraft): string[] {
     const missing: string[] = [];
 
@@ -962,59 +1014,37 @@ export function validateA6MinimumTrials(d: Activity6RunDraft): string[] {
     return missing;
 }
 
-/**
- * Submission-level validation (FR-A6-07).
- * Allow running with GPS denied, but block submission if gpsEnabled and not granted/captured.
- * Video is optional.
- */
 export function validateA6Submission(d: Activity6RunDraft): string[] {
     const missing: string[] = [];
 
-    // session sanity
     const sessionErr = validateA6Session(d);
     if (sessionErr) missing.push(`Session: ${sessionErr}`);
 
-    // prediction required for reaction challenge
     if (validateA6Prediction(d)) missing.push("Prediction entry");
 
-    // reaction dataset: at least one recorded reaction time
     const hasAnyReaction = d.reactionTrials.some((t) => Number.isFinite(t.reactionTimeMs));
     if (!hasAnyReaction) missing.push("Recorded reaction time dataset");
 
-    // tracing results required
     const hasAnyTracing = d.tracingResults.some((r) => Number.isFinite(r.accuracyScorePct));
     if (!hasAnyTracing) missing.push("Tracing challenge results");
 
-    // per-participant minimum coverage
     const minCoverage = validateA6MinimumTrials(d);
     if (minCoverage.length) missing.push(...minCoverage);
 
-    // reflection + rating required
     if (!trimOrUndef(d.reflection?.reflectionText)) missing.push("Reflection text");
     if (d.reflection?.rating == null) missing.push("Rating (1–5)");
 
-    // GPS required when gpsEnabled
     if (d.session.gpsEnabled) {
         if (d.session.gpsPermission !== "granted") missing.push("GPS permission granted");
         if (!d.session.geo) missing.push("GPS coordinates captured");
     }
 
-    // video optional -> no check
-
     return missing;
 }
 
-/* =========================================================
-   Leaderboard helpers (score conversion later)
-========================================================= */
-
-/**
- * Eligibility: accuracy >= threshold (FR-A6-06)
- */
 export function isA6LeaderboardEligible(d: Activity6RunDraft): boolean {
     const threshold = d.session.accuracyThresholdPct ?? 60;
 
-    // Use team-level rule: every participant must have a tracing accuracy meeting threshold
     const participants = d.session.participants ?? [];
     if (participants.length === 0) return false;
 
@@ -1030,12 +1060,6 @@ export function isA6LeaderboardEligible(d: Activity6RunDraft): boolean {
     return true;
 }
 
-/**
- * Return metrics needed for later score conversion:
- * - Lowest mean reaction time (teamMeanReactionTimeMs)
- * - Tracing accuracy (min/avg)
- * Score conversion can be applied later to match other activities.
- */
 export function getA6LeaderboardMetrics(d: Activity6RunDraft): {
     eligible: boolean;
     teamMeanReactionTimeMs?: number;
