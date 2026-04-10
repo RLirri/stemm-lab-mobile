@@ -17,7 +17,10 @@ import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth} from "../../../services/firebase";
 import {
     createRunDraft,
+    discardRunDraft,
+    getLatestRecoverableRunDraft,
     getRunDraft,
+    hydrateRunDraftFromLocalDb,
     updateSession,
     type ActivityRunDraft,
     type SessionDraft,
@@ -46,6 +49,9 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
     const [runId, setRunId] = useState<string | null>(route.params.runId ?? null);
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // Form fields (keep UI state as strings where needed)
     const [dropHeightRaw, setDropHeightRaw] = useState<string>("");
@@ -66,36 +72,103 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
     const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
-        // Resolve / create run draft safely (avoids "Run draft not found" on fast refresh)
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        const existingId = route.params.runId;
-        if (existingId) {
-            const existing = getRunDraft(existingId);
-            if (existing) {
-                setRunId(existingId);
-                setDraft(existing);
-                return;
+        hasBootstrappedRef.current = true;
+        const uid = user.uid;
+
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                const existingId = route.params.runId;
+
+                // Case 1: route already provides a runId
+                if (existingId) {
+                    const existingMemory = getRunDraft(existingId);
+                    if (existingMemory) {
+                        setRunId(existingId);
+                        setDraft(existingMemory);
+                        return;
+                    }
+
+                    const hydrated = await hydrateRunDraftFromLocalDb(existingId);
+                    if (hydrated) {
+                        setRunId(hydrated.runId);
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createRunDraft(activityId, uid);
+                    setRunId(recreated.runId);
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                // Case 2: no runId supplied -> check latest recoverable draft
+                const recoverable = await getLatestRecoverableRunDraft({
+                    activityId,
+                    createdBy: uid,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 1 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardRunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A1SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createRunDraft(activityId, uid);
+                                    setRunId(created.runId);
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setRunId(recoverable.runId);
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                // Case 3: nothing recoverable -> create new
+                const created = createRunDraft(activityId, uid);
+                setRunId(created.runId);
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A1SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createRunDraft(activityId, uid);
+                setRunId(fallback.runId);
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
             }
-
-            // If route has runId but store was reset, recreate and replace params
-            const recreated = createRunDraft(activityId, user.uid);
-            setRunId(recreated.runId);
-            setDraft(recreated);
-
-            navigation.setParams({runId: recreated.runId});
-            return;
         }
 
-        // No runId provided: create new
-        const created = createRunDraft(activityId, user.uid);
-        setRunId(created.runId);
-        setDraft(created);
-        navigation.setParams({runId: created.runId});
+        void bootstrap();
     }, [activityId, navigation, route.params.runId, user]);
 
     useEffect(() => {
-        // Start ticking if session started
         if (!draft?.session.startedAt || !draft.session.endsAt) return;
 
         if (tickRef.current) clearInterval(tickRef.current);
@@ -108,7 +181,6 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
     }, [draft?.session.endsAt, draft?.session.startedAt]);
 
     useEffect(() => {
-        // Hydrate form from draft when ready
         if (!draft) return;
 
         const s = draft.session;
@@ -208,7 +280,6 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
         const payloadMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
 
-        // Persist everything
         persistSessionPatch({
             dropHeightM: dropHeightM,
             targetZoneEnabled: targetEnabled,
@@ -228,6 +299,15 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
     }
 
     if (!user) return null;
+
+    if (bootstrapping || !draft) {
+        return (
+            <View style={styles.center}>
+                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
+                <Text style={{marginTop: 8, opacity: 0.7}}>Checking for unfinished session...</Text>
+            </View>
+        );
+    }
 
     return (
         <KeyboardAvoidingView
@@ -426,6 +506,7 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20},
+    center: {flex: 1, alignItems: "center", justifyContent: "center"},
     title: {fontSize: 26, fontWeight: "900", marginTop: 6},
     sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
 
