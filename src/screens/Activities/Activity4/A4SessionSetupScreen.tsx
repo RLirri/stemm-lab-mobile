@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -19,7 +19,10 @@ import {auth} from "../../../services/firebase";
 
 import {
     createActivity4RunDraft,
+    discardActivity4RunDraft,
     getActivity4RunDraft,
+    getLatestRecoverableActivity4RunDraft,
+    hydrateActivity4RunDraftFromLocalDb,
     updateActivity4Session,
     updateActivity4Design,
     validateA4Session,
@@ -54,9 +57,6 @@ function formatGeoText(geo: Activity4RunDraft["session"]["geo"] | undefined): st
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-/**
- * Requests foreground permission safely.
- */
 async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
     try {
         const Location = await import("expo-location");
@@ -67,9 +67,6 @@ async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
     }
 }
 
-/**
- * Captures a current GPS coordinate safely (requires permission granted).
- */
 async function getCurrentGeoSafe(): Promise<
     | { lat: number; lng: number; accuracyM?: number }
     | null
@@ -77,7 +74,6 @@ async function getCurrentGeoSafe(): Promise<
     try {
         const Location = await import("expo-location");
 
-        // If user has Location Services OFF, this can fail / hang — check first:
         const servicesEnabled = await Location.hasServicesEnabledAsync();
         if (!servicesEnabled) {
             return null;
@@ -90,7 +86,7 @@ async function getCurrentGeoSafe(): Promise<
         const lat = pos?.coords?.latitude;
         const lng = pos?.coords?.longitude;
 
-        const acc = pos?.coords?.accuracy ?? undefined; // ✅ converts null → undefined
+        const acc = pos?.coords?.accuracy ?? undefined;
         const accuracyM = typeof acc === "number" && Number.isFinite(acc) ? acc : undefined;
 
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
@@ -98,7 +94,7 @@ async function getCurrentGeoSafe(): Promise<
         return {
             lat,
             lng,
-            accuracyM, // ✅ number | undefined (never null)
+            accuracyM,
         };
     } catch {
         return null;
@@ -107,9 +103,13 @@ async function getCurrentGeoSafe(): Promise<
 
 export default function A4SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
-    const {activityId, runId} = route.params;
+    const {activityId} = route.params;
+    const routeRunId = route.params.runId;
 
     const [draft, setDraft] = useState<Activity4RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // session fields
     const [surface, setSurface] = useState<A4MaterialContext | undefined>(undefined);
@@ -119,28 +119,117 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
     const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
     const [askingGps, setAskingGps] = useState(false);
 
-    // local view of saved geo (comes from draft.session.geo)
     const geo = draft?.session.geo;
     const geoCaptured =
         !!geo && isFiniteNumber(geo.lat) && isFiniteNumber(geo.lng);
 
-    // UI: expand/collapse design editors
     const [expanded, setExpanded] = useState<Record<number, boolean>>({0: true});
 
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        let d = runId ? getActivity4RunDraft(runId) : null;
-        if (!d) {
-            d = createActivity4RunDraft({
-                activityId,
-                createdBy: user.uid,
-                designCount: 3,
-                gpsEnabled: true,
-            });
+        hasBootstrappedRef.current = true;
+
+        const userId = user.uid;
+
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                if (routeRunId) {
+                    const existing = getActivity4RunDraft(routeRunId);
+                    if (existing) {
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity4RunDraftFromLocalDb(routeRunId);
+                    if (hydrated) {
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity4RunDraft({
+                        activityId,
+                        createdBy: userId,
+                        designCount: 3,
+                        gpsEnabled: true,
+                    });
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                const recoverable = await getLatestRecoverableActivity4RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 4 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity4RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A4SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity4RunDraft({
+                                        activityId,
+                                        createdBy: userId,
+                                        designCount: 3,
+                                        gpsEnabled: true,
+                                    });
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                const created = createActivity4RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    designCount: 3,
+                    gpsEnabled: true,
+                });
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A4SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity4RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    designCount: 3,
+                    gpsEnabled: true,
+                });
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
+            }
         }
-        setDraft(d);
-    }, [activityId, runId, user]);
+
+        void bootstrap();
+    }, [activityId, navigation, routeRunId, user]);
 
     useEffect(() => {
         if (!draft) return;
@@ -151,27 +240,22 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
         setGpsPermission(draft.session.gpsPermission);
 
-        // auto-expand first 3 designs
         const nextExp: Record<number, boolean> = {};
         for (let i = 0; i < Math.min(3, draft.session.designCount); i++) nextExp[i] = true;
         setExpanded((prev) => ({...nextExp, ...prev}));
     }, [draft]);
 
-    // If user disables GPS, keep UI consistent by clearing saved geo + permission back to unknown/denied.
-    // (We keep permission as-is if you prefer, but clearing geo is important for “No coordinate” to match reality.)
     useEffect(() => {
         if (!draft) return;
 
-        // Only react when toggling OFF
         if (gpsEnabled === false) {
             const next = updateActivity4Session(draft.runId, {
                 gpsEnabled: false,
-                // optional policy: keep permission status but clear geo so user sees it's not captured
                 geo: undefined,
             });
             setDraft(next);
         }
-        // when toggling ON, we just persist; permission request is user-controlled
+
         if (gpsEnabled === true) {
             const next = updateActivity4Session(draft.runId, {gpsEnabled: true});
             setDraft(next);
@@ -214,9 +298,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         return next;
     }
 
-    /**
-     * Request permission ONLY (does not guarantee a coordinate is captured).
-     */
     async function onRequestGpsPermissionOnly() {
         if (!draft) return;
 
@@ -247,10 +328,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    /**
-     * Capture location (requests permission if needed, then saves session.geo).
-     * This is the main fix to stop “No coordinate saved yet”.
-     */
     async function onCaptureLocation() {
         if (!draft) return;
 
@@ -262,11 +339,11 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         try {
             setAskingGps(true);
 
-            // 1) ensure permission
             let status = gpsPermission;
             if (status === "unknown" || status === "denied") {
                 status = await requestGpsPermissionSafe();
-                updateActivity4Session(draft.runId, {gpsPermission: status});
+                const nextPermission = updateActivity4Session(draft.runId, {gpsPermission: status});
+                setDraft(nextPermission);
                 setGpsPermission(status);
             }
 
@@ -278,7 +355,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                 return;
             }
 
-            // 2) capture coordinate
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
@@ -288,7 +364,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                 return;
             }
 
-            // 3) persist into session.geo (your store shape)
             const next = updateActivity4Session(draft.runId, {
                 gpsEnabled: true,
                 gpsPermission: "granted",
@@ -338,11 +413,12 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
                 <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
+                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
             </View>
         );
     }
@@ -358,10 +434,9 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                     movement.
                 </Text>
 
-                {/* Context */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Material Context</Text>
-                    <Text style={styles.help}>Material Designs affect vibration transfer (paper vs plastic).</Text>
+                    <Text style={styles.help}>Material designs affect vibration transfer (paper vs plastic).</Text>
 
                     <Text style={styles.label}>Test material</Text>
                     <View style={styles.segmentWrap}>
@@ -378,14 +453,15 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                             );
                         })}
 
-                        <Pressable onPress={() => setSurface(undefined)}
-                                   style={[styles.segmentBtn, !surface && styles.segmentBtnActive]}>
+                        <Pressable
+                            onPress={() => setSurface(undefined)}
+                            style={[styles.segmentBtn, !surface && styles.segmentBtnActive]}
+                        >
                             <Text style={[styles.segmentText, !surface && styles.segmentTextActive]}>Not sure</Text>
                         </Pressable>
                     </View>
                 </View>
 
-                {/* Designs count */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Designs</Text>
                     <Text style={styles.help}>Minimum 3 designs required for comparison.</Text>
@@ -400,15 +476,16 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                         maxLength={1}
                     />
 
-                    <Text style={styles.note}>Tip: Keep it realistic — you’ll run a 10-second vibration test for each
-                        design.</Text>
+                    <Text style={styles.note}>
+                        Tip: Keep it realistic — you’ll run a 10-second vibration test for each design.
+                    </Text>
                 </View>
 
-                {/* Design Builder */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Design Builder</Text>
-                    <Text style={styles.help}>Record your structure parameters so your results + reflection are
-                        meaningful.</Text>
+                    <Text style={styles.help}>
+                        Record your structure parameters so your results and reflection are meaningful.
+                    </Text>
 
                     {designs.map((d, i) => {
                         const isOpen = Boolean(expanded[i]);
@@ -417,8 +494,9 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                             <View key={i} style={styles.designCard}>
                                 <Pressable onPress={() => toggleExpanded(i)} style={styles.designHeader}>
                                     <View style={{flex: 1}}>
-                                        <Text
-                                            style={styles.designTitle}>{d.name?.trim() ? d.name : `Design ${i + 1}`}</Text>
+                                        <Text style={styles.designTitle}>
+                                            {d.name?.trim() ? d.name : `Design ${i + 1}`}
+                                        </Text>
                                         <Text style={styles.designMeta}>
                                             Folds: {d.foldCount ?? "—"} • Pillars: {d.pillarCount ?? "—"} •
                                             Layers: {d.layers ?? "—"}
@@ -499,7 +577,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                     })}
                 </View>
 
-                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for submission)</Text>
                     <Text style={styles.help}>
@@ -537,7 +614,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                         </View>
                     </View>
 
-                    {/* Permission only */}
                     <Pressable
                         style={[styles.secondaryBtn, askingGps && {opacity: 0.7}]}
                         onPress={onRequestGpsPermissionOnly}
@@ -553,7 +629,6 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                         )}
                     </Pressable>
 
-                    {/* Capture / Refresh coordinate */}
                     <Pressable
                         style={[styles.secondaryBtn, askingGps && {opacity: 0.7}]}
                         onPress={onCaptureLocation}

@@ -1,12 +1,15 @@
 // src/store/activity4RunDraftStore.ts
 
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
+
 export type A4MaterialContext = "paper" | "plastic";
 export type GpsPermissionStatus = "unknown" | "granted" | "denied";
 export type A4FinalScoreMethod = "sensor" | "manual_deg" | "manual_cm";
 
 export type A4ValidationDraft = {
-    delta: number;     // absolute difference between sensor vs manual (deg), if both exist
-    flagged: boolean;  // e.g. delta > threshold
+    delta: number;
+    flagged: boolean;
 };
 
 /* =========================================================
@@ -26,21 +29,18 @@ export type GeoPointDraft = {
 };
 
 /* =========================================================
-   Design metadata (earthquake structure design descriptors)
+   Design metadata
 ========================================================= */
 
 export type A4DesignDraft = {
-    index: number; // 0..designCount-1
+    index: number;
     name?: string;
-
-    // structure descriptors (optional; useful for reflection + comparison)
-    foldCount?: number;     // 0..60
-    pillarCount?: number;   // 0..30
-    layers?: number;        // 1..10
-    baseWidthCm?: number;   // 1..200
-    baseLengthCm?: number;  // 1..200
+    foldCount?: number;
+    pillarCount?: number;
+    layers?: number;
+    baseWidthCm?: number;
+    baseLengthCm?: number;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
@@ -51,22 +51,12 @@ export type A4DesignDraft = {
 
 export type A4SessionDraft = {
     activityId: string;
-
-    // designs metadata stored once per session
-    designCount: number; // min 3
+    designCount: number;
     designs: A4DesignDraft[];
-
-    // metadata / timing
     startedAt: number;
     endsAt?: number;
-
-    // optional context
     surfaceContext?: A4MaterialContext;
-
-    // vibration policy
-    vibrationDurationSec: number; // FR-A4-01 default 10
-
-    // GPS policy: allow running if denied; block submission later
+    vibrationDurationSec: number;
     gpsEnabled: boolean;
     geo?: {
         lat: number;
@@ -79,73 +69,62 @@ export type A4SessionDraft = {
 
 export type A4MeasurementDraft = {
     id: string;
-
-    // what we are measuring
-    designIndex: number; // 0..designCount-1
-
-    // raw sensor capture (FR-A4-02)
+    designIndex: number;
     magnitudeSamples?: number[];
-
-    // computed sensor score (FR-A4-03): lower is better
     movementScore?: number;
-
-    // manual outcome (fallback + validation)
-    manualOutcomeDeg?: number; // user input degrees (optional)
-    manualOutcomeCm?: number;  // user input cm (optional)
-
-    // final score used by leaderboard/submission
-    finalScore?: number; // lowest wins
+    manualOutcomeDeg?: number;
+    manualOutcomeCm?: number;
+    finalScore?: number;
     finalMethod?: A4FinalScoreMethod;
-
-    // optional validation metadata (sensor vs manual)
     validation?: A4ValidationDraft;
-
-    // evidence (per-measurement optional)
     video?: EvidenceDraft;
-
-    // optional metadata
     geo?: GeoPointDraft;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
 
 export type A4ReflectionDraft = {
     reflectionText?: string;
-    rating?: number; // 1..5
+    rating?: number;
 };
 
 export type Activity4RunDraft = {
     runId: string;
     session: A4SessionDraft;
-
-    // FR-A4-05: prediction required before measurement
     prediction?: {
         predictedBestDesignIndex?: number;
         predictedNotes?: string;
         createdAt: number;
         updatedAt?: number;
     };
-
     measurements: A4MeasurementDraft[];
-
-    // FR-A4-07: submission requires session video + GPS + reflection etc.
     evidence?: {
         sessionVideo?: EvidenceDraft;
     };
-
     reflection?: A4ReflectionDraft;
-
     createdBy?: string;
     updatedAt: number;
+};
+
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
 };
 
 /* =========================================================
    In-memory store
 ========================================================= */
 
-const drafts = new Map<string, Activity4RunDraft>();
+const DRAFTS_KEY = "__STEMM_A4_RUN_DRAFTS__";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any;
+
+const drafts: Map<string, Activity4RunDraft> =
+    (g[DRAFTS_KEY] ?? new Map<string, Activity4RunDraft>()) as Map<string, Activity4RunDraft>;
+
+g[DRAFTS_KEY] = drafts;
 
 function now() {
     return Date.now();
@@ -165,6 +144,10 @@ function clampInt(n: number, min: number, max: number) {
 
 function clampNum(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, n));
+}
+
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
 }
 
 /* =========================================================
@@ -200,18 +183,60 @@ function sanitizeDesign(d: A4DesignDraft): A4DesignDraft {
 function normalizeDesignsForCount(existing: A4DesignDraft[], nextCount: number): A4DesignDraft[] {
     const sorted = [...(existing ?? [])].sort((a, b) => a.index - b.index);
 
-    // Trim if reduced
     let next = sorted.filter((x) => x.index < nextCount);
 
-    // Append if increased
     for (let i = next.length; i < nextCount; i++) {
         next.push(makeDefaultDesign(i));
     }
 
-    // Reindex safety
     next = next.map((x, i) => ({...x, index: i}));
 
     return next.map(sanitizeDesign);
+}
+
+function normalizeRecoveredActivity4Draft(payload: Activity4RunDraft): Activity4RunDraft {
+    const count = clampInt(payload.session?.designCount ?? 3, 3, 8);
+
+    return {
+        ...payload,
+        session: {
+            ...payload.session,
+            designCount: count,
+            designs: normalizeDesignsForCount(payload.session?.designs ?? [], count),
+            vibrationDurationSec: clampInt(payload.session?.vibrationDurationSec ?? 10, 1, 60),
+            gpsEnabled: payload.session?.gpsEnabled ?? true,
+            gpsPermission: payload.session?.gpsPermission ?? "unknown",
+        },
+        measurements: Array.isArray(payload.measurements) ? payload.measurements : [],
+    };
+}
+
+async function persistDraftInternal(
+    draft: Activity4RunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<Activity4RunDraft>({
+        runId: draft.runId,
+        activityId: draft.session.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy ?? null,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.session.startedAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: Activity4RunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activity4RunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
 }
 
 /* =========================================================
@@ -221,8 +246,8 @@ function normalizeDesignsForCount(existing: A4DesignDraft[], nextCount: number):
 export function createActivity4RunDraft(params: {
     activityId: string;
     createdBy?: string;
-    designCount?: number; // default 3, min 3
-    gpsEnabled?: boolean; // default true
+    designCount?: number;
+    gpsEnabled?: boolean;
 }): Activity4RunDraft {
     const runId = genRunId();
     const count = clampInt(params.designCount ?? 3, 3, 8);
@@ -231,13 +256,10 @@ export function createActivity4RunDraft(params: {
         runId,
         session: {
             activityId: params.activityId,
-
             designCount: count,
             designs: buildDesigns(count),
-
             startedAt: now(),
             vibrationDurationSec: 10,
-
             gpsEnabled: params.gpsEnabled ?? true,
             gpsPermission: "unknown",
         },
@@ -249,11 +271,16 @@ export function createActivity4RunDraft(params: {
     };
 
     drafts.set(runId, d);
+    fireAndForgetPersist(d);
     return d;
 }
 
 export function getActivity4RunDraft(runId: string): Activity4RunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllActivity4RunDrafts(): Activity4RunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function clearActivity4RunDraft(runId: string) {
@@ -292,6 +319,7 @@ export function updateActivity4Session(runId: string, patch: Partial<A4SessionDr
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -332,6 +360,7 @@ export function updateActivity4Design(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -363,6 +392,7 @@ export function setActivity4Prediction(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -375,25 +405,15 @@ export function upsertActivity4Measurement(
     input: {
         id?: string;
         designIndex: number;
-
-        // raw / computed
         magnitudeSamples?: number[];
         movementScore?: number;
-
-        // manual
         manualOutcomeDeg?: number;
         manualOutcomeCm?: number;
-
-        // final used for results/leaderboard
         finalScore?: number;
         finalMethod?: A4FinalScoreMethod;
         validation?: A4ValidationDraft;
-
-        // meta
         geo?: GeoPointDraft;
         notes?: string;
-
-        // optional per-measurement video
         video?: EvidenceDraft;
     }
 ): Activity4RunDraft {
@@ -407,25 +427,18 @@ export function upsertActivity4Measurement(
     const prev = existingIndex >= 0 ? d.measurements[existingIndex] : undefined;
 
     const nextItem: A4MeasurementDraft = {
-        // keep immutable identity + timestamps
         id,
         designIndex: input.designIndex,
         createdAt: prev ? prev.createdAt : ts,
         updatedAt: prev ? ts : undefined,
-
-        // merge: keep previous values if patch doesn’t provide them
         magnitudeSamples: input.magnitudeSamples ?? prev?.magnitudeSamples,
         movementScore: input.movementScore ?? prev?.movementScore,
-
         manualOutcomeDeg: input.manualOutcomeDeg ?? prev?.manualOutcomeDeg,
         manualOutcomeCm: input.manualOutcomeCm ?? prev?.manualOutcomeCm,
-
         finalScore: input.finalScore ?? prev?.finalScore,
         finalMethod: input.finalMethod ?? prev?.finalMethod,
         validation: input.validation ?? prev?.validation,
-
         video: input.video ?? prev?.video,
-
         geo: input.geo ?? prev?.geo,
         notes: input.notes?.trim() ? input.notes.trim() : (prev?.notes ?? undefined),
     };
@@ -442,6 +455,7 @@ export function upsertActivity4Measurement(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -456,6 +470,7 @@ export function removeActivity4Measurement(runId: string, measurementId: string)
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -477,6 +492,7 @@ export function setActivity4SessionVideo(runId: string, video: EvidenceDraft | u
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -497,11 +513,77 @@ export function setActivity4Reflection(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Validators (UI-level)
+   Explicit persistence / recovery helpers
+========================================================= */
+
+export async function saveActivity4RunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<Activity4RunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("Activity 4 draft not found.");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+export async function hydrateActivity4RunDraftFromLocalDb(
+    runId: string
+): Promise<Activity4RunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<Activity4RunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity4Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function getLatestRecoverableActivity4RunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<Activity4RunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<Activity4RunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity4Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function markActivity4RunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+export async function discardActivity4RunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
+}
+
+/* =========================================================
+   Validators
 ========================================================= */
 
 export function validateA4Session(d: Activity4RunDraft): string | null {
