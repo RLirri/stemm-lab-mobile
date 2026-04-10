@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -19,7 +19,10 @@ import {auth} from "../../../services/firebase";
 
 import {
     createActivity5RunDraft,
+    discardActivity5RunDraft,
     getActivity5RunDraft,
+    getLatestRecoverableActivity5RunDraft,
+    hydrateActivity5RunDraftFromLocalDb,
     updateActivity5Session,
     updateActivity5Participant,
     validateA5Session,
@@ -107,9 +110,13 @@ type Props = NativeStackScreenProps<AppStackParamList, "A5SessionSetup">;
 
 export default function A5SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
-    const {activityId, runId} = route.params;
+    const {activityId} = route.params;
+    const routeRunId = route.params.runId;
 
     const [draft, setDraft] = useState<Activity5RunDraft | null>(null);
+    const [bootstrapping, setBootstrapping] = useState(true);
+
+    const hasBootstrappedRef = useRef(false);
 
     // UI buffers
     const [sessionLabel, setSessionLabel] = useState("");
@@ -126,31 +133,122 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
     // participant add input
     const [newParticipantName, setNewParticipantName] = useState("");
 
-    /* ----------------------------
-       Hydrate / Create draft
-    ---------------------------- */
-
     useEffect(() => {
         if (!user) return;
+        if (hasBootstrappedRef.current) return;
 
-        let d = runId ? getActivity5RunDraft(runId) : null;
-        if (!d) {
-            d = createActivity5RunDraft({
-                activityId,
-                createdBy: user.uid,
-                gpsEnabled: true,
-                feedbackEnabled: true,
-                samplingHz: 50,
-                movementDurationSec: 20,
-                participantCount: 1,
-            });
+        hasBootstrappedRef.current = true;
+        const userId = user.uid;
+
+        async function bootstrap() {
+            try {
+                setBootstrapping(true);
+
+                if (routeRunId) {
+                    const existing = getActivity5RunDraft(routeRunId);
+                    if (existing) {
+                        setDraft(existing);
+                        return;
+                    }
+
+                    const hydrated = await hydrateActivity5RunDraftFromLocalDb(routeRunId);
+                    if (hydrated) {
+                        setDraft(hydrated);
+                        navigation.setParams({runId: hydrated.runId});
+                        return;
+                    }
+
+                    const recreated = createActivity5RunDraft({
+                        activityId,
+                        createdBy: userId,
+                        gpsEnabled: true,
+                        feedbackEnabled: true,
+                        samplingHz: 50,
+                        movementDurationSec: 20,
+                        participantCount: 1,
+                    });
+                    setDraft(recreated);
+                    navigation.setParams({runId: recreated.runId});
+                    return;
+                }
+
+                const recoverable = await getLatestRecoverableActivity5RunDraft({
+                    activityId,
+                    createdBy: userId,
+                });
+
+                if (recoverable) {
+                    Alert.alert(
+                        "Resume previous draft?",
+                        "We found an unfinished Activity 5 draft. Would you like to continue it or start a new session?",
+                        [
+                            {
+                                text: "Start New",
+                                style: "destructive",
+                                onPress: async () => {
+                                    try {
+                                        await discardActivity5RunDraft(recoverable.runId);
+                                    } catch (error) {
+                                        console.error("[A5SessionSetup] Failed to discard old draft", error);
+                                    }
+
+                                    const created = createActivity5RunDraft({
+                                        activityId,
+                                        createdBy: userId,
+                                        gpsEnabled: true,
+                                        feedbackEnabled: true,
+                                        samplingHz: 50,
+                                        movementDurationSec: 20,
+                                        participantCount: 1,
+                                    });
+                                    setDraft(created);
+                                    navigation.setParams({runId: created.runId});
+                                },
+                            },
+                            {
+                                text: "Resume",
+                                onPress: () => {
+                                    setDraft(recoverable);
+                                    navigation.setParams({runId: recoverable.runId});
+                                },
+                            },
+                        ]
+                    );
+                    return;
+                }
+
+                const created = createActivity5RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    feedbackEnabled: true,
+                    samplingHz: 50,
+                    movementDurationSec: 20,
+                    participantCount: 1,
+                });
+                setDraft(created);
+                navigation.setParams({runId: created.runId});
+            } catch (error) {
+                console.error("[A5SessionSetup] Failed to bootstrap draft", error);
+
+                const fallback = createActivity5RunDraft({
+                    activityId,
+                    createdBy: userId,
+                    gpsEnabled: true,
+                    feedbackEnabled: true,
+                    samplingHz: 50,
+                    movementDurationSec: 20,
+                    participantCount: 1,
+                });
+                setDraft(fallback);
+                navigation.setParams({runId: fallback.runId});
+            } finally {
+                setBootstrapping(false);
+            }
         }
-        setDraft(d);
-    }, [activityId, runId, user]);
 
-    /* ----------------------------
-       Draft -> UI sync
-    ---------------------------- */
+        void bootstrap();
+    }, [activityId, navigation, routeRunId, user]);
 
     useEffect(() => {
         if (!draft) return;
@@ -168,10 +266,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
     const participants = draft?.session.participants ?? [];
     const geoCaptured = !!draft?.session.geo;
-
-    /* ----------------------------
-       Validation (shadow object)
-    ---------------------------- */
 
     const sessionError = useMemo(() => {
         if (!draft) return null;
@@ -191,7 +285,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                 feedbackEnabled,
                 gpsEnabled,
                 gpsPermission,
-                // IMPORTANT: we don't mutate participants here; store will normalize on persist
             },
         };
 
@@ -228,10 +321,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         return next;
     }
 
-    /* ----------------------------
-       Participants: Rename
-    ---------------------------- */
-
     function onRenameParticipant(participantId: string, name: string) {
         if (!draft) return;
 
@@ -240,12 +329,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         });
         setDraft(next);
     }
-
-    /* ----------------------------
-       Participants: Add (store-native)
-       - Increase participantCount (store appends default participant)
-       - Rename last participant using updateActivity5Participant
-    ---------------------------- */
 
     function onAddParticipant() {
         if (!draft) return;
@@ -262,12 +345,10 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // 1) Increase count
         const afterCount = updateActivity5Session(draft.runId, {
             participantCount: currentCount + 1,
         });
 
-        // 2) The store will have appended a new participant at the end
         const appended = afterCount.session.participants?.[afterCount.session.participants.length - 1];
         if (!appended?.id) {
             setDraft(afterCount);
@@ -275,19 +356,12 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
-        // 3) Rename appended participant
         const afterRename = updateActivity5Participant(afterCount.runId, appended.id, {name});
 
         setDraft(afterRename);
         setParticipantCountRaw(String(afterRename.session.participantCount));
         setNewParticipantName("");
     }
-
-    /* ----------------------------
-       Participants: Remove
-       We rebuild participants array and decrement participantCount,
-       then call updateActivity5Session(...) with both fields.
-    ---------------------------- */
 
     function onRemoveParticipant(participantId: string) {
         if (!draft) return;
@@ -320,10 +394,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         ]);
     }
 
-    /* ----------------------------
-       GPS capture
-    ---------------------------- */
-
     async function onCaptureGps() {
         if (!draft) return;
 
@@ -335,7 +405,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         try {
             setCapturingGps(true);
 
-            // ensure permission
             let status = gpsPermission;
             if (status === "unknown" || status === "denied") {
                 status = await requestGpsPermissionSafe();
@@ -353,7 +422,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                 return;
             }
 
-            // capture coordinate
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
@@ -381,16 +449,11 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    /* ----------------------------
-       Toggle GPS (store-consistent)
-    ---------------------------- */
-
     function onToggleGps(nextVal: boolean) {
         setGpsEnabled(nextVal);
 
         if (!draft) return;
 
-        // Mirror A4 policy: allow running w/o GPS, but clear geo when disabled for clarity.
         const next = updateActivity5Session(draft.runId, {
             gpsEnabled: nextVal,
             geo: nextVal ? draft.session.geo : undefined,
@@ -398,10 +461,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
         setDraft(next);
     }
-
-    /* ----------------------------
-       Continue -> Prediction
-    ---------------------------- */
 
     function onContinue() {
         if (!user || !draft) return;
@@ -420,17 +479,14 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         });
     }
 
-    /* ----------------------------
-       Render guards
-    ---------------------------- */
-
     if (!user) return null;
 
-    if (!draft) {
+    if (bootstrapping || !draft) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
                 <Text style={styles.loadingText}>Loading session…</Text>
+                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
             </View>
         );
     }
@@ -443,7 +499,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                     Configure participants and sensor settings. You must enter a prediction before any guided trials.
                 </Text>
 
-                {/* Session */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Session</Text>
 
@@ -460,7 +515,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Sensor + Guidance */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Sensor Settings</Text>
                     <Text style={styles.help}>
@@ -497,7 +551,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Participants */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Participants</Text>
                     <Text style={styles.help}>
@@ -513,7 +566,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                         style={styles.input}
                         maxLength={1}
                         onBlur={() => {
-                            // Persist count changes on blur
+                            if (!draft) return;
                             const nextCount = clampInt(Number(participantCountRaw || "1"), 1, 6);
                             const next = updateActivity5Session(draft.runId, {participantCount: nextCount});
                             setDraft(next);
@@ -521,7 +574,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                         }}
                     />
 
-                    {/* Quick add */}
                     <View style={styles.addRow}>
                         <View style={{flex: 1}}>
                             <Text style={styles.label}>Add participant (name)</Text>
@@ -537,7 +589,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                         </Pressable>
                     </View>
 
-                    {/* Participant list with inline rename */}
                     {participants.length === 0 ? (
                         <Text style={styles.muted}>No participants initialized.</Text>
                     ) : (
@@ -572,7 +623,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
                     <Text style={styles.help}>
@@ -601,7 +651,6 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Continue */}
                 <Pressable style={styles.primaryBtn} onPress={onContinue}>
                     <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
                 </Pressable>
@@ -615,7 +664,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 }
 
 /* =========================================================
-   Styles (aligned with A4 style)
+   Styles
 ========================================================= */
 
 const styles = StyleSheet.create({

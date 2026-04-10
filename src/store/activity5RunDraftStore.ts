@@ -1,5 +1,8 @@
 // src/store/activity5RunDraftStore.ts
 
+import {offlineDraftService} from "../services/offlineDraftService";
+import type {OfflineDraftStatus} from "../types/offlineDraft";
+
 export type GpsPermissionStatus = "unknown" | "granted" | "denied";
 export type A5TrialMode = "baseline" | "feedback";
 
@@ -15,13 +18,13 @@ export type A5MovementType =
 export type A5MovementSpec = {
     type: A5MovementType;
     title: string;
-    durationSec: number; // duration guidance (per movement)
+    durationSec: number;
     postureGuidance: string;
-    visualKey?: string; // optional mapping key for animation asset
+    visualKey?: string;
 };
 
 /* =========================================================
-   Evidence + GPS (match A4 style)
+   Evidence + GPS
 ========================================================= */
 
 export type EvidenceDraft = {
@@ -37,33 +40,33 @@ export type GeoPointDraft = {
 };
 
 /* =========================================================
-   Sensor dataset (FR-A5-02)
+   Sensor dataset
 ========================================================= */
 
 export type A5AccelSample = {
-    tMs: number; // timestamp relative to trial start (ms)
-    ax: number;  // acceleration x
-    ay: number;  // acceleration y
-    az: number;  // acceleration z
+    tMs: number;
+    ax: number;
+    ay: number;
+    az: number;
 };
 
 export type A5AccelDataset = {
     samples: A5AccelSample[];
-    samplingHz: number;     // metadata
-    startedAt: number;      // epoch ms
+    samplingHz: number;
+    startedAt: number;
     platform?: "ios" | "android" | "unknown";
     osVersion?: string;
     deviceModel?: string;
 };
 
 /* =========================================================
-   Computed metrics (FR-A5-04/05/06)
+   Computed metrics
 ========================================================= */
 
 export type A5TrialMetrics = {
-    durationSec: number;             // FR-A5-04
-    displacementMagnitudeCm: number; // FR-A5-05 (approx)
-    smoothnessIndex: number;         // FR-A5-06 (lower = smoother)
+    durationSec: number;
+    displacementMagnitudeCm: number;
+    smoothnessIndex: number;
 };
 
 export type A5ImprovementDraft = {
@@ -71,7 +74,7 @@ export type A5ImprovementDraft = {
     movementType: A5MovementType;
     baselineSmoothnessIndex: number;
     feedbackSmoothnessIndex: number;
-    improvementScore: number; // baseline - feedback
+    improvementScore: number;
 };
 
 /* =========================================================
@@ -91,29 +94,15 @@ export type A5ParticipantDraft = {
 
 export type A5SessionDraft = {
     activityId: string;
-
-    // team / label
     sessionLabel?: string;
-
-    // participants within a team session
-    participantCount: number; // 1..6
+    participantCount: number;
     participants: A5ParticipantDraft[];
-
-    // guided movement sequence (>= 3)
     movements: A5MovementSpec[];
-
-    // capture policy
-    samplingHz: number;        // 10..100
-    movementDurationSec: number;// 10..60 (guidance)
-
-    // feedback toggle (UI policy; trials still store actual mode)
+    samplingHz: number;
+    movementDurationSec: number;
     feedbackEnabled: boolean;
-
-    // metadata / timing
     startedAt: number;
     endsAt?: number;
-
-    // GPS policy: allow running if denied; block submission later
     gpsEnabled: boolean;
     geo?: {
         lat: number;
@@ -126,66 +115,60 @@ export type A5SessionDraft = {
 
 export type A5TrialDraft = {
     id: string;
-
     participantId: string;
     movementType: A5MovementType;
     mode: A5TrialMode;
-
-    // raw sensor capture
     dataset?: A5AccelDataset;
-
-    // computed outputs
     metrics?: A5TrialMetrics;
-
-    // optional per-trial evidence
     video?: EvidenceDraft;
-
-    // optional metadata
     geo?: GeoPointDraft;
     notes?: string;
-
     createdAt: number;
     updatedAt?: number;
 };
 
 export type A5ReflectionDraft = {
     reflectionText?: string;
-    rating?: number; // 1..5
+    rating?: number;
 };
 
 export type Activity5RunDraft = {
     runId: string;
     session: A5SessionDraft;
-
-    // FR-A5-07: prediction required before first trial begins
     prediction?: {
         predictedVibrationLevel?: string;
-        predictedMostDifficultMovement?: string; // store string (your select uses string[])
+        predictedMostDifficultMovement?: string;
         createdAt: number;
         updatedAt?: number;
     };
-
     trials: A5TrialDraft[];
-
-    // computed improvements cached for UI/leaderboard
     improvements?: A5ImprovementDraft[];
-
-    // FR-A5-14: submission requires session video + GPS + reflection etc.
     evidence?: {
         sessionVideo?: EvidenceDraft;
     };
-
     reflection?: A5ReflectionDraft;
-
     createdBy?: string;
     updatedAt: number;
 };
 
+type PersistOptions = {
+    currentStep?: string | null;
+    status?: OfflineDraftStatus;
+    teamId?: string | null;
+};
+
 /* =========================================================
-   In-memory store (match A4 pattern)
+   In-memory store
 ========================================================= */
 
-const drafts = new Map<string, Activity5RunDraft>();
+const DRAFTS_KEY = "__STEMM_A5_RUN_DRAFTS__";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const g = globalThis as any;
+
+const drafts: Map<string, Activity5RunDraft> =
+    (g[DRAFTS_KEY] ?? new Map<string, Activity5RunDraft>()) as Map<string, Activity5RunDraft>;
+
+g[DRAFTS_KEY] = drafts;
 
 function now() {
     return Date.now();
@@ -214,6 +197,10 @@ function clampNum(n: number, min: number, max: number) {
 function trimOrUndef(s?: string) {
     const t = s?.trim();
     return t ? t : undefined;
+}
+
+function timestampToIso(timestampMs: number): string {
+    return new Date(timestampMs).toISOString();
 }
 
 /* =========================================================
@@ -277,10 +264,8 @@ function normalizeParticipantsForCount(
 ): A5ParticipantDraft[] {
     const list = [...(existing ?? [])];
 
-    // Trim if reduced
     let next = list.slice(0, nextCount);
 
-    // Append if increased
     for (let i = next.length; i < nextCount; i++) {
         next.push(makeDefaultParticipant(i));
     }
@@ -297,7 +282,7 @@ function sanitizeAccelDataset(ds: A5AccelDataset | undefined): A5AccelDataset | 
         ? ds.samples
             .filter((s) => s && Number.isFinite(s.tMs))
             .map((s) => ({
-                tMs: clampInt(s.tMs, 0, 10 * 60 * 1000), // cap at 10 minutes
+                tMs: clampInt(s.tMs, 0, 10 * 60 * 1000),
                 ax: Number.isFinite(s.ax) ? s.ax : 0,
                 ay: Number.isFinite(s.ay) ? s.ay : 0,
                 az: Number.isFinite(s.az) ? s.az : 0,
@@ -325,8 +310,6 @@ function sanitizeMetrics(m: A5TrialMetrics | undefined): A5TrialMetrics | undefi
 }
 
 function recomputeImprovements(trials: A5TrialDraft[]): A5ImprovementDraft[] {
-    // Pair baseline and feedback by participantId + movementType.
-    // Use the latest trial per mode if multiple exist.
     const map = new Map<
         string,
         { baseline?: A5TrialDraft; feedback?: A5TrialDraft }
@@ -341,7 +324,7 @@ function recomputeImprovements(trials: A5TrialDraft[]): A5ImprovementDraft[] {
     }
 
     const out: A5ImprovementDraft[] = [];
-    for (const [key, pair] of map.entries()) {
+    for (const [, pair] of map.entries()) {
         if (!pair.baseline?.metrics || !pair.feedback?.metrics) continue;
 
         const participantId = pair.baseline.participantId;
@@ -363,6 +346,63 @@ function recomputeImprovements(trials: A5TrialDraft[]): A5ImprovementDraft[] {
     return out.sort((a, b) => b.improvementScore - a.improvementScore);
 }
 
+function normalizeRecoveredActivity5Draft(payload: Activity5RunDraft): Activity5RunDraft {
+    const participantCount = clampInt(payload.session?.participantCount ?? 1, 1, 6);
+    const movementDurationSec = clampInt(payload.session?.movementDurationSec ?? 20, 10, 60);
+
+    const normalizedTrials = Array.isArray(payload.trials) ? payload.trials : [];
+
+    return {
+        ...payload,
+        session: {
+            ...payload.session,
+            participantCount,
+            participants: normalizeParticipantsForCount(payload.session?.participants ?? [], participantCount),
+            movements: Array.isArray(payload.session?.movements) && payload.session.movements.length >= 3
+                ? payload.session.movements.map((m) => ({
+                    ...m,
+                    durationSec: clampInt(m.durationSec ?? movementDurationSec, 10, 60),
+                }))
+                : defaultMovements(movementDurationSec),
+            samplingHz: clampInt(payload.session?.samplingHz ?? 50, 10, 100),
+            movementDurationSec,
+            feedbackEnabled: payload.session?.feedbackEnabled ?? true,
+            gpsEnabled: payload.session?.gpsEnabled ?? true,
+            gpsPermission: payload.session?.gpsPermission ?? "unknown",
+        },
+        trials: normalizedTrials,
+        improvements: Array.isArray(payload.improvements) ? payload.improvements : recomputeImprovements(normalizedTrials),
+    };
+}
+
+async function persistDraftInternal(
+    draft: Activity5RunDraft,
+    options?: PersistOptions
+): Promise<void> {
+    await offlineDraftService.saveDraft<Activity5RunDraft>({
+        runId: draft.runId,
+        activityId: draft.session.activityId,
+        payload: draft,
+        currentStep: options?.currentStep ?? null,
+        status: options?.status ?? "draft",
+        userId: draft.createdBy ?? null,
+        teamId: options?.teamId ?? null,
+        createdAt: timestampToIso(draft.session.startedAt),
+    });
+}
+
+function fireAndForgetPersist(
+    draft: Activity5RunDraft,
+    options?: PersistOptions
+): void {
+    void persistDraftInternal(draft, options).catch((error) => {
+        console.error("[activity5RunDraftStore] Failed to persist draft", {
+            runId: draft.runId,
+            error,
+        });
+    });
+}
+
 /* =========================================================
    CRUD: Run draft
 ========================================================= */
@@ -370,11 +410,11 @@ function recomputeImprovements(trials: A5TrialDraft[]): A5ImprovementDraft[] {
 export function createActivity5RunDraft(params: {
     activityId: string;
     createdBy?: string;
-    participantCount?: number; // default 1, min 1
-    samplingHz?: number;       // default 50
-    movementDurationSec?: number;// default 20
-    gpsEnabled?: boolean;       // default true
-    feedbackEnabled?: boolean;  // default true
+    participantCount?: number;
+    samplingHz?: number;
+    movementDurationSec?: number;
+    gpsEnabled?: boolean;
+    feedbackEnabled?: boolean;
     sessionLabel?: string;
 }): Activity5RunDraft {
     const runId = genRunId();
@@ -387,20 +427,14 @@ export function createActivity5RunDraft(params: {
         runId,
         session: {
             activityId: params.activityId,
-
             sessionLabel: trimOrUndef(params.sessionLabel),
-
             participantCount,
             participants: buildParticipants(participantCount),
-
             movements: defaultMovements(movementDurationSec),
-
             samplingHz,
             movementDurationSec,
             feedbackEnabled: params.feedbackEnabled ?? true,
-
             startedAt: now(),
-
             gpsEnabled: params.gpsEnabled ?? true,
             gpsPermission: "unknown",
         },
@@ -414,11 +448,16 @@ export function createActivity5RunDraft(params: {
     };
 
     drafts.set(runId, d);
+    fireAndForgetPersist(d);
     return d;
 }
 
 export function getActivity5RunDraft(runId: string): Activity5RunDraft | null {
     return drafts.get(runId) ?? null;
+}
+
+export function getAllActivity5RunDrafts(): Activity5RunDraft[] {
+    return Array.from(drafts.values());
 }
 
 export function clearActivity5RunDraft(runId: string) {
@@ -452,7 +491,6 @@ export function updateActivity5Session(
     const incomingParticipants = patch.participants ?? d.session.participants ?? [];
     const nextParticipants = normalizeParticipantsForCount(incomingParticipants, nextParticipantCount);
 
-    // If duration updated, refresh movement guidance durations (keep movement identity + order).
     const nextMovements =
         patch.movements != null
             ? patch.movements
@@ -474,6 +512,7 @@ export function updateActivity5Session(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -515,11 +554,12 @@ export function updateActivity5Participant(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Prediction (FR-A5-07)
+   Updates: Prediction
 ========================================================= */
 
 export function setActivity5Prediction(
@@ -539,7 +579,6 @@ export function setActivity5Prediction(
         ...patch,
     };
 
-    // sanitize strings
     nextPred.predictedVibrationLevel = trimOrUndef(nextPred.predictedVibrationLevel);
     nextPred.predictedMostDifficultMovement = trimOrUndef(nextPred.predictedMostDifficultMovement);
 
@@ -550,27 +589,24 @@ export function setActivity5Prediction(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Trials (FR-A5-03/10)
+   Updates: Trials
 ========================================================= */
 
 export function upsertActivity5Trial(
     runId: string,
     input: {
         id?: string;
-
         participantId: string;
         movementType: A5MovementType;
         mode: A5TrialMode;
-
         dataset?: A5AccelDataset;
         metrics?: A5TrialMetrics;
-
         video?: EvidenceDraft;
-
         geo?: GeoPointDraft;
         notes?: string;
     }
@@ -578,12 +614,10 @@ export function upsertActivity5Trial(
     const d = drafts.get(runId);
     if (!d) throw new Error("Activity 5 draft not found.");
 
-    // UI-level: prediction must exist before trials can be recorded
     if (!d.prediction) {
         throw new Error("Prediction is required before starting trials (FR-A5-07).");
     }
 
-    // validate participant exists
     const hasParticipant = d.session.participants.some((p) => p.id === input.participantId);
     if (!hasParticipant) throw new Error("Participant not found for this session.");
 
@@ -598,15 +632,11 @@ export function upsertActivity5Trial(
         participantId: input.participantId,
         movementType: input.movementType,
         mode: input.mode,
-
         createdAt: prev ? prev.createdAt : ts,
         updatedAt: prev ? ts : undefined,
-
         dataset: input.dataset !== undefined ? sanitizeAccelDataset(input.dataset) : prev?.dataset,
         metrics: input.metrics !== undefined ? sanitizeMetrics(input.metrics) : prev?.metrics,
-
         video: input.video ?? prev?.video,
-
         geo: input.geo ?? prev?.geo,
         notes: trimOrUndef(input.notes) ?? prev?.notes,
     };
@@ -624,6 +654,7 @@ export function upsertActivity5Trial(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -642,11 +673,12 @@ export function removeActivity5Trial(runId: string, trialId: string): Activity5R
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Updates: Evidence + Reflection (FR-A5-14)
+   Updates: Evidence + Reflection
 ========================================================= */
 
 export function setActivity5SessionVideo(
@@ -666,6 +698,7 @@ export function setActivity5SessionVideo(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
@@ -693,11 +726,77 @@ export function setActivity5Reflection(
     };
 
     drafts.set(runId, next);
+    fireAndForgetPersist(next);
     return next;
 }
 
 /* =========================================================
-   Validators (UI-level)
+   Explicit persistence / recovery helpers
+========================================================= */
+
+export async function saveActivity5RunDraftToLocalDb(
+    runId: string,
+    options?: PersistOptions
+): Promise<Activity5RunDraft> {
+    const current = drafts.get(runId);
+    if (!current) throw new Error("Activity 5 draft not found.");
+
+    await persistDraftInternal(current, options);
+    return current;
+}
+
+export async function hydrateActivity5RunDraftFromLocalDb(
+    runId: string
+): Promise<Activity5RunDraft | null> {
+    const record = await offlineDraftService.getDraftByRunId<Activity5RunDraft>(runId);
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity5Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function getLatestRecoverableActivity5RunDraft(params: {
+    activityId: string;
+    createdBy: string;
+    teamId?: string | null;
+}): Promise<Activity5RunDraft | null> {
+    const record = await offlineDraftService.getLatestRecoverableDraft<Activity5RunDraft>({
+        activityId: params.activityId,
+        userId: params.createdBy,
+        teamId: params.teamId ?? null,
+    });
+
+    if (!record) return null;
+
+    const normalized = normalizeRecoveredActivity5Draft(record.payload);
+    drafts.set(normalized.runId, normalized);
+
+    await offlineDraftService.markRecovered(normalized.runId);
+
+    return normalized;
+}
+
+export async function markActivity5RunDraftSubmittedInLocalDb(
+    runId: string,
+    remoteSubmissionId?: string | null
+): Promise<void> {
+    await offlineDraftService.markSubmitted({
+        runId,
+        remoteSubmissionId: remoteSubmissionId ?? null,
+    });
+}
+
+export async function discardActivity5RunDraft(runId: string): Promise<void> {
+    drafts.delete(runId);
+    await offlineDraftService.discardDraft(runId);
+}
+
+/* =========================================================
+   Validators
 ========================================================= */
 
 export function validateA5Session(d: Activity5RunDraft): string | null {
@@ -734,34 +833,24 @@ export function validateA5Prediction(d: Activity5RunDraft): string | null {
     return null;
 }
 
-/**
- * Submission-level validation (FR-A5-14).
- * IMPORTANT: This mirrors A4 behavior: allow running even if GPS denied, but block submission.
- */
 export function validateA5Submission(d: Activity5RunDraft): string[] {
     const missing: string[] = [];
 
-    // prediction required
     if (validateA5Prediction(d)) missing.push("Prediction entry");
 
-    // at least one trial dataset recorded
     const hasAnyDataset = d.trials.some((t) => t.dataset && Array.isArray(t.dataset.samples) && t.dataset.samples.length > 0);
     if (!hasAnyDataset) missing.push("Recorded sensor dataset (accelerometer)");
 
-    // video evidence required (session-level)
     if (!d.evidence?.sessionVideo?.uri) missing.push("Session video evidence");
 
-    // reflection + rating required
     if (!trimOrUndef(d.reflection?.reflectionText)) missing.push("Reflection text");
     if (d.reflection?.rating == null) missing.push("Rating (1–5)");
 
-    // GPS required when gpsEnabled
     if (d.session.gpsEnabled) {
         if (d.session.gpsPermission !== "granted") missing.push("GPS permission granted");
         if (!d.session.geo) missing.push("GPS coordinates captured");
     }
 
-    // baseline vs feedback improvement expectation (recommended)
     const hasBaseline = d.trials.some((t) => t.mode === "baseline" && t.metrics);
     const hasFeedback = d.trials.some((t) => t.mode === "feedback" && t.metrics);
     if (!hasBaseline) missing.push("At least 1 Baseline trial with computed metrics");
@@ -770,10 +859,6 @@ export function validateA5Submission(d: Activity5RunDraft): string[] {
     return missing;
 }
 
-/**
- * Leaderboard score helper (FR-A5-11/13):
- * Return best improvement score in session (max), plus metadata.
- */
 export function getA5BestImprovement(d: Activity5RunDraft): {
     bestScore: number;
     participantId?: string;
