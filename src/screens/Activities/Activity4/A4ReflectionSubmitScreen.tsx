@@ -17,6 +17,7 @@ import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
+import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
 
 import {
     clearActivity4RunDraft,
@@ -358,7 +359,49 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                 },
             ]);
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Submission failed.");
+            try {
+                const updated = setActivity4Reflection(runId, {
+                    reflectionText: reflectionText.trim(),
+                    rating,
+                });
+
+                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const teamId = userSnap.data()?.teamId;
+
+                if (!isNonEmptyString(teamId)) {
+                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    return;
+                }
+
+                const submitArgs = {
+                    run: updated,
+                    teamId,
+                    createdBy: user.uid,
+                    reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
+                    rating: updated.reflection?.rating ?? rating,
+                };
+
+                await queueFinalSubmission({
+                    runId: updated.runId,
+                    activityId: "activity04_earthquake",
+                    userId: user.uid,
+                    teamId,
+                    payload: {
+                        activityNumber: 4,
+                        args: submitArgs,
+                    },
+                });
+
+                Alert.alert(
+                    "Saved offline",
+                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                );
+            } catch (queueError: any) {
+                Alert.alert(
+                    "Error",
+                    queueError?.message ?? e?.message ?? "Submission failed."
+                );
+            }
         } finally {
             setSubmitting(false);
         }

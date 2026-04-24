@@ -7,6 +7,7 @@ import {auth, db} from "../../../services/firebase";
 import {getRunDraft, type ActivityRunDraft} from "../../../store/activityRunDraftStore";
 import {submitActivity1} from "../../../services/activitySubmissionService";
 import {doc, getDoc} from "firebase/firestore";
+import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A1ReflectionSubmit">;
 
@@ -176,7 +177,43 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                 ]
             );
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Submission failed.");
+            try {
+                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const teamId = userSnap.data()?.teamId;
+
+                if (!teamId) {
+                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    return;
+                }
+
+                await queueFinalSubmission({
+                    runId: draft.runId,
+                    activityId: draft.activityId,
+                    userId: user.uid,
+                    teamId,
+                    payload: {
+                        activityNumber: 1,
+                        args: {
+                            run: draft,
+                            teamId,
+                            createdBy: user.uid,
+                            bestAttemptIndex: bestIndex,
+                            reflection,
+                            rating,
+                        },
+                    },
+                });
+
+                Alert.alert(
+                    "Saved offline",
+                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                );
+            } catch (queueError: any) {
+                Alert.alert(
+                    "Error",
+                    queueError?.message ?? e?.message ?? "Submission failed."
+                );
+            }
         } finally {
             setSubmitting(false);
         }

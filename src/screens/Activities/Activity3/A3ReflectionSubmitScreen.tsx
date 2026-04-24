@@ -15,6 +15,7 @@ import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
+import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
 
 import {
     getActivity3RunDraft,
@@ -245,7 +246,43 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                 },
             ]);
         } catch (e: any) {
-            Alert.alert("Error", friendlyFirebaseError(e));
+            try {
+                const teamId = await fetchTeamIdOrThrow(user.uid);
+
+                const updated = setActivity3Reflection(runId, {
+                    reflectionText: reflectionText.trim(),
+                    rating,
+                });
+
+                const submitArgs = {
+                    run: updated,
+                    teamId,
+                    createdBy: user.uid,
+                    reflection: reflectionText.trim(),
+                    rating,
+                };
+
+                await queueFinalSubmission({
+                    runId: updated.runId,
+                    activityId: "activity03_handFan",
+                    userId: user.uid,
+                    teamId,
+                    payload: {
+                        activityNumber: 3,
+                        args: submitArgs,
+                    },
+                });
+
+                Alert.alert(
+                    "Saved offline",
+                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                );
+            } catch (queueError: any) {
+                Alert.alert(
+                    "Error",
+                    queueError?.message ?? friendlyFirebaseError(e)
+                );
+            }
         } finally {
             setSubmitting(false);
         }

@@ -15,6 +15,7 @@ import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
+import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
 
 import {
     getActivity2RunDraft,
@@ -195,13 +196,15 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                 return;
             }
 
-            const res = await submitActivity2({
+            const submitArgs = {
                 run: draft,
                 teamId,
                 createdBy: user.uid,
                 reflection,
                 rating,
-            });
+            };
+
+            const res = await submitActivity2(submitArgs);
 
             Alert.alert("Submitted ✅", `Your score for this submission: ${res.score}`, [
                 {
@@ -223,7 +226,44 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                 },
             ]);
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Submission failed.");
+            try {
+                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const teamId = userSnap.data()?.teamId;
+
+                if (!teamId) {
+                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    return;
+                }
+
+                const submitArgs = {
+                    run: draft,
+                    teamId,
+                    createdBy: user.uid,
+                    reflection,
+                    rating,
+                };
+
+                await queueFinalSubmission({
+                    runId: draft.runId,
+                    activityId: draft.activityId,
+                    userId: user.uid,
+                    teamId,
+                    payload: {
+                        activityNumber: 2,
+                        args: submitArgs,
+                    },
+                });
+
+                Alert.alert(
+                    "Saved offline",
+                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                );
+            } catch (queueError: any) {
+                Alert.alert(
+                    "Error",
+                    queueError?.message ?? e?.message ?? "Submission failed."
+                );
+            }
         } finally {
             setSubmitting(false);
         }

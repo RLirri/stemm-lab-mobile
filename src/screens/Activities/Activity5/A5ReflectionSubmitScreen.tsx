@@ -19,6 +19,8 @@ import {doc, getDoc} from "firebase/firestore";
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
 
+import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
+
 import {
     clearActivity5RunDraft,
     getActivity5RunDraft,
@@ -382,7 +384,50 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                 },
             ]);
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Submission failed.");
+            try {
+                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const teamId = userSnap.data()?.teamId;
+
+                if (!isNonEmptyString(teamId)) {
+                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    return;
+                }
+
+                const best = getA5BestImprovement(updated);
+                const bestImprovementScore = scaleA5Score(best.bestScore);
+
+                const submitArgs = {
+                    run: updated,
+                    teamId,
+                    createdBy: user.uid,
+                    reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
+                    rating: updated.reflection?.rating ?? rating,
+                    bestImprovementScore,
+                    bestParticipantId: best.participantId,
+                    bestMovementType: best.movementType,
+                };
+
+                await queueFinalSubmission({
+                    runId: updated.runId,
+                    activityId: "activity05_humanPerformance",
+                    userId: user.uid,
+                    teamId,
+                    payload: {
+                        activityNumber: 5,
+                        args: submitArgs,
+                    },
+                });
+
+                Alert.alert(
+                    "Saved offline",
+                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                );
+            } catch (queueError: any) {
+                Alert.alert(
+                    "Error",
+                    queueError?.message ?? e?.message ?? "Submission failed."
+                );
+            }
         } finally {
             setSubmitting(false);
         }
