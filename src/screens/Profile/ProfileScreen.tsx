@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useState} from "react";
 import {
     View,
     Text,
@@ -8,9 +8,11 @@ import {
     ActivityIndicator,
     Alert,
 } from "react-native";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { auth, db } from "../../services/firebase";
-import { logout } from "../../services/authService";
+import {doc, onSnapshot, updateDoc} from "firebase/firestore";
+import {auth, db} from "../../services/firebase";
+import {logout} from "../../services/authService";
+import {syncQueuedSubmissions} from "../../services/syncService";
+import {submitOfflineToFirebase} from "../../services/offlineSubmissionSyncAdapter";
 
 type UserProfileDoc = {
     uid: string;
@@ -28,6 +30,7 @@ export default function ProfileScreen() {
     const [profile, setProfile] = useState<UserProfileDoc | null>(null);
     const [name, setName] = useState("");
     const [saving, setSaving] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     useEffect(() => {
         if (!user) return;
@@ -53,15 +56,16 @@ export default function ProfileScreen() {
 
     if (!profile) {
         return (
-            <View style={[styles.container, { alignItems: "center" }]}>
-                <ActivityIndicator />
-                <Text style={{ marginTop: 10 }}>Loading profile...</Text>
+            <View style={[styles.container, {alignItems: "center"}]}>
+                <ActivityIndicator/>
+                <Text style={{marginTop: 10}}>Loading profile...</Text>
             </View>
         );
     }
 
     const saveName = async () => {
         const trimmed = name.trim();
+
         if (trimmed.length < 2) {
             Alert.alert("Invalid name", "Name must be at least 2 characters.");
             return;
@@ -80,15 +84,57 @@ export default function ProfileScreen() {
         }
     };
 
+    const retryOfflineSubmissions = async () => {
+        try {
+            setSyncing(true);
+
+            const results = await syncQueuedSubmissions({
+                submitToRemote: submitOfflineToFirebase,
+            });
+
+            const syncedCount = results.filter(
+                (result) => result.status === "synced"
+            ).length;
+
+            const failedCount = results.filter(
+                (result) => result.status === "failed"
+            ).length;
+
+            Alert.alert(
+                "Offline sync complete",
+                `Synced: ${syncedCount}\nFailed: ${failedCount}`
+            );
+        } catch (e: any) {
+            Alert.alert(
+                "Sync failed",
+                e?.message ?? "Unable to retry offline submissions."
+            );
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         <View style={styles.container}>
             <Text style={styles.title}>Profile</Text>
 
             <View style={styles.card}>
-                <Text style={styles.row}><Text style={styles.k}>Email: </Text>{profile.email ?? "-"}</Text>
-                <Text style={styles.row}><Text style={styles.k}>Provider: </Text>{profile.provider}</Text>
-                <Text style={styles.row}><Text style={styles.k}>Team ID: </Text>{profile.teamId ?? "Not in a team"}</Text>
-                <Text style={styles.row}><Text style={styles.k}>UID: </Text>{profile.uid}</Text>
+                <Text style={styles.row}>
+                    <Text style={styles.k}>Email: </Text>
+                    {profile.email ?? "-"}
+                </Text>
+                <Text style={styles.row}>
+                    <Text style={styles.k}>Provider: </Text>
+                    {profile.provider}
+                </Text>
+                <Text style={styles.row}>
+                    <Text style={styles.k}>Team ID: </Text>
+                    {profile.teamId ?? "Not in a team"}
+                </Text>
+                <Text style={styles.row}>
+                    <Text style={styles.k}>UID: </Text>
+                    {profile.uid}
+                </Text>
             </View>
 
             <Text style={styles.label}>Display name</Text>
@@ -104,7 +150,19 @@ export default function ProfileScreen() {
                 disabled={saving}
                 onPress={saveName}
             >
-                <Text style={styles.buttonText}>{saving ? "Saving..." : "Save"}</Text>
+                <Text style={styles.buttonText}>
+                    {saving ? "Saving..." : "Save"}
+                </Text>
+            </Pressable>
+
+            <Pressable
+                style={[styles.button, styles.syncButton, syncing && styles.buttonDisabled]}
+                disabled={syncing}
+                onPress={retryOfflineSubmissions}
+            >
+                <Text style={styles.buttonText}>
+                    {syncing ? "Retrying sync..." : "Retry Offline Submissions"}
+                </Text>
             </Pressable>
 
             <Pressable style={[styles.button, styles.logout]} onPress={logout}>
@@ -115,8 +173,8 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20, justifyContent: "center" },
-    title: { fontSize: 28, fontWeight: "800", marginBottom: 18 },
+    container: {flex: 1, padding: 20, justifyContent: "center"},
+    title: {fontSize: 28, fontWeight: "800", marginBottom: 18},
     card: {
         borderWidth: 1,
         borderColor: "#e5e5e5",
@@ -125,9 +183,9 @@ const styles = StyleSheet.create({
         marginBottom: 18,
         backgroundColor: "#fafafa",
     },
-    row: { marginBottom: 6 },
-    k: { fontWeight: "700" },
-    label: { fontSize: 14, fontWeight: "700", marginTop: 6 },
+    row: {marginBottom: 6},
+    k: {fontWeight: "700"},
+    label: {fontSize: 14, fontWeight: "700", marginTop: 6},
     input: {
         borderWidth: 1,
         borderColor: "#ddd",
@@ -142,7 +200,8 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginTop: 14,
     },
-    buttonDisabled: { opacity: 0.6 },
-    buttonText: { color: "white", fontWeight: "800" },
-    logout: { backgroundColor: "#444" },
+    buttonDisabled: {opacity: 0.6},
+    buttonText: {color: "white", fontWeight: "800"},
+    syncButton: {backgroundColor: "#2563eb"},
+    logout: {backgroundColor: "#444"},
 });

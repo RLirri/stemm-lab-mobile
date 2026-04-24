@@ -2,6 +2,8 @@ import React, {useEffect} from "react";
 import RootNavigator from "./src/navigation/RootNavigator";
 import {initializeLocalDb} from "./src/services/localDb/sqlite";
 import {debugPrintLocalDbOverview} from "./src/services/localDb/debugLocalDb";
+import {syncQueuedSubmissions} from "./src/services/syncService";
+import {submitOfflineToFirebase} from "./src/services/offlineSubmissionSyncAdapter";
 
 export default function App() {
     useEffect(() => {
@@ -9,8 +11,14 @@ export default function App() {
             try {
                 await initializeLocalDb();
                 await debugPrintLocalDbOverview();
+
+                // const syncResults = await syncQueuedSubmissions({
+                //     submitToRemote: submitOfflineToFirebase,
+                // });
+                //
+                // console.log("Offline submission sync results:", syncResults);
             } catch (error) {
-                console.error("Failed to initialize local database", error);
+                console.error("Failed to bootstrap app", error);
             }
         }
 

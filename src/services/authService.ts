@@ -4,7 +4,7 @@ import {
     signOut,
     updateProfile,
 } from "firebase/auth";
-import { auth } from "./firebase";
+import {auth} from "./firebase";
 
 export async function registerWithEmail(
     email: string,
@@ -13,7 +13,7 @@ export async function registerWithEmail(
 ) {
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
     if (displayName?.trim()) {
-        await updateProfile(cred.user, { displayName: displayName.trim() });
+        await updateProfile(cred.user, {displayName: displayName.trim()});
     }
     return cred.user;
 }

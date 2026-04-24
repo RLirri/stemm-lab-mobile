@@ -5,6 +5,8 @@ import {auth} from "../services/firebase";
 import AuthStack from "./AuthStack";
 import AppStack from "./AppStack";
 import {ensureUserProfile} from "../services/userService";
+import {syncQueuedSubmissions} from "../services/syncService";
+import {submitOfflineToFirebase} from "../services/offlineSubmissionSyncAdapter";
 
 export default function RootNavigator() {
     const [user, setUser] = useState<User | null>(null);
@@ -15,12 +17,19 @@ export default function RootNavigator() {
             try {
                 if (u) {
                     await ensureUserProfile(u);
+
+                    const results = await syncQueuedSubmissions({
+                        submitToRemote: submitOfflineToFirebase,
+                    });
+
+                    console.log("Post-login offline sync results:", results);
+
                     setUser(u);
                 } else {
                     setUser(null);
                 }
             } catch (e) {
-                console.warn("ensureUserProfile failed:", e);
+                console.warn("Auth/bootstrap failed:", e);
                 setUser(u ?? null);
             } finally {
                 setLoading(false);
