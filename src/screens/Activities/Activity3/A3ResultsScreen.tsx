@@ -1,13 +1,14 @@
 // src/screens/Activities/Activity3/A3ResultsScreen.tsx
+
 import React, {useEffect, useMemo, useState} from "react";
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
     View,
-    ActivityIndicator,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
@@ -19,12 +20,19 @@ import {
 } from "../../../store/activity3RunDraftStore";
 
 import {
+    A3_DISTANCES,
+    A3_MATERIALS,
     computeSummary,
     getSubmissionGate,
     validateAllMeasurements,
-    A3_DISTANCES,
-    A3_MATERIALS,
 } from "../../../services/activity3PhysicsService";
+
+import ActivityBarChart from "../../../components/charts/ActivityBarChart";
+import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import {
+    buildA3Visualization,
+    type A3VisualizationTrial,
+} from "../../../services/resultInsights/activity3VisualizationService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A3Results">;
 
@@ -38,9 +46,14 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         if (!user) return;
 
         const d = getActivity3RunDraft(runId);
+
         if (!d) {
             Alert.alert("Session expired", "Please restart Activity 3.", [
-                {text: "OK", onPress: () => navigation.replace("A3SessionSetup", {activityId})},
+                {
+                    text: "OK",
+                    onPress: () =>
+                        navigation.replace("A3SessionSetup", {activityId}),
+                },
             ]);
             return;
         }
@@ -48,7 +61,6 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
-    // Use physics service: validate -> summary
     const validatedDraft = useMemo(() => {
         if (!draft) return null;
         return validateAllMeasurements(draft);
@@ -64,28 +76,39 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         return getSubmissionGate(validatedDraft);
     }, [validatedDraft]);
 
-    // Build design averages list from validated measurements (valid-only)
     const designAverages = useMemo(() => {
         if (!validatedDraft) return [];
+
         const byDesign = new Map<number, { sum: number; count: number }>();
 
         for (const m of validatedDraft.measurements) {
             if (!m.isValid || m.bendAngleDeg == null) continue;
-            const cur = byDesign.get(m.designIndex) ?? {sum: 0, count: 0};
-            cur.sum += m.bendAngleDeg;
-            cur.count += 1;
-            byDesign.set(m.designIndex, cur);
+
+            const current = byDesign.get(m.designIndex) ?? {sum: 0, count: 0};
+            current.sum += m.bendAngleDeg;
+            current.count += 1;
+            byDesign.set(m.designIndex, current);
         }
 
-        const rows = Array.from(byDesign.entries()).map(([designIndex, v]) => ({
+        const rows = Array.from(byDesign.entries()).map(([designIndex, value]) => ({
             designIndex,
-            avg: v.count ? v.sum / v.count : 0,
-            count: v.count,
+            avg: value.count > 0 ? value.sum / value.count : 0,
+            count: value.count,
         }));
 
         rows.sort((a, b) => b.avg - a.avg);
+
         return rows;
     }, [validatedDraft]);
+
+    const visualization = useMemo(() => {
+        const trials: A3VisualizationTrial[] = designAverages.map(item => ({
+            label: `Design ${item.designIndex + 1}`,
+            averageBendAngleDeg: item.avg,
+        }));
+
+        return buildA3Visualization(trials);
+    }, [designAverages]);
 
     const leaderboardScore = useMemo(() => {
         if (!summary?.bestDesignAvgDeg) return 0;
@@ -95,25 +118,33 @@ export default function A3ResultsScreen({route, navigation}: Props) {
     function onContinueToReflection() {
         if (!validatedDraft || !submissionGate) return;
 
-        // For moving to reflection/submit, enforce prediction + measurement completeness.
-        // Video + GPS can be enforced later in submit service/screen if you want.
         const blocking: string[] = [];
-        if (!submissionGate.hasPrediction) blocking.push("Prediction is missing.");
-        if (submissionGate.validCount < Math.max(3, validatedDraft.session.fanDesignCount)) {
+
+        if (!submissionGate.hasPrediction) {
+            blocking.push("Prediction is missing.");
+        }
+
+        if (
+            submissionGate.validCount <
+            Math.max(3, validatedDraft.session.fanDesignCount)
+        ) {
             blocking.push("Not enough valid measurements.");
         }
 
-        // Also enforce at least one VALID measurement per design (scientific integrity)
         const perDesign = new Map<number, number>();
+
         for (const m of validatedDraft.measurements) {
             if (!m.isValid) continue;
             perDesign.set(m.designIndex, (perDesign.get(m.designIndex) ?? 0) + 1);
         }
-        for (let i = 0; i < validatedDraft.session.fanDesignCount; i++) {
-            if ((perDesign.get(i) ?? 0) < 1) blocking.push(`Design ${i + 1} needs at least 1 valid measurement.`);
+
+        for (let i = 0; i < validatedDraft.session.fanDesignCount; i += 1) {
+            if ((perDesign.get(i) ?? 0) < 1) {
+                blocking.push(`Design ${i + 1} needs at least 1 valid measurement.`);
+            }
         }
 
-        if (blocking.length) {
+        if (blocking.length > 0) {
             Alert.alert("Incomplete data", blocking.join("\n"));
             return;
         }
@@ -144,7 +175,10 @@ export default function A3ResultsScreen({route, navigation}: Props) {
     return (
         <ScrollView contentContainerStyle={styles.container}>
             <Text style={styles.title}>Results Dashboard</Text>
-            <Text style={styles.sub}>Leaderboard score = highest average bend angle (valid measurements only).</Text>
+            <Text style={styles.sub}>
+                Leaderboard score = highest average bend angle from valid measurements
+                only.
+            </Text>
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Overall Summary</Text>
@@ -155,22 +189,31 @@ export default function A3ResultsScreen({route, navigation}: Props) {
                 </View>
 
                 <View style={styles.rowBetween}>
-                    <Text>Average angle (overall)</Text>
+                    <Text>Average angle overall</Text>
                     <Text style={styles.bold}>{summary.avgAngleDeg.toFixed(2)}°</Text>
                 </View>
             </View>
 
+            <ActivityBarChart
+                title="Design Performance Chart"
+                subtitle="Average bend angle for each fan design"
+                data={visualization.chartData}
+                unitLabel="degrees"
+            />
+
+            <ResultsInsightCard insight={visualization.insight}/>
+
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Design Ranking (Valid Only)</Text>
+                <Text style={styles.cardTitle}>Design Ranking</Text>
 
                 {designAverages.length === 0 ? (
-                    <Text style={{opacity: 0.6}}>No valid measurements recorded.</Text>
+                    <Text style={styles.muted}>No valid measurements recorded.</Text>
                 ) : (
-                    designAverages.map((s) => (
-                        <View key={s.designIndex} style={styles.rowBetween}>
-                            <Text>Design {s.designIndex + 1}</Text>
+                    designAverages.map(item => (
+                        <View key={item.designIndex} style={styles.rowBetween}>
+                            <Text>Design {item.designIndex + 1}</Text>
                             <Text style={styles.bold}>
-                                {s.avg.toFixed(1)}° ({s.count} valid)
+                                {item.avg.toFixed(1)}° ({item.count} valid)
                             </Text>
                         </View>
                     ))
@@ -180,9 +223,13 @@ export default function A3ResultsScreen({route, navigation}: Props) {
             {summary.bestDesignIndex != null && summary.bestDesignAvgDeg != null ? (
                 <View style={[styles.card, styles.highlightCard]}>
                     <Text style={styles.cardTitle}>Best Performing Design</Text>
-                    <Text style={styles.bigText}>Design {Number(summary.bestDesignIndex) + 1}</Text>
+                    <Text style={styles.bigText}>
+                        Design {Number(summary.bestDesignIndex) + 1}
+                    </Text>
                     <Text style={styles.bigScore}>{leaderboardScore}° average</Text>
-                    <Text style={styles.note}>This is used as the leaderboard score (FR-A3-06).</Text>
+                    <Text style={styles.note}>
+                        This value is used as the leaderboard score.
+                    </Text>
                 </View>
             ) : null}
 
@@ -190,21 +237,25 @@ export default function A3ResultsScreen({route, navigation}: Props) {
                 <Text style={styles.cardTitle}>Breakdown</Text>
 
                 <Text style={styles.sectionLabel}>By distance</Text>
-                {A3_DISTANCES.map((d) => (
-                    <View key={d} style={styles.rowBetween}>
-                        <Text>{d} cm</Text>
+                {A3_DISTANCES.map(distance => (
+                    <View key={distance} style={styles.rowBetween}>
+                        <Text>{distance} cm</Text>
                         <Text style={styles.bold}>
-                            {summary.byDistance[d] != null ? `${summary.byDistance[d]!.toFixed(2)}°` : "—"}
+                            {summary.byDistance[distance] != null
+                                ? `${summary.byDistance[distance]!.toFixed(2)}°`
+                                : "—"}
                         </Text>
                     </View>
                 ))}
 
                 <Text style={styles.sectionLabel}>By material</Text>
-                {A3_MATERIALS.map((m) => (
-                    <View key={m} style={styles.rowBetween}>
-                        <Text style={{textTransform: "capitalize"}}>{m}</Text>
+                {A3_MATERIALS.map(material => (
+                    <View key={material} style={styles.rowBetween}>
+                        <Text style={styles.capitalize}>{material}</Text>
                         <Text style={styles.bold}>
-                            {summary.byMaterial[m] != null ? `${summary.byMaterial[m]!.toFixed(2)}°` : "—"}
+                            {summary.byMaterial[material] != null
+                                ? `${summary.byMaterial[material]!.toFixed(2)}°`
+                                : "—"}
                         </Text>
                     </View>
                 ))}
@@ -213,86 +264,173 @@ export default function A3ResultsScreen({route, navigation}: Props) {
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Prediction Evaluation</Text>
 
-                <Text style={{marginTop: 8, opacity: 0.8}}>
-                    Your prediction: {predictedDesignLabel ?? "—"} at {predictedDistanceLabel ?? "—"}
+                <Text style={styles.predictionText}>
+                    Your prediction: {predictedDesignLabel ?? "—"} at{" "}
+                    {predictedDistanceLabel ?? "—"}
                 </Text>
 
                 {summary.wasPredictionCorrect != null ? (
-                    <Text style={{marginTop: 10, fontWeight: "900"}}>
-                        {summary.wasPredictionCorrect ? "✅ Your best-design prediction was correct!" : "❌ Your best-design prediction was not correct."}
+                    <Text style={styles.predictionResult}>
+                        {summary.wasPredictionCorrect
+                            ? "Your best-design prediction was correct."
+                            : "Your best-design prediction was not correct."}
                     </Text>
                 ) : (
-                    <Text style={{marginTop: 10, opacity: 0.7}}>Prediction not recorded.</Text>
+                    <Text style={styles.muted}>Prediction not recorded.</Text>
                 )}
             </View>
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Submission Readiness</Text>
+
                 {submissionGate?.reasons?.length ? (
                     <>
-                        <Text style={{marginTop: 8, fontWeight: "900"}}>Missing:</Text>
-                        {submissionGate.reasons.map((r, i) => (
-                            <Text key={i} style={{marginTop: 6, opacity: 0.85}}>
-                                • {r}
+                        <Text style={styles.missingTitle}>Missing:</Text>
+                        {submissionGate.reasons.map((reason, index) => (
+                            <Text key={`${reason}-${index}`} style={styles.reasonText}>
+                                • {reason}
                             </Text>
                         ))}
                     </>
                 ) : (
-                    <Text style={{marginTop: 8, fontWeight: "900"}}>✅ Ready to submit data</Text>
+                    <Text style={styles.readyText}>Ready to submit data</Text>
                 )}
+
                 <Text style={styles.note}>
-                    Note: GPS/video may be enforced during final submission (FR-A3-07).
+                    Note: GPS and video evidence may be enforced during final submission.
                 </Text>
             </View>
 
             <Pressable style={styles.primaryBtn} onPress={onContinueToReflection}>
-                <Text style={styles.primaryBtnText}>Continue to Reflection & Submit</Text>
+                <Text style={styles.primaryBtnText}>
+                    Continue to Reflection & Submit
+                </Text>
             </Pressable>
 
-            <View style={{height: 30}}/>
+            <View style={styles.bottomSpace}/>
         </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
+    container: {
+        flexGrow: 1,
+        padding: 20,
+        backgroundColor: "#FFFFFF",
+    },
+    center: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    title: {
+        fontSize: 26,
+        fontWeight: "900",
+        marginTop: 6,
+        color: "#172033",
+    },
+    sub: {
+        marginTop: 8,
+        opacity: 0.75,
+        lineHeight: 18,
+        color: "#344054",
+    },
     card: {
         marginTop: 14,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FAFAFA",
         borderRadius: 14,
         padding: 14,
     },
-    highlightCard: {borderColor: "#111"},
-
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    sectionLabel: {marginTop: 12, fontWeight: "900", opacity: 0.9},
-
+    highlightCard: {
+        borderColor: "#111827",
+    },
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    sectionLabel: {
+        marginTop: 12,
+        fontWeight: "900",
+        opacity: 0.9,
+        color: "#172033",
+    },
     rowBetween: {
         marginTop: 8,
         flexDirection: "row",
         justifyContent: "space-between",
+        gap: 12,
     },
-
-    bold: {fontWeight: "900"},
-
-    bigText: {marginTop: 10, fontSize: 20, fontWeight: "900"},
-    bigScore: {marginTop: 8, fontSize: 28, fontWeight: "900"},
-
-    note: {marginTop: 8, opacity: 0.7, lineHeight: 18},
-
+    bold: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    bigText: {
+        marginTop: 10,
+        fontSize: 20,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    bigScore: {
+        marginTop: 8,
+        fontSize: 28,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    note: {
+        marginTop: 8,
+        opacity: 0.7,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    muted: {
+        marginTop: 8,
+        opacity: 0.6,
+        color: "#344054",
+    },
+    capitalize: {
+        textTransform: "capitalize",
+    },
+    predictionText: {
+        marginTop: 8,
+        opacity: 0.8,
+        color: "#344054",
+    },
+    predictionResult: {
+        marginTop: 10,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    missingTitle: {
+        marginTop: 8,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    reasonText: {
+        marginTop: 6,
+        opacity: 0.85,
+        color: "#344054",
+    },
+    readyText: {
+        marginTop: 8,
+        fontWeight: "900",
+        color: "#172033",
+    },
     primaryBtn: {
         marginTop: 16,
-        backgroundColor: "#111",
+        backgroundColor: "#111827",
         paddingVertical: 14,
         borderRadius: 14,
         alignItems: "center",
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
+    primaryBtnText: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+        fontSize: 16,
+    },
+    bottomSpace: {
+        height: 30,
+    },
 });
