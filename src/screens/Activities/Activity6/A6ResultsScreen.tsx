@@ -26,57 +26,56 @@ import {
     type A6ParticipantSummary,
 } from "../../../store/activity6RunDraftStore";
 
+import ActivityBarChart from "../../../components/charts/ActivityBarChart";
+import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import {
+    buildA6Visualization,
+    type A6VisualizationParticipant,
+} from "../../../services/resultInsights/activity6VisualizationService";
+
 type Props = NativeStackScreenProps<AppStackParamList, "A6Results">;
 
-/* =========================================================
-   Helpers
-========================================================= */
-
-function fmtMs(v?: number) {
+function fmtMs(v?: number): string {
     if (v == null || !Number.isFinite(v)) return "—";
     return `${Math.round(v)} ms`;
 }
 
-function fmtPct(v?: number) {
+function fmtPct(v?: number): string {
     if (v == null || !Number.isFinite(v)) return "—";
     return `${Math.round(v)}%`;
 }
 
-function fmtN(v?: number) {
+function fmtN(v?: number): string {
     if (v == null || !Number.isFinite(v)) return "—";
     return `${Math.round(v)}`;
 }
 
-function participantName(d: Activity6RunDraft, pid: string) {
-    return d.session.participants.find((p) => p.id === pid)?.name ?? "—";
+function participantName(d: Activity6RunDraft, pid: string): string {
+    return d.session.participants.find(p => p.id === pid)?.name ?? "—";
 }
 
-function isFiniteNum(x: any): x is number {
+function isFiniteNum(x: unknown): x is number {
     return typeof x === "number" && Number.isFinite(x);
 }
 
-function minDefined(xs: Array<number | undefined>) {
-    const v = xs.filter(isFiniteNum);
-    return v.length ? Math.min(...v) : undefined;
+function minDefined(xs: Array<number | undefined>): number | undefined {
+    const values = xs.filter(isFiniteNum);
+    return values.length ? Math.min(...values) : undefined;
 }
 
-function stripReflectionBlockingItems(missing: string[]) {
+function stripReflectionBlockingItems(missing: string[]): string[] {
     return missing.filter(
-        (m) =>
+        item =>
             ![
                 "Reflection text",
                 "Rating (1–5)",
                 "GPS permission granted",
                 "GPS coordinates captured",
-            ].includes(m)
+            ].includes(item)
     );
 }
 
-/* =========================================================
-   UI atoms
-========================================================= */
-
-function Pill({label}: { label: string }) {
+function Pill({label}: { label: string }): React.JSX.Element {
     return (
         <View style={styles.pill}>
             <Text style={styles.pillText}>{label}</Text>
@@ -84,27 +83,32 @@ function Pill({label}: { label: string }) {
     );
 }
 
-function MetricRow(props: { label: string; value: string; hint?: string }) {
+function MetricRow(props: {
+    label: string;
+    value: string;
+    hint?: string;
+}): React.JSX.Element {
     return (
         <View style={styles.metricRow}>
-            <View style={{flex: 1}}>
+            <View style={styles.metricTextBlock}>
                 <Text style={styles.metricLabel}>{props.label}</Text>
-                {props.hint ? <Text style={styles.metricHint}>{props.hint}</Text> : null}
+                {props.hint ? (
+                    <Text style={styles.metricHint}>{props.hint}</Text>
+                ) : null}
             </View>
             <Text style={styles.metricValue}>{props.value}</Text>
         </View>
     );
 }
 
-function Divider() {
+function Divider(): React.JSX.Element {
     return <View style={styles.divider}/>;
 }
 
-/* =========================================================
-   Screen
-========================================================= */
-
-export default function A6ResultsScreen({route, navigation}: Props) {
+export default function A6ResultsScreen({
+                                            route,
+                                            navigation,
+                                        }: Props): React.JSX.Element | null {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
@@ -114,12 +118,14 @@ export default function A6ResultsScreen({route, navigation}: Props) {
         if (!user) return;
 
         const d = getActivity6RunDraft(runId);
+
         if (!d) {
             Alert.alert("Session expired", "Please restart Activity 6.", [
                 {text: "OK", onPress: () => navigation.goBack()},
             ]);
             return;
         }
+
         setDraft(d);
     }, [navigation, runId, user]);
 
@@ -130,6 +136,7 @@ export default function A6ResultsScreen({route, navigation}: Props) {
 
     const eligibility = useMemo(() => {
         if (!draft) return {eligible: false, threshold: 60};
+
         return {
             eligible: isA6LeaderboardEligible(draft),
             threshold: draft.session.accuracyThresholdPct ?? 60,
@@ -160,21 +167,42 @@ export default function A6ResultsScreen({route, navigation}: Props) {
         const fastestId = metrics.fastestParticipantId;
         const mostAccurateId = metrics.mostAccurateParticipantId;
 
-        const fastestName = fastestId ? participantName(draft, fastestId) : undefined;
-        const mostAccName = mostAccurateId ? participantName(draft, mostAccurateId) : undefined;
+        const fastestName = fastestId
+            ? participantName(draft, fastestId)
+            : undefined;
+        const mostAccName = mostAccurateId
+            ? participantName(draft, mostAccurateId)
+            : undefined;
 
-        const fastestSummary = metrics.participantSummaries.find((s) => s.participantId === fastestId);
-        const fastestOverall = fastestSummary?.overallMeanReactionTimeMs;
+        const fastestSummary = metrics.participantSummaries.find(
+            summary => summary.participantId === fastestId
+        );
 
-        const accSummary = metrics.participantSummaries.find((s) => s.participantId === mostAccurateId);
-        const bestAcc = accSummary?.tracingAccuracyPct;
+        const accSummary = metrics.participantSummaries.find(
+            summary => summary.participantId === mostAccurateId
+        );
 
         return {
             fastestName,
-            fastestOverall,
+            fastestOverall: fastestSummary?.overallMeanReactionTimeMs,
             mostAccName,
-            bestAcc,
+            bestAcc: accSummary?.tracingAccuracyPct,
         };
+    }, [draft, metrics]);
+
+    const visualization = useMemo(() => {
+        if (!draft || !metrics) {
+            return buildA6Visualization([]);
+        }
+
+        const participants: A6VisualizationParticipant[] =
+            metrics.participantSummaries.map(summary => ({
+                label: participantName(draft, summary.participantId),
+                reactionTimeMs: summary.overallMeanReactionTimeMs,
+                tracingAccuracyPct: summary.tracingAccuracyPct,
+            }));
+
+        return buildA6Visualization(participants);
     }, [draft, metrics]);
 
     function refresh() {
@@ -200,17 +228,21 @@ export default function A6ResultsScreen({route, navigation}: Props) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading…</Text>
+                <Text style={styles.loadingText}>Loading…</Text>
             </View>
         );
     }
 
-    const summaries: A6ParticipantSummary[] = metrics.participantSummaries ?? [];
+    const summaries: A6ParticipantSummary[] =
+        metrics.participantSummaries ?? [];
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
             <ScrollView contentContainerStyle={styles.container}>
-                <View style={{flexDirection: "row", alignItems: "center", justifyContent: "space-between"}}>
+                <View style={styles.headerRow}>
                     <Text style={styles.title}>Results Dashboard</Text>
                     <Pressable style={styles.ghostBtn} onPress={refresh}>
                         <Text style={styles.ghostBtnText}>Refresh</Text>
@@ -218,35 +250,88 @@ export default function A6ResultsScreen({route, navigation}: Props) {
                 </View>
 
                 <Text style={styles.sub}>
-                    Review reaction speed, consistency, and tracing accuracy. Leaderboard eligibility requires meeting
-                    the accuracy threshold.
+                    Review reaction speed, consistency, and tracing accuracy.
+                    Leaderboard eligibility requires meeting the accuracy
+                    threshold.
                 </Text>
 
-                {/* Highlights */}
+                <View style={styles.hero}>
+                    <Text style={styles.heroTitle}>Fastest Reaction</Text>
+                    <Text style={styles.heroScore}>
+                        {visualization.fastest?.reactionTimeMs != null
+                            ? fmtMs(visualization.fastest.reactionTimeMs)
+                            : "—"}
+                    </Text>
+                    <Text style={styles.heroMeta}>
+                        {visualization.fastest?.label ??
+                            "Complete reaction trials to calculate this."}
+                    </Text>
+                    <Text style={styles.heroHint}>
+                        Lower reaction time means faster response performance.
+                    </Text>
+                </View>
+
+                <ActivityBarChart
+                    title="Reaction Time Comparison"
+                    subtitle="Overall mean reaction time by participant. Lower bars are better."
+                    data={visualization.reactionChartData}
+                    unitLabel="ms"
+                />
+
+                <ActivityBarChart
+                    title="Tracing Accuracy Comparison"
+                    subtitle="Tracing accuracy by participant. Higher bars are better."
+                    data={visualization.accuracyChartData}
+                    unitLabel="%"
+                />
+
+                <ResultsInsightCard insight={visualization.insight}/>
+
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Highlights</Text>
 
                     <View style={styles.pillWrap}>
-                        <Pill label={`Accuracy threshold: ${fmtPct(eligibility.threshold)}`}/>
-                        <Pill label={eligibility.eligible ? "Leaderboard: Eligible ✅" : "Leaderboard: Not eligible"}/>
+                        <Pill
+                            label={`Accuracy threshold: ${fmtPct(
+                                eligibility.threshold
+                            )}`}
+                        />
+                        <Pill
+                            label={
+                                eligibility.eligible
+                                    ? "Leaderboard: Eligible"
+                                    : "Leaderboard: Not eligible"
+                            }
+                        />
                     </View>
 
                     <Divider/>
 
                     <MetricRow
-                        label="Fastest participant (lowest overall mean reaction time)"
-                        value={highlights?.fastestName ? `${highlights.fastestName} • ${fmtMs(highlights.fastestOverall)}` : "—"}
-                        hint="Overall mean is averaged across hands (when available)."
+                        label="Fastest participant"
+                        value={
+                            highlights?.fastestName
+                                ? `${highlights.fastestName} • ${fmtMs(
+                                    highlights.fastestOverall
+                                )}`
+                                : "—"
+                        }
+                        hint="Lowest overall mean reaction time."
                     />
 
                     <MetricRow
                         label="Most accurate tracing"
-                        value={highlights?.mostAccName ? `${highlights.mostAccName} • ${fmtPct(highlights.bestAcc)}` : "—"}
+                        value={
+                            highlights?.mostAccName
+                                ? `${highlights.mostAccName} • ${fmtPct(
+                                    highlights.bestAcc
+                                )}`
+                                : "—"
+                        }
                         hint="Accuracy is computed from average deviation versus max allowed deviation."
                     />
                 </View>
 
-                {/* Team-level summary */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Team Summary</Text>
 
@@ -260,83 +345,141 @@ export default function A6ResultsScreen({route, navigation}: Props) {
                         label="Tracing accuracy (min / avg)"
                         value={
                             leaderboard
-                                ? `${fmtPct(leaderboard.minTracingAccuracyPct)} / ${fmtPct(leaderboard.avgTracingAccuracyPct)}`
+                                ? `${fmtPct(
+                                    leaderboard.minTracingAccuracyPct
+                                )} / ${fmtPct(
+                                    leaderboard.avgTracingAccuracyPct
+                                )}`
                                 : "—"
                         }
                         hint="Leaderboard eligibility requires every participant to meet the accuracy threshold."
                     />
                 </View>
 
-                {/* Per participant breakdown */}
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Per Participant Breakdown</Text>
+                    <Text style={styles.cardTitle}>
+                        Per Participant Breakdown
+                    </Text>
                     <Text style={styles.help}>
-                        Mean reaction time ranks speed. Standard deviation ranks consistency (lower = more consistent).
+                        Mean reaction time ranks speed. Standard deviation
+                        ranks consistency. Lower values are better for both.
                     </Text>
 
                     <Divider/>
 
                     {summaries.length === 0 ? (
-                        <Text style={styles.empty}>No results yet. Record reaction trials and tracing first.</Text>
+                        <Text style={styles.empty}>
+                            No results yet. Record reaction trials and tracing
+                            first.
+                        </Text>
                     ) : (
-                        summaries.map((s) => {
-                            const name = participantName(draft, s.participantId);
+                        summaries.map(summary => {
+                            const name = participantName(
+                                draft,
+                                summary.participantId
+                            );
 
-                            const dom = s.dominant;
-                            const non = s.nonDominant;
-
-                            const overall = s.overallMeanReactionTimeMs;
+                            const dominant = summary.dominant;
+                            const nonDominant = summary.nonDominant;
+                            const overall =
+                                summary.overallMeanReactionTimeMs;
 
                             const betterHand =
-                                dom?.meanReactionTimeMs != null && non?.meanReactionTimeMs != null
-                                    ? dom.meanReactionTimeMs < non.meanReactionTimeMs
+                                dominant?.meanReactionTimeMs != null &&
+                                nonDominant?.meanReactionTimeMs != null
+                                    ? dominant.meanReactionTimeMs <
+                                    nonDominant.meanReactionTimeMs
                                         ? "Dominant faster"
-                                        : dom.meanReactionTimeMs > non.meanReactionTimeMs
+                                        : dominant.meanReactionTimeMs >
+                                        nonDominant.meanReactionTimeMs
                                             ? "Non-dominant faster"
                                             : "Equal"
                                     : undefined;
 
-                            const minFastest = minDefined([dom?.fastestReactionTimeMs, non?.fastestReactionTimeMs]);
+                            const minFastest = minDefined([
+                                dominant?.fastestReactionTimeMs,
+                                nonDominant?.fastestReactionTimeMs,
+                            ]);
 
                             return (
-                                <View key={s.participantId} style={styles.participantCard}>
-                                    <View style={{
-                                        flexDirection: "row",
-                                        justifyContent: "space-between",
-                                        alignItems: "baseline"
-                                    }}>
-                                        <Text style={styles.participantName}>{name}</Text>
+                                <View
+                                    key={summary.participantId}
+                                    style={styles.participantCard}
+                                >
+                                    <View style={styles.participantHeader}>
+                                        <Text style={styles.participantName}>
+                                            {name}
+                                        </Text>
                                         <Text style={styles.participantMeta}>
-                                            Overall mean: <Text style={{fontWeight: "900"}}>{fmtMs(overall)}</Text>
+                                            Overall mean:{" "}
+                                            <Text style={styles.bold}>
+                                                {fmtMs(overall)}
+                                            </Text>
                                         </Text>
                                     </View>
 
-                                    {betterHand ? <Text style={styles.participantHint}>{betterHand}</Text> : null}
+                                    {betterHand ? (
+                                        <Text style={styles.participantHint}>
+                                            {betterHand}
+                                        </Text>
+                                    ) : null}
 
                                     <View style={styles.grid2}>
                                         <View style={styles.gridBox}>
-                                            <Text style={styles.gridTitle}>Dominant hand</Text>
-                                            <MetricRow label="Trials (N)" value={fmtN(dom?.n)}/>
-                                            <MetricRow label="Mean" value={fmtMs(dom?.meanReactionTimeMs)}/>
-                                            <MetricRow label="Std dev" value={fmtMs(dom?.stdDevReactionTimeMs)}/>
+                                            <Text style={styles.gridTitle}>
+                                                Dominant hand
+                                            </Text>
+                                            <MetricRow
+                                                label="Trials"
+                                                value={fmtN(dominant?.n)}
+                                            />
+                                            <MetricRow
+                                                label="Mean"
+                                                value={fmtMs(
+                                                    dominant?.meanReactionTimeMs
+                                                )}
+                                            />
+                                            <MetricRow
+                                                label="Std dev"
+                                                value={fmtMs(
+                                                    dominant?.stdDevReactionTimeMs
+                                                )}
+                                            />
                                         </View>
 
                                         <View style={styles.gridBox}>
-                                            <Text style={styles.gridTitle}>Non-dominant hand</Text>
-                                            <MetricRow label="Trials (N)" value={fmtN(non?.n)}/>
-                                            <MetricRow label="Mean" value={fmtMs(non?.meanReactionTimeMs)}/>
-                                            <MetricRow label="Std dev" value={fmtMs(non?.stdDevReactionTimeMs)}/>
+                                            <Text style={styles.gridTitle}>
+                                                Non-dominant hand
+                                            </Text>
+                                            <MetricRow
+                                                label="Trials"
+                                                value={fmtN(nonDominant?.n)}
+                                            />
+                                            <MetricRow
+                                                label="Mean"
+                                                value={fmtMs(
+                                                    nonDominant?.meanReactionTimeMs
+                                                )}
+                                            />
+                                            <MetricRow
+                                                label="Std dev"
+                                                value={fmtMs(
+                                                    nonDominant?.stdDevReactionTimeMs
+                                                )}
+                                            />
                                         </View>
                                     </View>
 
-                                    <View style={{marginTop: 10}}>
+                                    <View style={styles.participantFooter}>
                                         <MetricRow
-                                            label="Fastest single reaction (either hand)"
+                                            label="Fastest single reaction"
                                             value={fmtMs(minFastest)}
                                         />
                                         <MetricRow
                                             label="Tracing accuracy"
-                                            value={fmtPct(s.tracingAccuracyPct)}
+                                            value={fmtPct(
+                                                summary.tracingAccuracyPct
+                                            )}
                                         />
                                     </View>
                                 </View>
@@ -345,191 +488,382 @@ export default function A6ResultsScreen({route, navigation}: Props) {
                     )}
                 </View>
 
-                {/* Experiment readiness */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Experiment Readiness</Text>
                     <Text style={styles.help}>
-                        You can continue to Reflection & Submit once the experiment data is complete.
+                        You can continue to Reflection & Submit once the
+                        experiment data is complete.
                     </Text>
 
                     <Divider/>
 
                     {experimentBlockingMissing.length === 0 ? (
                         <View style={styles.readyBox}>
-                            <Text style={styles.readyTitle}>Ready for Reflection ✅</Text>
+                            <Text style={styles.readyTitle}>
+                                Ready for Reflection
+                            </Text>
                             <Text style={styles.readyText}>
-                                Reaction trials and tracing results are present. You can continue to the reflection
-                                page.
+                                Reaction trials and tracing results are present.
+                                You can continue to the reflection page.
                             </Text>
                         </View>
                     ) : (
                         <View style={styles.missingBox}>
-                            <Text style={styles.missingTitle}>Complete these experiment items first</Text>
-                            {experimentBlockingMissing.map((m, idx) => (
-                                <Text key={`${m}_${idx}`} style={styles.missingItem}>
-                                    • {m}
+                            <Text style={styles.missingTitle}>
+                                Complete these experiment items first
+                            </Text>
+                            {experimentBlockingMissing.map((item, index) => (
+                                <Text
+                                    key={`${item}_${index}`}
+                                    style={styles.missingItem}
+                                >
+                                    • {item}
                                 </Text>
                             ))}
                         </View>
                     )}
                 </View>
 
-                {/* Final submission note */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Final Submission Notes</Text>
                     <Text style={styles.help}>
-                        Reflection, rating, and GPS are completed in the Reflection & Submit screen.
-                        Video evidence is optional.
+                        Reflection, rating, and GPS are completed in the
+                        Reflection & Submit screen. Video evidence is optional.
                     </Text>
 
                     <Divider/>
 
-                    <Text style={styles.noteText}>
-                        You will complete:
-                    </Text>
+                    <Text style={styles.noteText}>You will complete:</Text>
                     <Text style={styles.noteItem}>• Reflection text</Text>
                     <Text style={styles.noteItem}>• Rating (1–5)</Text>
-                    <Text style={styles.noteItem}>• GPS permission / coordinate check</Text>
+                    <Text style={styles.noteItem}>
+                        • GPS permission / coordinate check
+                    </Text>
                     <Text style={styles.noteItem}>• Optional session video</Text>
                 </View>
 
-                {/* Actions */}
-                <View style={{marginTop: 14, flexDirection: "row", gap: 10}}>
-                    <Pressable style={styles.secondaryBtn} onPress={goToReaction}>
-                        <Text style={styles.secondaryBtnText}>Back to Reaction</Text>
+                <View style={styles.actionRow}>
+                    <Pressable
+                        style={styles.secondaryBtn}
+                        onPress={goToReaction}
+                    >
+                        <Text style={styles.secondaryBtnText}>
+                            Back to Reaction
+                        </Text>
                     </Pressable>
 
-                    <Pressable style={styles.secondaryBtn} onPress={goToTracing}>
-                        <Text style={styles.secondaryBtnText}>Back to Tracing</Text>
+                    <Pressable
+                        style={styles.secondaryBtn}
+                        onPress={goToTracing}
+                    >
+                        <Text style={styles.secondaryBtnText}>
+                            Back to Tracing
+                        </Text>
                     </Pressable>
                 </View>
 
                 <Pressable
-                    style={[styles.primaryBtnWide, !canProceedToReflection && styles.btnDisabled]}
+                    style={[
+                        styles.primaryBtnWide,
+                        !canProceedToReflection && styles.btnDisabled,
+                    ]}
                     disabled={!canProceedToReflection}
                     onPress={goToSubmit}
                 >
-                    <Text style={styles.primaryBtnText}>Go to Reflection & Submit</Text>
+                    <Text style={styles.primaryBtnText}>
+                        Go to Reflection & Submit
+                    </Text>
                 </Pressable>
 
-                <View style={{height: 40}}/>
+                <View style={styles.bottomSpace}/>
             </ScrollView>
         </KeyboardAvoidingView>
     );
 }
 
-/* =========================================================
-   Styles
-========================================================= */
-
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
+    flex: {
+        flex: 1,
+    },
+    container: {
+        flexGrow: 1,
+        padding: 20,
+        backgroundColor: "#FFFFFF",
+    },
+    center: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#FFFFFF",
+    },
+    loadingText: {
+        marginTop: 10,
+        opacity: 0.7,
+        color: "#344054",
+    },
+    headerRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    title: {
+        fontSize: 26,
+        fontWeight: "900",
+        color: "#172033",
+        flex: 1,
+    },
+    sub: {
+        marginTop: 8,
+        opacity: 0.75,
+        lineHeight: 20,
+        color: "#344054",
+    },
+    hero: {
+        marginTop: 16,
+        borderRadius: 16,
+        backgroundColor: "#111827",
+        padding: 16,
+    },
+    heroTitle: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+        opacity: 0.9,
+    },
+    heroScore: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+        fontSize: 36,
+        marginTop: 6,
+    },
+    heroMeta: {
+        color: "#FFFFFF",
+        opacity: 0.9,
+        marginTop: 4,
+    },
+    heroHint: {
+        color: "#FFFFFF",
+        opacity: 0.65,
+        marginTop: 8,
+        lineHeight: 18,
+    },
     card: {
         marginTop: 16,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "white",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FAFAFA",
         borderRadius: 14,
         padding: 14,
     },
     participantCard: {
         marginTop: 14,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FFFFFF",
         borderRadius: 14,
         padding: 14,
     },
-
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    help: {marginTop: 6, opacity: 0.75, lineHeight: 18},
-
-    divider: {height: 1, backgroundColor: "#eee", marginVertical: 12},
-
-    pillWrap: {marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 10},
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    help: {
+        marginTop: 6,
+        opacity: 0.75,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    divider: {
+        height: 1,
+        backgroundColor: "#E5E7EB",
+        marginVertical: 12,
+    },
+    pillWrap: {
+        marginTop: 10,
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 10,
+    },
     pill: {
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 999,
         borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "#fafafa",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FFFFFF",
     },
-    pillText: {fontWeight: "900", opacity: 0.85},
-
-    metricRow: {flexDirection: "row", alignItems: "center", paddingVertical: 6},
-    metricLabel: {fontWeight: "800", opacity: 0.8},
-    metricHint: {marginTop: 2, opacity: 0.65, fontSize: 12, lineHeight: 16},
-    metricValue: {fontWeight: "900", marginLeft: 10},
-
-    participantName: {fontSize: 16, fontWeight: "900"},
-    participantMeta: {opacity: 0.75},
-    participantHint: {marginTop: 6, opacity: 0.75, fontWeight: "800"},
-
-    grid2: {marginTop: 12, flexDirection: "row", gap: 10},
+    pillText: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    metricRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 6,
+        gap: 10,
+    },
+    metricTextBlock: {
+        flex: 1,
+    },
+    metricLabel: {
+        fontWeight: "800",
+        opacity: 0.85,
+        color: "#172033",
+    },
+    metricHint: {
+        marginTop: 2,
+        opacity: 0.65,
+        fontSize: 12,
+        lineHeight: 16,
+        color: "#344054",
+    },
+    metricValue: {
+        fontWeight: "900",
+        color: "#172033",
+        textAlign: "right",
+    },
+    participantHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: 10,
+    },
+    participantName: {
+        fontSize: 16,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    participantMeta: {
+        opacity: 0.75,
+        color: "#344054",
+        textAlign: "right",
+        flexShrink: 1,
+    },
+    participantHint: {
+        marginTop: 6,
+        opacity: 0.75,
+        fontWeight: "800",
+        color: "#344054",
+    },
+    participantFooter: {
+        marginTop: 10,
+    },
+    bold: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    grid2: {
+        marginTop: 12,
+        flexDirection: "row",
+        gap: 10,
+    },
     gridBox: {
         flex: 1,
         borderWidth: 1,
-        borderColor: "#eee",
+        borderColor: "#E5E7EB",
         borderRadius: 12,
         padding: 12,
-        backgroundColor: "white"
+        backgroundColor: "#FAFAFA",
     },
-    gridTitle: {fontWeight: "900", marginBottom: 6},
-
-    empty: {marginTop: 8, opacity: 0.7},
-
-    readyBox: {padding: 14, borderRadius: 12, backgroundColor: "#f3f4f6"},
-    readyTitle: {fontWeight: "900"},
-    readyText: {marginTop: 6, opacity: 0.75, lineHeight: 18},
-
+    gridTitle: {
+        fontWeight: "900",
+        marginBottom: 6,
+        color: "#172033",
+    },
+    empty: {
+        marginTop: 8,
+        opacity: 0.7,
+        color: "#344054",
+    },
+    readyBox: {
+        padding: 14,
+        borderRadius: 12,
+        backgroundColor: "#F3F4F6",
+    },
+    readyTitle: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    readyText: {
+        marginTop: 6,
+        opacity: 0.75,
+        lineHeight: 18,
+        color: "#344054",
+    },
     missingBox: {
         padding: 14,
         borderRadius: 12,
-        backgroundColor: "#fff7ed",
+        backgroundColor: "#FFF7ED",
         borderWidth: 1,
-        borderColor: "#fed7aa"
+        borderColor: "#FED7AA",
     },
-    missingTitle: {fontWeight: "900"},
-    missingItem: {marginTop: 8, opacity: 0.85, lineHeight: 18},
-
-    noteText: {opacity: 0.8, fontWeight: "800"},
-    noteItem: {marginTop: 8, opacity: 0.8, lineHeight: 18},
-
-    btnDisabled: {opacity: 0.5},
-
+    missingTitle: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    missingItem: {
+        marginTop: 8,
+        opacity: 0.85,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    noteText: {
+        opacity: 0.8,
+        fontWeight: "800",
+        color: "#172033",
+    },
+    noteItem: {
+        marginTop: 8,
+        opacity: 0.8,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    actionRow: {
+        marginTop: 14,
+        flexDirection: "row",
+        gap: 10,
+    },
+    btnDisabled: {
+        opacity: 0.5,
+    },
     primaryBtnWide: {
         marginTop: 14,
-        backgroundColor: "#111",
+        backgroundColor: "#111827",
         paddingVertical: 14,
         borderRadius: 14,
         alignItems: "center",
     },
-    primaryBtnText: {color: "white", fontWeight: "900"},
-
+    primaryBtnText: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+    },
     secondaryBtn: {
         flex: 1,
         borderWidth: 1,
-        borderColor: "#111",
+        borderColor: "#111827",
         paddingVertical: 12,
         borderRadius: 12,
         alignItems: "center",
-        backgroundColor: "white",
+        backgroundColor: "#FFFFFF",
     },
-    secondaryBtnText: {fontWeight: "900"},
-
+    secondaryBtnText: {
+        fontWeight: "900",
+        color: "#111827",
+    },
     ghostBtn: {
         borderWidth: 1,
-        borderColor: "#ddd",
+        borderColor: "#E5E7EB",
         paddingVertical: 8,
         paddingHorizontal: 12,
         borderRadius: 12,
-        backgroundColor: "white",
+        backgroundColor: "#FFFFFF",
     },
-    ghostBtnText: {fontWeight: "900", opacity: 0.85},
+    ghostBtnText: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    bottomSpace: {
+        height: 40,
+    },
 });
