@@ -1,11 +1,14 @@
 // src/services/activitySubmissionService.ts
 import {
-    addDoc,
     collection,
     doc,
     FieldPath,
+    getDocs,
+    limit,
+    query,
     runTransaction,
     serverTimestamp,
+    where,
 } from "firebase/firestore";
 
 import {db} from "./firebase";
@@ -71,14 +74,64 @@ const DEFAULT_SEASON_ID = "season_2026_s1";
    - season history
 ========================================================= */
 
-async function updateTeamScoresTransactional(teamId: string, activityKey: string, score: number) {
+function submissionDocIdForRunId(runId: string): string {
+    if (!isNonEmptyString(runId)) {
+        throw new Error("Missing runId for submission.");
+    }
+
+    return `run_${encodeURIComponent(runId)}`;
+}
+
+async function findExistingSubmissionIdByRunId(runId: string): Promise<string | null> {
+    if (!isNonEmptyString(runId)) {
+        return null;
+    }
+
+    const q = query(
+        collection(db, "submissions"),
+        where("runId", "==", runId),
+        limit(1)
+    );
+
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+        return snap.docs[0].id;
+    }
+
+    return null;
+}
+
+async function createSubmissionAndUpdateTeamScoresIdempotent({
+                                                                 runId,
+                                                                 teamId,
+                                                                 activityKey,
+                                                                 score,
+                                                                 payload,
+                                                             }: {
+    runId: string;
+    teamId: string;
+    activityKey: string;
+    score: number;
+    payload: Record<string, unknown>;
+}): Promise<{ submissionId: string; created: boolean }> {
+    const submissionRef = doc(db, "submissions", submissionDocIdForRunId(runId));
     const teamRef = doc(db, "teams", teamId);
 
-    await runTransaction(db, async (tx) => {
-        const snap = await tx.get(teamRef);
-        if (!snap.exists()) throw new Error("Team not found.");
+    let created = false;
 
-        const data = snap.data() as any;
+    await runTransaction(db, async (tx) => {
+        const submissionSnap = await tx.get(submissionRef);
+
+        if (submissionSnap.exists()) {
+            created = false;
+            return;
+        }
+
+        const teamSnap = await tx.get(teamRef);
+        if (!teamSnap.exists()) throw new Error("Team not found.");
+
+        const data = teamSnap.data() as any;
         const stats = data?.stats ?? {};
 
         const seasonId: string =
@@ -91,6 +144,8 @@ async function updateTeamScoresTransactional(teamId: string, activityKey: string
 
         const seasonTotal = safeNum(stats?.seasons?.[seasonId]?.totalScore);
         const seasonActivity = safeNum(stats?.seasons?.[seasonId]?.activityScores?.[activityKey]);
+
+        tx.set(submissionRef, payload);
 
         tx.update(
             teamRef,
@@ -118,7 +173,14 @@ async function updateTeamScoresTransactional(teamId: string, activityKey: string
             "stats.lastUpdated",
             serverTimestamp()
         );
+
+        created = true;
     });
+
+    return {
+        submissionId: submissionRef.id,
+        created,
+    };
 }
 
 /* =========================================================
@@ -173,6 +235,12 @@ export async function submitActivity1({
 
     const {score, base, targetBonus, gForcePenalty} = scoreActivity1(run, bestAttemptIndex);
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId(run.runId);
+    if (existingSubmissionId) {
+        await markRunDraftSubmittedInLocalDb(run.runId, existingSubmissionId);
+        return {submissionId: existingSubmissionId, score};
+    }
+
     // Upload best attempt video if exists
     const bestAttempt = run.attempts?.[bestAttemptIndex];
     const localVideoUri = bestAttempt?.video?.uri;
@@ -203,8 +271,6 @@ export async function submitActivity1({
         });
     }
 
-    const submissionRef = collection(db, "submissions");
-
     const payloadRaw = {
         activityId: run.activityId,
         activityKey: ACTIVITY_KEYS.PARACHUTE_DROP,
@@ -233,12 +299,17 @@ export async function submitActivity1({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: run.runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.PARACHUTE_DROP,
+        score,
+        payload,
+    });
 
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.PARACHUTE_DROP, score);
-    await markRunDraftSubmittedInLocalDb(run.runId, newSubmission.id);
+    await markRunDraftSubmittedInLocalDb(run.runId, result.submissionId);
 
-    return {submissionId: newSubmission.id, score};
+    return {submissionId: result.submissionId, score};
 }
 
 /* =========================================================
@@ -270,6 +341,11 @@ export async function submitActivity2({
     const avg = valid.reduce((sum, a) => sum + (a.dbAvg ?? 0), 0) / valid.length;
     const score = Math.round(avg * 10) / 10;
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId(run.runId);
+    if (existingSubmissionId) {
+        return {submissionId: existingSubmissionId, score};
+    }
+
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -294,8 +370,6 @@ export async function submitActivity2({
             contentType: uploaded.contentType,
         });
     }
-
-    const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
         activityId: run.activityId,
@@ -325,11 +399,15 @@ export async function submitActivity2({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: run.runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.SOUND_HUNTER,
+        score,
+        payload,
+    });
 
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.SOUND_HUNTER, score);
-
-    return {submissionId: newSubmission.id, score};
+    return {submissionId: result.submissionId, score};
 }
 
 /* =========================================================
@@ -406,6 +484,11 @@ export async function submitActivity3({
 
     const {score, bestDesignIndex, perDesign} = scoreActivity3(run);
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId(run.runId);
+    if (existingSubmissionId) {
+        return {submissionId: existingSubmissionId, score};
+    }
+
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -454,8 +537,6 @@ export async function submitActivity3({
         });
     }
 
-    const submissionRef = collection(db, "submissions");
-
     const payloadRaw = {
         activityId: run.session.activityId,
         activityKey: ACTIVITY_KEYS.HAND_FAN,
@@ -487,11 +568,15 @@ export async function submitActivity3({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: run.runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.HAND_FAN,
+        score,
+        payload,
+    });
 
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HAND_FAN, score);
-
-    return {submissionId: newSubmission.id, score};
+    return {submissionId: result.submissionId, score};
 }
 
 /* =========================================================
@@ -544,7 +629,10 @@ export async function submitActivity4({
 
     const {score, bestDesignIndex, totalDesignsTested} = scoreActivity4(run);
 
-    const submissionRef = collection(db, "submissions");
+    const existingSubmissionId = await findExistingSubmissionIdByRunId(run.runId);
+    if (existingSubmissionId) {
+        return {submissionId: existingSubmissionId, score};
+    }
 
     const payloadRaw = {
         activityId: run.session.activityId,
@@ -575,11 +663,15 @@ export async function submitActivity4({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: run.runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.EARTHQUAKE,
+        score,
+        payload,
+    });
 
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.EARTHQUAKE, score);
-
-    return {submissionId: newSubmission.id, score};
+    return {submissionId: result.submissionId, score};
 }
 
 /* =========================================================
@@ -750,6 +842,11 @@ export async function submitActivity5({
     const bestParticipantId = bestParticipantIdOverride ?? computed.bestParticipantId;
     const bestMovementType = bestMovementTypeOverride ?? computed.bestMovementType;
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId(run.runId);
+    if (existingSubmissionId) {
+        return {submissionId: existingSubmissionId, score};
+    }
+
     // Optional evidence upload
     const evidence: Array<{
         type: "video";
@@ -777,8 +874,6 @@ export async function submitActivity5({
             kind: "session",
         });
     }
-
-    const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
         activityId: run.session.activityId,
@@ -816,11 +911,15 @@ export async function submitActivity5({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: run.runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.HUMAN_PERFORMANCE,
+        score,
+        payload,
+    });
 
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.HUMAN_PERFORMANCE, score);
-
-    return {submissionId: newSubmission.id, score};
+    return {submissionId: result.submissionId, score};
 }
 
 /* =========================================================
@@ -1011,6 +1110,17 @@ export async function submitActivity6({
     if (text.length < 20) throw new Error("Reflection is too short. Write at least 1–2 meaningful sentences.");
     if (!isFiniteNumber(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId((run as any).runId);
+    if (existingSubmissionId) {
+        return {
+            submissionId: existingSubmissionId,
+            score: scored.score,
+            meanReactionTimeMs: scored.meanReactionTimeMs,
+            avgAccuracyPct: scored.avgAccuracyScorePercent,
+            minAccuracyPct: scored.minAccuracyScorePercent,
+        };
+    }
+
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -1037,8 +1147,6 @@ export async function submitActivity6({
             kind: "session",
         });
     }
-
-    const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
         activityId: (run as any)?.session?.activityId ?? (run as any)?.activityId,
@@ -1079,12 +1187,16 @@ export async function submitActivity6({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
-
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.REACTION_BOARD, scored.score);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: (run as any).runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.REACTION_BOARD,
+        score: scored.score,
+        payload,
+    });
 
     return {
-        submissionId: newSubmission.id,
+        submissionId: result.submissionId,
         score: scored.score,
         meanReactionTimeMs: scored.meanReactionTimeMs,
         avgAccuracyPct: scored.avgAccuracyScorePercent,
@@ -1351,6 +1463,18 @@ export async function submitActivity7({
 
     const scored = scoreActivity7(run);
 
+    const existingSubmissionId = await findExistingSubmissionIdByRunId((run as any).runId);
+    if (existingSubmissionId) {
+        return {
+            submissionId: existingSubmissionId,
+            score: scored.score,
+            teamRecoveryConsistencyScore: scored.teamRecoveryConsistencyScore,
+            bestParticipantId: scored.bestParticipantId,
+            bestParticipantName: scored.bestParticipantName,
+            bestParticipantRecoveryConsistencyScore: scored.bestParticipantRecoveryConsistencyScore,
+        };
+    }
+
     const evidence: Array<{
         type: "video";
         storagePath: string;
@@ -1377,8 +1501,6 @@ export async function submitActivity7({
             kind: "session",
         });
     }
-
-    const submissionRef = collection(db, "submissions");
 
     const payloadRaw = {
         activityId: (run as any)?.session?.activityId ?? (run as any)?.activityId,
@@ -1414,12 +1536,16 @@ export async function submitActivity7({
 
     const payload = stripUndefinedDeep(payloadRaw);
 
-    const newSubmission = await addDoc(submissionRef, payload);
-
-    await updateTeamScoresTransactional(teamId, ACTIVITY_KEYS.BREATHING_PACE, scored.score);
+    const result = await createSubmissionAndUpdateTeamScoresIdempotent({
+        runId: (run as any).runId,
+        teamId,
+        activityKey: ACTIVITY_KEYS.BREATHING_PACE,
+        score: scored.score,
+        payload,
+    });
 
     return {
-        submissionId: newSubmission.id,
+        submissionId: result.submissionId,
         score: scored.score,
         teamRecoveryConsistencyScore: scored.teamRecoveryConsistencyScore,
         bestParticipantId: scored.bestParticipantId,
