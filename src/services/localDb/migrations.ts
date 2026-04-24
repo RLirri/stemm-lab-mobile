@@ -79,6 +79,44 @@ async function migrationV1(db: SQLiteDatabase): Promise<void> {
   `);
 }
 
+async function migrationV2(db: SQLiteDatabase): Promise<void> {
+    await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL UNIQUE,
+      activity_id TEXT NOT NULL,
+      user_id TEXT,
+      team_id TEXT,
+      status TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at TEXT,
+      last_error TEXT,
+      remote_submission_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_offline_submissions_activity_id
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(activity_id);
+
+    CREATE INDEX IF NOT EXISTS idx_offline_submissions_user_id
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(user_id);
+
+    CREATE INDEX IF NOT EXISTS idx_offline_submissions_team_id
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(team_id);
+
+    CREATE INDEX IF NOT EXISTS idx_offline_submissions_status
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(status);
+
+    CREATE INDEX IF NOT EXISTS idx_offline_submissions_updated_at
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(updated_at);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_submissions_run_id
+      ON ${LOCAL_DB_TABLES.OFFLINE_SUBMISSIONS}(run_id);
+  `);
+}
+
 export async function runMigrations(db: SQLiteDatabase): Promise<void> {
     const currentVersion = await getCurrentSchemaVersion(db);
 
@@ -91,6 +129,11 @@ export async function runMigrations(db: SQLiteDatabase): Promise<void> {
         if (currentVersion < 1) {
             await migrationV1(db);
             await setCurrentSchemaVersion(db, 1);
+        }
+
+        if (currentVersion < 2) {
+            await migrationV2(db);
+            await setCurrentSchemaVersion(db, 2);
         }
 
         await db.execAsync("COMMIT");
