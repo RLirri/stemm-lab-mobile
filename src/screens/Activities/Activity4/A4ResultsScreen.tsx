@@ -1,12 +1,14 @@
+// src/screens/Activities/Activity4/A4ResultsScreen.tsx
+
 import React, {useEffect, useMemo, useState} from "react";
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
     View,
-    ActivityIndicator,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
@@ -18,20 +20,35 @@ import {
     type Activity4RunDraft,
 } from "../../../store/activity4RunDraftStore";
 
+import ActivityBarChart from "../../../components/charts/ActivityBarChart";
+import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import {
+    buildA4Visualization,
+    type A4VisualizationTrial,
+} from "../../../services/resultInsights/activity4VisualizationService";
+
 type Props = NativeStackScreenProps<AppStackParamList, "A4Results">;
 
-function safeNum(x: unknown, fallback = 0) {
+type MeasuredRow = {
+    designIndex: number;
+    name: string;
+    score: number | null;
+    hasScore: boolean;
+};
+
+function safeNum(x: unknown, fallback = 0): number {
     return typeof x === "number" && Number.isFinite(x) ? x : fallback;
 }
 
-function medal(rank: number) {
-    if (rank === 1) return "🥇";
-    if (rank === 2) return "🥈";
-    if (rank === 3) return "🥉";
-    return `${rank}`;
+function rankLabel(rank: number): string {
+    return `#${rank}`;
 }
 
-export default function A4ResultsScreen({route, navigation}: Props) {
+function hasValidScore(row: MeasuredRow): row is MeasuredRow & { score: number } {
+    return row.hasScore && typeof row.score === "number" && Number.isFinite(row.score);
+}
+
+export default function A4ResultsScreen({route, navigation}: Props): React.JSX.Element | null {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
@@ -41,17 +58,24 @@ export default function A4ResultsScreen({route, navigation}: Props) {
         if (!user) return;
 
         const d = getActivity4RunDraft(runId);
+
         if (!d) {
             Alert.alert("Session expired", "Please restart Activity 4.", [
-                {text: "OK", onPress: () => navigation.replace("A4SessionSetup", {activityId})},
+                {
+                    text: "OK",
+                    onPress: () => navigation.replace("A4SessionSetup", {activityId}),
+                },
             ]);
             return;
         }
 
-        // Prediction gating (robust)
         if (typeof d.prediction?.predictedBestDesignIndex !== "number") {
             Alert.alert("Prediction required", "Please complete prediction first.", [
-                {text: "Go to Prediction", onPress: () => navigation.replace("A4Prediction", {activityId, runId})},
+                {
+                    text: "Go to Prediction",
+                    onPress: () =>
+                        navigation.replace("A4Prediction", {activityId, runId}),
+                },
             ]);
             return;
         }
@@ -59,30 +83,36 @@ export default function A4ResultsScreen({route, navigation}: Props) {
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
-    const measuredRows = useMemo(() => {
+    const measuredRows = useMemo<MeasuredRow[]>(() => {
         if (!draft) return [];
 
-        // Build row per design (even if missing)
-        const rows = draft.session.designs.map((design, idx) => {
-            const m = draft.measurements.find((x) => x.designIndex === idx);
+        const rows: MeasuredRow[] = draft.session.designs.map((design, index) => {
+            const measurement = draft.measurements.find(
+                item => item.designIndex === index,
+            );
+
             const score =
-                typeof m?.movementScore === "number" && Number.isFinite(m.movementScore)
-                    ? m.movementScore
+                typeof measurement?.movementScore === "number" &&
+                Number.isFinite(measurement.movementScore)
+                    ? measurement.movementScore
                     : null;
 
             return {
-                designIndex: idx,
-                name: design.name ?? `Design ${idx + 1}`,
+                designIndex: index,
+                name: design.name ?? `Design ${index + 1}`,
                 score,
                 hasScore: typeof score === "number",
             };
         });
 
-        // Sort: measured first (lowest score best), then unmeasured at bottom
         rows.sort((a, b) => {
-            if (a.score == null && b.score == null) return a.designIndex - b.designIndex;
+            if (a.score == null && b.score == null) {
+                return a.designIndex - b.designIndex;
+            }
+
             if (a.score == null) return 1;
             if (b.score == null) return -1;
+
             return a.score - b.score;
         });
 
@@ -90,32 +120,56 @@ export default function A4ResultsScreen({route, navigation}: Props) {
     }, [draft]);
 
     const measuredCount = useMemo(() => {
-        return measuredRows.filter((r) => r.hasScore).length;
+        return measuredRows.filter(row => row.hasScore).length;
     }, [measuredRows]);
 
     const best = useMemo(() => {
-        const firstMeasured = measuredRows.find((r) => r.hasScore);
-        return firstMeasured ?? null;
+        return measuredRows.find(row => row.hasScore) ?? null;
+    }, [measuredRows]);
+
+    const averageMovementScore = useMemo(() => {
+        const scoredRows = measuredRows.filter(hasValidScore);
+
+        if (scoredRows.length === 0) return null;
+
+        const total = scoredRows.reduce((sum, row) => sum + row.score, 0);
+        return total / scoredRows.length;
+    }, [measuredRows]);
+
+    const visualization = useMemo(() => {
+        const trials: A4VisualizationTrial[] = measuredRows
+            .filter(hasValidScore)
+            .map(row => ({
+                label: row.name,
+                movementScore: row.score,
+            }));
+
+        return buildA4Visualization(trials);
     }, [measuredRows]);
 
     const predictionInfo = useMemo(() => {
         if (!draft) return null;
 
         const predicted = draft.prediction?.predictedBestDesignIndex;
-        const predIdx = typeof predicted === "number" ? predicted : null;
+        const predictedIndex = typeof predicted === "number" ? predicted : null;
 
         const predictedName =
-            predIdx != null ? draft.session.designs[predIdx]?.name ?? `Design ${predIdx + 1}` : "—";
+            predictedIndex != null
+                ? draft.session.designs[predictedIndex]?.name ??
+                `Design ${predictedIndex + 1}`
+                : "—";
 
-        const bestIdx = best?.designIndex ?? null;
+        const bestIndex = best?.designIndex ?? null;
 
         const correct =
-            predIdx != null && bestIdx != null ? predIdx === bestIdx : null;
+            predictedIndex != null && bestIndex != null
+                ? predictedIndex === bestIndex
+                : null;
 
         return {
-            predIdx,
+            predictedIndex,
             predictedName,
-            bestIdx,
+            bestIndex,
             correct,
         };
     }, [best, draft]);
@@ -127,7 +181,6 @@ export default function A4ResultsScreen({route, navigation}: Props) {
     function onContinueToComparison() {
         if (!draft) return;
 
-        // FR-A4-04: comparison across at least 3 designs
         if (draft.session.designCount < 3) {
             Alert.alert("Setup issue", "Activity 4 requires at least 3 designs.");
             return;
@@ -136,7 +189,7 @@ export default function A4ResultsScreen({route, navigation}: Props) {
         if (measuredCount < draft.session.designCount) {
             Alert.alert(
                 "Not complete",
-                `You tested ${measuredCount}/${draft.session.designCount} designs.\nPlease test all designs before submitting.`
+                `You tested ${measuredCount}/${draft.session.designCount} designs.\nPlease test all designs before submitting.`,
             );
             return;
         }
@@ -150,79 +203,108 @@ export default function A4ResultsScreen({route, navigation}: Props) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading results…</Text>
+                <Text style={styles.loadingText}>Loading results…</Text>
             </View>
         );
     }
 
     return (
         <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Results</Text>
+            <Text style={styles.title}>Results Dashboard</Text>
             <Text style={styles.sub}>
-                Lower movement score means your structure absorbed vibration better.
+                Lower movement score means the structure absorbed vibration better.
             </Text>
 
-            {/* Best design card */}
-            <View style={styles.bestCard}>
-                <Text style={styles.bestTitle}>Best Design</Text>
-                {best?.hasScore ? (
+            <View style={styles.card}>
+                <Text style={styles.cardTitle}>Overall Summary</Text>
+
+                <View style={styles.rowBetween}>
+                    <Text>Tested designs</Text>
+                    <Text style={styles.bold}>
+                        {measuredCount}/{draft.session.designCount}
+                    </Text>
+                </View>
+
+                <View style={styles.rowBetween}>
+                    <Text>Average movement score</Text>
+                    <Text style={styles.bold}>
+                        {averageMovementScore != null
+                            ? averageMovementScore.toFixed(2)
+                            : "—"}
+                    </Text>
+                </View>
+            </View>
+
+            <ActivityBarChart
+                title="Structural Stability Chart"
+                subtitle="Movement score comparison across structure designs"
+                data={visualization.chartData}
+                unitLabel="movement score"
+            />
+
+            <ResultsInsightCard insight={visualization.insight}/>
+
+            <View style={[styles.card, styles.highlightCard]}>
+                <Text style={styles.cardTitle}>Most Stable Design</Text>
+
+                {best && hasValidScore(best) ? (
                     <>
-                        <Text style={styles.bestName}>
-                            {best.name}
-                        </Text>
-                        <Text style={styles.bestScore}>
-                            Score: {safeNum(best.score, 0)}
+                        <Text style={styles.bigText}>{best.name}</Text>
+                        <Text style={styles.bigScore}>{best.score.toFixed(2)}</Text>
+                        <Text style={styles.note}>
+                            This is the lowest movement score, so it represents the
+                            strongest earthquake-resistant performance.
                         </Text>
                     </>
                 ) : (
-                    <Text style={{marginTop: 10, opacity: 0.75}}>
+                    <Text style={styles.muted}>
                         No measured designs yet. Go back and run tests.
                     </Text>
                 )}
             </View>
 
-            {/* Prediction vs outcome */}
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Prediction Check</Text>
+                <Text style={styles.cardTitle}>Prediction Evaluation</Text>
 
-                <View style={{marginTop: 10, gap: 10}}>
+                <View style={styles.infoBlock}>
                     <Row label="Your prediction" value={predictionInfo.predictedName}/>
-                    <Row label="Winner" value={best?.name ?? "—"}/>
+                    <Row label="Most stable design" value={best?.name ?? "—"}/>
                     <Row
-                        label="Were you right?"
+                        label="Prediction result"
                         value={
                             predictionInfo.correct == null
                                 ? "—"
                                 : predictionInfo.correct
-                                    ? "Yes ✅"
-                                    : "No ❌"
+                                    ? "Correct"
+                                    : "Not correct"
                         }
                     />
                 </View>
             </View>
 
-            {/* Rankings */}
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>Rankings</Text>
+                <Text style={styles.cardTitle}>Design Ranking</Text>
                 <Text style={styles.help}>
-                    Sorted by movement score (lowest = best).
+                    Sorted by movement score. Lower score means better stability.
                 </Text>
 
-                <View style={{marginTop: 12, gap: 10}}>
-                    {measuredRows.map((r, i) => (
-                        <View key={r.designIndex} style={styles.rankRow}>
-                            <Text style={styles.rank}>{medal(i + 1)}</Text>
+                <View style={styles.rankList}>
+                    {measuredRows.map((row, index) => (
+                        <View key={row.designIndex} style={styles.rankRow}>
+                            <Text style={styles.rank}>{rankLabel(index + 1)}</Text>
 
-                            <View style={{flex: 1}}>
+                            <View style={styles.rankContent}>
                                 <Text style={styles.rankName} numberOfLines={1}>
-                                    {r.name}
+                                    {row.name}
                                 </Text>
                                 <Text style={styles.rankMeta}>
-                                    {r.hasScore ? `Score: ${safeNum(r.score, 0)}` : "Not tested yet"}
+                                    {hasValidScore(row)
+                                        ? `Movement score: ${row.score.toFixed(2)}`
+                                        : "Not tested yet"}
                                 </Text>
                             </View>
 
-                            {r.hasScore ? (
+                            {row.hasScore ? (
                                 <View style={styles.pillOk}>
                                     <Text style={styles.pillText}>Done</Text>
                                 </View>
@@ -237,13 +319,30 @@ export default function A4ResultsScreen({route, navigation}: Props) {
 
                 {measuredCount < draft.session.designCount ? (
                     <Text style={styles.warn}>
-                        You still need to test {draft.session.designCount - measuredCount} design(s).
+                        You still need to test{" "}
+                        {draft.session.designCount - measuredCount} design(s).
                     </Text>
                 ) : null}
             </View>
 
-            {/* Actions */}
-            <View style={{marginTop: 14, gap: 10}}>
+            <View style={styles.card}>
+                <Text style={styles.cardTitle}>Submission Readiness</Text>
+
+                {measuredCount >= draft.session.designCount ? (
+                    <Text style={styles.readyText}>Ready to continue</Text>
+                ) : (
+                    <Text style={styles.warn}>
+                        Complete all structure tests before comparison.
+                    </Text>
+                )}
+
+                <Text style={styles.note}>
+                    Note: GPS and video evidence may be enforced during final
+                    submission.
+                </Text>
+            </View>
+
+            <View style={styles.actions}>
                 <Pressable style={styles.secondaryBtn} onPress={onBackToMeasurements}>
                     <Text style={styles.secondaryBtnText}>Back to Measurements</Text>
                 </Pressable>
@@ -253,84 +352,205 @@ export default function A4ResultsScreen({route, navigation}: Props) {
                 </Pressable>
             </View>
 
-            <View style={{height: 40}}/>
+            <View style={styles.bottomSpace}/>
         </ScrollView>
     );
 }
 
-function Row({label, value}: { label: string; value: string }) {
+function Row({label, value}: { label: string; value: string }): React.JSX.Element {
     return (
-        <View style={{flexDirection: "row", justifyContent: "space-between", gap: 10}}>
-            <Text style={{fontWeight: "900", opacity: 0.9}}>{label}</Text>
-            <Text style={{opacity: 0.85, flexShrink: 1, textAlign: "right"}}>{value}</Text>
+        <View style={styles.rowBetween}>
+            <Text style={styles.rowLabel}>{label}</Text>
+            <Text style={styles.rowValue}>{value}</Text>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, justifyContent: "center", alignItems: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    bestCard: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#111",
-        backgroundColor: "#111",
-        borderRadius: 14,
-        padding: 14,
+    container: {
+        flexGrow: 1,
+        padding: 20,
+        backgroundColor: "#FFFFFF",
     },
-    bestTitle: {color: "white", opacity: 0.85, fontWeight: "900"},
-    bestName: {marginTop: 10, color: "white", fontWeight: "900", fontSize: 18},
-    bestScore: {marginTop: 6, color: "white", opacity: 0.9, fontWeight: "800"},
-
+    center: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    loadingText: {
+        marginTop: 10,
+        opacity: 0.7,
+        color: "#344054",
+    },
+    title: {
+        fontSize: 26,
+        fontWeight: "900",
+        marginTop: 6,
+        color: "#172033",
+    },
+    sub: {
+        marginTop: 8,
+        opacity: 0.75,
+        lineHeight: 18,
+        color: "#344054",
+    },
     card: {
         marginTop: 14,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FAFAFA",
         borderRadius: 14,
         padding: 14,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-    warn: {marginTop: 12, fontWeight: "900", opacity: 0.85},
-
+    highlightCard: {
+        borderColor: "#111827",
+    },
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    rowBetween: {
+        marginTop: 8,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    rowLabel: {
+        fontWeight: "900",
+        opacity: 0.9,
+        color: "#172033",
+    },
+    rowValue: {
+        opacity: 0.85,
+        flexShrink: 1,
+        textAlign: "right",
+        color: "#344054",
+    },
+    bold: {
+        fontWeight: "900",
+        color: "#172033",
+    },
+    bigText: {
+        marginTop: 10,
+        fontSize: 20,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    bigScore: {
+        marginTop: 8,
+        fontSize: 30,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    note: {
+        marginTop: 8,
+        opacity: 0.7,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    muted: {
+        marginTop: 8,
+        opacity: 0.65,
+        color: "#344054",
+    },
+    infoBlock: {
+        marginTop: 10,
+    },
+    help: {
+        marginTop: 6,
+        opacity: 0.7,
+        lineHeight: 18,
+        color: "#344054",
+    },
+    rankList: {
+        marginTop: 12,
+        gap: 10,
+    },
     rankRow: {
         flexDirection: "row",
         alignItems: "center",
         gap: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#E5E7EB",
+        backgroundColor: "#FFFFFF",
         borderRadius: 12,
         padding: 12,
     },
-    rank: {width: 40, fontSize: 16, fontWeight: "900"},
-    rankName: {fontSize: 15, fontWeight: "900"},
-    rankMeta: {marginTop: 4, opacity: 0.75},
-
-    pillOk: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: "#111"},
-    pillNo: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: "#777"},
-    pillText: {color: "white", fontWeight: "900"},
-
+    rank: {
+        width: 40,
+        fontSize: 16,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    rankContent: {
+        flex: 1,
+    },
+    rankName: {
+        fontSize: 15,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    rankMeta: {
+        marginTop: 4,
+        opacity: 0.75,
+        color: "#344054",
+    },
+    pillOk: {
+        borderRadius: 999,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        backgroundColor: "#111827",
+    },
+    pillNo: {
+        borderRadius: 999,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        backgroundColor: "#777777",
+    },
+    pillText: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+    },
+    warn: {
+        marginTop: 12,
+        fontWeight: "900",
+        opacity: 0.85,
+        color: "#92400E",
+    },
+    readyText: {
+        marginTop: 8,
+        fontWeight: "900",
+        color: "#172033",
+    },
+    actions: {
+        marginTop: 14,
+        gap: 10,
+    },
     primaryBtn: {
-        backgroundColor: "#111",
+        backgroundColor: "#111827",
         paddingVertical: 14,
         borderRadius: 14,
         alignItems: "center",
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
-
+    primaryBtnText: {
+        color: "#FFFFFF",
+        fontWeight: "900",
+        fontSize: 16,
+    },
     secondaryBtn: {
-        backgroundColor: "white",
+        backgroundColor: "#FFFFFF",
         borderWidth: 1,
-        borderColor: "#111",
+        borderColor: "#111827",
         paddingVertical: 14,
         borderRadius: 14,
         alignItems: "center",
     },
-    secondaryBtnText: {fontWeight: "900"},
+    secondaryBtnText: {
+        fontWeight: "900",
+        color: "#111827",
+    },
+    bottomSpace: {
+        height: 40,
+    },
 });
