@@ -1,13 +1,24 @@
 import React, {useEffect, useMemo, useState} from "react";
-import {Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator} from "react-native";
+import {
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
 import {getRunDraft, type ActivityRunDraft} from "../../../store/activityRunDraftStore";
 import {submitActivity1} from "../../../services/activitySubmissionService";
-import {doc, getDoc} from "firebase/firestore";
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A1ReflectionSubmit">;
 
@@ -29,17 +40,25 @@ function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
 }
 
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
 export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
-
     const [bestIndex, setBestIndex] = useState<number | null>(null);
     const [reflection, setReflection] = useState<string>("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflection),
+        [reflection]
+    );
 
     useEffect(() => {
         if (!user) return;
@@ -51,6 +70,7 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
             ]);
             return;
         }
+
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
@@ -63,6 +83,7 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
 
     const options = useMemo(() => {
         if (!draft) return [];
+
         return [0, 1, 2, 3].map((i) => {
             const a = draft.attempts?.[i];
             const enabled = hasAttemptData(draft, i);
@@ -86,24 +107,49 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
         });
     }, [draft]);
 
+    const selectedAttemptSummary = useMemo(() => {
+        if (!draft || bestIndex == null) {
+            return "Select your best attempt first, then explain why that design performed better.";
+        }
+
+        const attempt = draft.attempts?.[bestIndex];
+        const tHit = attempt?.measurements?.tHitSec;
+        const inZone = attempt?.measurements?.inTargetZone;
+
+        const resultText =
+            typeof tHit === "number"
+                ? `${attemptLabel(bestIndex)} recorded a t_hit of ${tHit.toFixed(2)} seconds`
+                : `${attemptLabel(bestIndex)} was selected`;
+
+        const zoneText =
+            typeof inZone === "boolean"
+                ? inZone
+                    ? "and it was inside the target zone."
+                    : "but it was outside the target zone."
+                : ".";
+
+        return `${resultText} ${zoneText}`;
+    }, [bestIndex, draft]);
+
     function validate(): string | null {
         if (!draft) return "Draft not loaded.";
 
         const anyAttempt = [0, 1, 2, 3].some((i) => hasAttemptData(draft, i));
         if (!anyAttempt) return "No attempts found. Please complete at least the baseline attempt.";
 
-        if (bestIndex == null) return "Please select the best design (Baseline / Prototype).";
+        if (bestIndex == null) return "Please select the best design.";
         if (!hasAttemptData(draft, bestIndex)) return "Selected best design has no recorded t_hit.";
 
-        // Evidence required (production: enforce video evidence for best attempt)
         if (!hasAttemptVideo(draft, bestIndex)) {
             return "Best attempt must have a video attached. Go back to Measurements and attach a video.";
         }
 
-        const text = reflection.trim();
-        if (text.length < 20) return "Reflection is too short. Please write at least 1–2 meaningful sentences.";
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
 
         if (rating < 1 || rating > 5) return "Rating must be between 1 and 5.";
+
         return null;
     }
 
@@ -150,39 +196,35 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                 rating,
             });
 
-            Alert.alert(
-                "Submitted ✅",
-                `Your score for this submission: ${res.score}`,
-                [
-                    {
-                        text: "View Leaderboard",
-                        onPress: () =>
-                            navigation.reset({
-                                index: 1,
-                                routes: [
-                                    {name: "Home" as never},
-                                    {name: "Leaderboard" as never},
-                                ],
-                            }),
-                    },
-                    {
-                        text: "Back to Home",
-                        style: "cancel",
-                        onPress: () =>
-                            navigation.reset({
-                                index: 0,
-                                routes: [{name: "Home" as never}],
-                            }),
-                    },
-                ]
-            );
-        } catch (e: any) {
+            Alert.alert("Submitted ✅", `Your score for this submission: ${res.score}`, [
+                {
+                    text: "View Leaderboard",
+                    onPress: () =>
+                        navigation.reset({
+                            index: 1,
+                            routes: [
+                                {name: "Home" as never},
+                                {name: "Leaderboard" as never},
+                            ],
+                        }),
+                },
+                {
+                    text: "Back to Home",
+                    style: "cancel",
+                    onPress: () =>
+                        navigation.reset({
+                            index: 0,
+                            routes: [{name: "Home" as never}],
+                        }),
+                },
+            ]);
+        } catch (error: unknown) {
             try {
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!teamId) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
 
@@ -208,11 +250,8 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -233,7 +272,9 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
     return (
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <Text style={styles.title}>Reflection & Submit</Text>
-            <Text style={styles.sub}>Choose best attempt, attach evidence, reflect, and submit.</Text>
+            <Text style={styles.sub}>
+                Choose your best attempt, attach evidence, write a meaningful reflection, and submit.
+            </Text>
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Select Best Design</Text>
@@ -273,21 +314,26 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Reflection</Text>
 
-                <View style={styles.promptBox}>
-                    <Text style={styles.promptTitle}>Prompts</Text>
-                    <Text style={styles.promptText}>• Which design was best and why?</Text>
-                    <Text style={styles.promptText}>• Were you correct in your prediction?</Text>
-                    <Text style={styles.promptText}>• What would you improve next?</Text>
+                <View style={styles.smartBox}>
+                    <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                    <Text style={styles.smartText}>{selectedAttemptSummary}</Text>
+                    <Text style={styles.smartText}>Try to include:</Text>
+                    <Text style={styles.promptText}>• Which parachute design worked best and why.</Text>
+                    <Text style={styles.promptText}>• Whether your prediction matched the result.</Text>
+                    <Text style={styles.promptText}>• What the t_hit result suggests about air resistance.</Text>
+                    <Text style={styles.promptText}>• One improvement you would test next.</Text>
                 </View>
 
                 <Text style={styles.label}>Outcome comment</Text>
                 <TextInput
                     value={reflection}
                     onChangeText={setReflection}
-                    placeholder="Write your reflection here..."
+                    placeholder="Example: Prototype 2 worked best because it stayed in the air longer. My prediction was partly correct because..."
                     style={[styles.input, {height: 140, textAlignVertical: "top"}]}
                     multiline
                 />
+
+                <ReflectionQualityCard result={reflectionQuality}/>
             </View>
 
             <View style={styles.card}>
@@ -298,8 +344,11 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                     {[1, 2, 3, 4, 5].map((n) => {
                         const on = rating === n;
                         return (
-                            <Pressable key={n} onPress={() => setRating(clampInt(n, 1, 5))}
-                                       style={[styles.rateBtn, on && styles.rateBtnOn]}>
+                            <Pressable
+                                key={n}
+                                onPress={() => setRating(clampInt(n, 1, 5))}
+                                style={[styles.rateBtn, on && styles.rateBtnOn]}
+                            >
                                 <Text style={[styles.rateText, on && styles.rateTextOn]}>{n}</Text>
                             </Pressable>
                         );
@@ -364,15 +413,16 @@ const styles = StyleSheet.create({
     badgeNo: {backgroundColor: "#777"},
     badgeText: {color: "white", fontWeight: "900"},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

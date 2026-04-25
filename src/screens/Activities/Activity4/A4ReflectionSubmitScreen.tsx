@@ -18,7 +18,6 @@ import {doc, getDoc} from "firebase/firestore";
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-
 import {
     clearActivity4RunDraft,
     getActivity4RunDraft,
@@ -26,15 +25,12 @@ import {
     setActivity4SessionVideo,
     type Activity4RunDraft,
 } from "../../../store/activity4RunDraftStore";
-
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 import {submitActivity4} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A4ReflectionSubmit">;
-
-/* =========================================================
-   Helpers
-========================================================= */
 
 function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
@@ -48,7 +44,11 @@ function isNonEmptyString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
 
-// Video (Activity 4 uses: draft.evidence?.sessionVideo?.uri)
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
 function getSessionVideoUri(run: Activity4RunDraft): string | null {
     const uri = run.evidence?.sessionVideo?.uri;
     return isNonEmptyString(uri) ? uri : null;
@@ -58,7 +58,6 @@ function hasSessionVideo(run: Activity4RunDraft) {
     return isNonEmptyString(getSessionVideoUri(run));
 }
 
-// GPS
 function hasGpsGranted(run: Activity4RunDraft) {
     return run.session.gpsEnabled === true && run.session.gpsPermission === "granted";
 }
@@ -80,29 +79,21 @@ function formatGeoText(geo: Activity4RunDraft["session"]["geo"] | undefined): st
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-// Prediction
 function hasPrediction(run: Activity4RunDraft) {
     return Boolean(run.prediction?.createdAt);
 }
 
-/**
- * For Activity 4, "lower is better".
- * Prefer finalScore if present; otherwise fallback to movementScore.
- */
 function measurementScore(m: Activity4RunDraft["measurements"][number]): number | null {
-    const final = m.finalScore;
-    if (isFiniteNumber(final)) return final;
-
-    const sensor = m.movementScore;
-    if (isFiniteNumber(sensor)) return sensor;
-
+    if (isFiniteNumber(m.finalScore)) return m.finalScore;
+    if (isFiniteNumber(m.movementScore)) return m.movementScore;
     return null;
 }
 
 function bestMovementScore(run: Activity4RunDraft): number | null {
     const scores = run.measurements
         .map((m) => measurementScore(m))
-        .filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+        .filter((x): x is number => isFiniteNumber(x));
+
     if (scores.length === 0) return null;
     return Math.min(...scores);
 }
@@ -112,40 +103,58 @@ function validMeasurementCount(run: Activity4RunDraft): number {
 }
 
 function distinctMeasuredDesignCount(run: Activity4RunDraft): number {
-    const s = new Set<number>();
-    for (const m of run.measurements) {
-        const sc = measurementScore(m);
-        if (sc != null && Number.isFinite(sc)) s.add(m.designIndex);
+    const designs = new Set<number>();
+
+    for (const measurement of run.measurements) {
+        const score = measurementScore(measurement);
+        if (score != null && Number.isFinite(score)) {
+            designs.add(measurement.designIndex);
+        }
     }
-    return s.size;
+
+    return designs.size;
 }
 
-/* =========================================================
-   Screen
-========================================================= */
+function bestMeasuredDesignName(run: Activity4RunDraft): string | null {
+    const validMeasurements = run.measurements.filter((m) => measurementScore(m) != null);
+
+    if (validMeasurements.length === 0) return null;
+
+    const best = validMeasurements.reduce((currentBest, current) => {
+        const bestScore = measurementScore(currentBest) ?? Number.POSITIVE_INFINITY;
+        const currentScore = measurementScore(current) ?? Number.POSITIVE_INFINITY;
+        return currentScore < bestScore ? current : currentBest;
+    }, validMeasurements[0]);
+
+    const designName = run.session.designs?.[best.designIndex]?.name;
+    return designName ?? `Design ${best.designIndex + 1}`;
+}
 
 export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity4RunDraft | null>(null);
-
     const [reflectionText, setReflectionText] = useState("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflectionText),
+        [reflectionText]
+    );
 
     const refreshDraft = useCallback(() => {
         const d = getActivity4RunDraft(runId);
         setDraft(d ?? null);
+
         if (d) {
             setReflectionText(d.reflection?.reflectionText ?? "");
             setRating(d.reflection?.rating ?? 4);
         }
     }, [runId]);
 
-    // initial load
     useEffect(() => {
         if (!user) return;
 
@@ -162,7 +171,6 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
         setRating(d.reflection?.rating ?? 4);
     }, [activityId, navigation, runId, user]);
 
-    // refresh when returning to this screen
     useFocusEffect(
         useCallback(() => {
             if (!user) return;
@@ -175,47 +183,58 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
 
         return {
             bestScore: bestMovementScore(draft),
+            bestDesignName: bestMeasuredDesignName(draft),
             measurementCount: validMeasurementCount(draft),
             distinctDesignsMeasured: distinctMeasuredDesignCount(draft),
-
             predictionOk: hasPrediction(draft),
-
-            // video optional
             sessionVid: hasSessionVideo(draft),
-
-            // GPS required for submission, but we show “granted vs captured”
             gpsGranted: hasGpsGranted(draft),
             geoCaptured: hasRealGeo(draft),
             geoText: formatGeoText(draft.session.geo),
-
             requiredDesigns: Math.max(3, draft.session.designCount ?? 3),
         };
     }, [draft]);
 
+    const smartReflectionSummary = useMemo(() => {
+        if (!draft || !viewModel) {
+            return "Explain which structure was most stable during the simulated earthquake test.";
+        }
+
+        if (viewModel.bestScore == null || !viewModel.bestDesignName) {
+            return "Use your accelerometer measurements to explain which structure reduced movement the most.";
+        }
+
+        return `${viewModel.bestDesignName} had the lowest movement score (${viewModel.bestScore.toFixed(3)}), so it showed the strongest vibration resistance. Compare this result with your prediction and explain what design features may have improved stability.`;
+    }, [draft, viewModel]);
+
     function validate(): string | null {
         if (!draft) return "Draft not found.";
 
-        // Must measure at least 3 designs (FR-A4-04)
         const measuredDesigns = distinctMeasuredDesignCount(draft);
         if (measuredDesigns < 3) {
-            return "Please measure at least 3 designs (Design 1–3) before submitting.";
+            return "Please measure at least 3 designs before submitting.";
         }
 
-        // Prediction required (FR-A4-05)
-        if (!hasPrediction(draft)) return "Prediction is required before submission.";
+        if (!hasPrediction(draft)) {
+            return "Prediction is required before submission.";
+        }
 
-        // ✅ Video is OPTIONAL now (do not block)
+        if (!hasGpsGranted(draft)) {
+            return "GPS must be enabled and granted before submission.";
+        }
 
-        // GPS required for submission (FR-A4-07)
-        if (!hasGpsGranted(draft)) return "GPS must be enabled and granted before submission.";
-        if (!hasRealGeo(draft)) return "GPS coordinate not saved yet. Please capture location before submitting.";
+        if (!hasRealGeo(draft)) {
+            return "GPS coordinate not saved yet. Please capture location before submitting.";
+        }
 
-        // Reflection + rating required
-        const text = reflectionText.trim();
-        if (text.length < 20) return "Reflection is too short. Write at least 1–2 meaningful sentences.";
-        if (!isFiniteNumber(rating) || rating < 1 || rating > 5) return "Rating must be between 1 and 5.";
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
 
-        // Must have at least 1 valid score
+        if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
+            return "Rating must be between 1 and 5.";
+        }
+
         if (bestMovementScore(draft) == null) {
             return "No movement score recorded. Please run at least one vibration measurement.";
         }
@@ -229,11 +248,10 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
             const picked = await pickVideoFromLibrary();
             if (!picked) return;
 
-            // stores locally into draft (no upload yet)
             setActivity4SessionVideo(runId, {uri: picked.uri, createdAt: Date.now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to pick video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -247,8 +265,8 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity4SessionVideo(runId, {uri: recorded.uri, createdAt: Date.now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to record video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -298,12 +316,12 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                     : err.toLowerCase().includes("measure")
                         ? {
                             text: "Go to Measurements",
-                            onPress: () => navigation.navigate("A4Measurements", {activityId, runId})
+                            onPress: () => navigation.navigate("A4Measurements", {activityId, runId}),
                         }
                         : err.toLowerCase().includes("prediction")
                             ? {
                                 text: "Go to Prediction",
-                                onPress: () => navigation.navigate("A4Prediction", {activityId, runId})
+                                onPress: () => navigation.navigate("A4Prediction", {activityId, runId}),
                             }
                             : {text: "OK"},
             ]);
@@ -313,14 +331,13 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
         try {
             setSubmitting(true);
 
-            // Save reflection into draft (local)
             const updated = setActivity4Reflection(runId, {
                 reflectionText: reflectionText.trim(),
                 rating,
             });
+
             setDraft(updated);
 
-            // Fetch teamId safely
             const userSnap = await getDoc(doc(db, "users", user.uid));
             const teamId = userSnap.data()?.teamId;
 
@@ -358,7 +375,7 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                         }),
                 },
             ]);
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const updated = setActivity4Reflection(runId, {
                     reflectionText: reflectionText.trim(),
@@ -369,17 +386,9 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                 const teamId = userSnap.data()?.teamId;
 
                 if (!isNonEmptyString(teamId)) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
-
-                const submitArgs = {
-                    run: updated,
-                    teamId,
-                    createdBy: user.uid,
-                    reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
-                    rating: updated.reflection?.rating ?? rating,
-                };
 
                 await queueFinalSubmission({
                     runId: updated.runId,
@@ -388,7 +397,13 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                     teamId,
                     payload: {
                         activityNumber: 4,
-                        args: submitArgs,
+                        args: {
+                            run: updated,
+                            teamId,
+                            createdBy: user.uid,
+                            reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
+                            rating: updated.reflection?.rating ?? rating,
+                        },
                     },
                 });
 
@@ -396,11 +411,8 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -422,18 +434,21 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
         <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Reflection & Submit</Text>
-                <Text style={styles.sub}>Lower movement score = better vibration resistance.</Text>
+                <Text style={styles.sub}>
+                    Lower movement score means stronger vibration resistance. Review your evidence, write a meaningful
+                    reflection, and submit.
+                </Text>
 
-                {/* Best score card */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Best Movement Score</Text>
                     <Text style={styles.scoreText}>
                         {viewModel.bestScore == null ? "—" : viewModel.bestScore.toFixed(3)}
                     </Text>
-                    <Text style={styles.help}>This is the score used for the leaderboard (lower is better).</Text>
+                    <Text style={styles.help}>
+                        This is the score used for the leaderboard. Lower is better.
+                    </Text>
                 </View>
 
-                {/* Checklist */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Submission Checklist</Text>
 
@@ -449,15 +464,11 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                             ok={viewModel.measurementCount > 0}
                             meta={`${viewModel.measurementCount} captured`}
                         />
-
-                        {/* ✅ optional video now */}
                         <ChecklistRow
                             label="Session video (optional)"
                             ok={viewModel.sessionVid}
                             meta={viewModel.sessionVid ? "Attached ✅" : "Not attached (OK)"}
                         />
-
-                        {/* ✅ show GPS status in 2 steps */}
                         <ChecklistRow
                             label="GPS enabled + granted (required)"
                             ok={viewModel.gpsGranted}
@@ -477,7 +488,6 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                         </View>
                     </View>
 
-                    {/* ✅ If permission granted but not captured, guide user back to setup */}
                     {viewModel.gpsGranted && !viewModel.geoCaptured ? (
                         <Pressable
                             style={[styles.secondaryBtn, {marginTop: 12}]}
@@ -487,7 +497,6 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                         </Pressable>
                     ) : null}
 
-                    {/* Video attach UI with live feedback */}
                     <Pressable
                         style={[styles.secondaryBtn, {marginTop: 12}, attaching && {opacity: 0.7}]}
                         onPress={onAttachVideoMenu}
@@ -504,36 +513,35 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                             </Text>
                         )}
                     </Pressable>
-
-                    {viewModel.sessionVid ? (
-                        <Text style={styles.tiny}>
-                            Tip: attaching stores the local URI. Upload (if any) happens during submission.
-                        </Text>
-                    ) : null}
                 </View>
 
-                {/* Reflection */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reflection</Text>
 
-                    <View style={styles.promptBox}>
-                        <Text style={styles.promptTitle}>Prompts</Text>
-                        <Text style={styles.promptText}>• Which design reduced movement the most? Why?</Text>
-                        <Text style={styles.promptText}>• Were you correct in your prediction?</Text>
-                        <Text style={styles.promptText}>• What would you change to improve vibration damping?</Text>
+                    <View style={styles.smartBox}>
+                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                        <Text style={styles.smartText}>Try to include:</Text>
+                        <Text style={styles.promptText}>• Which structure reduced movement the most and why.</Text>
+                        <Text style={styles.promptText}>• Whether your prediction matched the accelerometer
+                            result.</Text>
+                        <Text style={styles.promptText}>• How shape, base width, height, or material affected
+                            stability.</Text>
+                        <Text style={styles.promptText}>• One design improvement you would test next.</Text>
                     </View>
 
                     <Text style={styles.label}>Your reflection</Text>
                     <TextInput
                         value={reflectionText}
                         onChangeText={setReflectionText}
-                        placeholder="Write at least 1–2 meaningful sentences..."
-                        style={[styles.input, {height: 140, textAlignVertical: "top"}]}
+                        placeholder="Example: Design 2 had the lowest movement score because its wider base made it more stable during vibration..."
+                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
                     />
+
+                    <ReflectionQualityCard result={reflectionQuality}/>
                 </View>
 
-                {/* Rating */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Rating</Text>
                     <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
@@ -554,9 +562,11 @@ export default function A4ReflectionSubmitScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                {/* Submit */}
-                <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                           disabled={submitting}>
+                <Pressable
+                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                    onPress={onSubmit}
+                    disabled={submitting}
+                >
                     {submitting ? (
                         <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                             <ActivityIndicator color="white"/>
@@ -587,10 +597,6 @@ function ChecklistRow(props: { label: string; ok: boolean; meta?: string }) {
     );
 }
 
-/* =========================================================
-   Styles
-========================================================= */
-
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20},
     center: {flex: 1, alignItems: "center", justifyContent: "center"},
@@ -609,19 +615,19 @@ const styles = StyleSheet.create({
     cardTitle: {fontSize: 16, fontWeight: "900"},
     label: {marginTop: 12, fontWeight: "800"},
     help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-    tiny: {marginTop: 8, opacity: 0.65, lineHeight: 18, fontSize: 12},
 
     scoreText: {marginTop: 10, fontSize: 34, fontWeight: "900"},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

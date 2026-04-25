@@ -16,15 +16,15 @@ import {doc, getDoc} from "firebase/firestore";
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-
 import {
     getActivity2RunDraft,
     updateActivity2Session,
     type Activity2RunDraft,
 } from "../../../store/activity2RunDraftStore";
-
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 import {submitActivity2} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A2ReflectionSubmit">;
 
@@ -32,24 +32,31 @@ function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
 }
 
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
 export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity2RunDraft | null>(null);
-
     const [reflection, setReflection] = useState<string>("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflection),
+        [reflection]
+    );
 
     const refreshDraft = useCallback(() => {
         const d = getActivity2RunDraft(runId);
         setDraft(d ?? null);
     }, [runId]);
 
-    // initial load
     useEffect(() => {
         if (!user) return;
 
@@ -60,10 +67,10 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
             ]);
             return;
         }
+
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
-    // Refresh draft whenever returning to this screen
     useFocusEffect(
         useCallback(() => {
             if (!user) return;
@@ -81,6 +88,19 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
     const loudest = computed?.loudestActionLabel?.trim() || "—";
     const wasRight = computed?.wasPredictionCorrect;
 
+    const smartReflectionSummary = useMemo(() => {
+        const avgDbText = computed?.avgDb != null ? `${computed.avgDb.toFixed(1)} dB` : "not calculated yet";
+        const resultText = `Your average sound level was ${avgDbText}.`;
+        const comparisonText =
+            typeof wasRight === "boolean"
+                ? wasRight
+                    ? `Your prediction matched the result: ${loudest} was the loudest action.`
+                    : `Your prediction was ${predicted}, but the measured loudest action was ${loudest}.`
+                : `Compare your predicted loudest action (${predicted}) with the actual loudest action (${loudest}).`;
+
+        return `${resultText} ${comparisonText}`;
+    }, [computed?.avgDb, loudest, predicted, wasRight]);
+
     function validate(): string | null {
         if (!draft) return "Draft not loaded.";
 
@@ -88,11 +108,8 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
             return "You must have at least 3 valid measurements before submitting.";
         }
 
-        // Video is optional now, so no “required” validation
-
-        const text = reflection.trim();
-        if (text.length < 20) {
-            return "Reflection is too short. Please write at least 1–2 meaningful sentences.";
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
         }
 
         if (rating < 1 || rating > 5) {
@@ -117,8 +134,8 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
             });
 
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to pick video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -139,8 +156,8 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
             });
 
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to record video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -225,13 +242,13 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                         }),
                 },
             ]);
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!teamId) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
 
@@ -258,11 +275,8 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -283,9 +297,10 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
     return (
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <Text style={styles.title}>Reflection & Submit</Text>
-            <Text style={styles.sub}>Confirm your results, reflect, optionally attach evidence, then submit.</Text>
+            <Text style={styles.sub}>
+                Confirm your sound results, write a meaningful reflection, optionally attach evidence, then submit.
+            </Text>
 
-            {/* Summary Card */}
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Session Summary</Text>
 
@@ -331,8 +346,9 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                                 <Text style={styles.secondaryBtnText}>Processing…</Text>
                             </View>
                         ) : (
-                            <Text
-                                style={styles.secondaryBtnText}>{hasSessionVideo ? "Manage Session Video" : "Attach Session Video"}</Text>
+                            <Text style={styles.secondaryBtnText}>
+                                {hasSessionVideo ? "Manage Session Video" : "Attach Session Video"}
+                            </Text>
                         )}
                     </Pressable>
 
@@ -344,28 +360,34 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                 </View>
             </View>
 
-            {/* Reflection */}
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Reflection</Text>
 
-                <View style={styles.promptBox}>
-                    <Text style={styles.promptTitle}>Prompts</Text>
-                    <Text style={styles.promptText}>• Were you right about the loudest action? Why/why not?</Text>
-                    <Text style={styles.promptText}>• Any surprises about surfaces or distance?</Text>
-                    <Text style={styles.promptText}>• Should you wear earmuffs in your classroom?</Text>
+                <View style={styles.smartBox}>
+                    <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                    <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                    <Text style={styles.smartText}>Try to include:</Text>
+                    <Text style={styles.promptText}>• Whether your loudest-action prediction matched the
+                        measurements.</Text>
+                    <Text style={styles.promptText}>• What may have affected the sound level, such as distance, surface,
+                        or background noise.</Text>
+                    <Text style={styles.promptText}>• Whether the measured sound level could be uncomfortable or unsafe
+                        in a classroom.</Text>
+                    <Text style={styles.promptText}>• One way to improve the measurement accuracy next time.</Text>
                 </View>
 
                 <Text style={styles.label}>Outcome comment</Text>
                 <TextInput
                     value={reflection}
                     onChangeText={setReflection}
-                    placeholder="Write your reflection here..."
+                    placeholder="Example: My prediction was different from the result because the surface and distance affected the sound level..."
                     style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                     multiline
                 />
+
+                <ReflectionQualityCard result={reflectionQuality}/>
             </View>
 
-            {/* Rating */}
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Rating</Text>
                 <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
@@ -386,9 +408,11 @@ export default function A2ReflectionSubmitScreen({route, navigation}: Props) {
                 </View>
             </View>
 
-            {/* Submit */}
-            <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                       disabled={submitting}>
+            <Pressable
+                style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                onPress={onSubmit}
+                disabled={submitting}
+            >
                 {submitting ? (
                     <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                         <ActivityIndicator color="white"/>
@@ -431,15 +455,16 @@ const styles = StyleSheet.create({
 
     divider: {height: 1, backgroundColor: "#e5e5e5", marginTop: 12},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

@@ -18,9 +18,7 @@ import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
-
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-
 import {
     clearActivity5RunDraft,
     getActivity5RunDraft,
@@ -31,30 +29,19 @@ import {
     type Activity5RunDraft,
     type A5MovementType,
 } from "../../../store/activity5RunDraftStore";
-
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 import {submitActivity5} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A5ReflectionSubmit">;
 
-/* =========================================================
-   Constants
-========================================================= */
-
-// ✅ Single source of truth for leaderboard score unit
-// If your “best improvement” raw is ~0.2, then leaderboard stores ~20.
 const A5_LEADERBOARD_SCORE_SCALE = 100;
 
-// If you want integer leaderboard scores, keep Math.round.
-// If you want 1 decimal, change to: Math.round(raw * scale * 10) / 10
 function scaleA5Score(raw: number) {
     if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
     return Math.max(0, Math.round(raw * A5_LEADERBOARD_SCORE_SCALE));
 }
-
-/* =========================================================
-   Helpers
-========================================================= */
 
 function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
@@ -68,7 +55,11 @@ function isNonEmptyString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
 
-// Video (A5 uses: draft.evidence?.sessionVideo?.uri)
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
 function getSessionVideoUri(run: Activity5RunDraft): string | null {
     const uri = run.evidence?.sessionVideo?.uri;
     return isNonEmptyString(uri) ? uri : null;
@@ -78,7 +69,6 @@ function hasSessionVideo(run: Activity5RunDraft) {
     return isNonEmptyString(getSessionVideoUri(run));
 }
 
-// GPS
 function hasGpsGranted(run: Activity5RunDraft) {
     return run.session.gpsEnabled === true && run.session.gpsPermission === "granted";
 }
@@ -94,61 +84,55 @@ function formatGeoText(geo: Activity5RunDraft["session"]["geo"] | undefined): st
 
     const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
     const timeText = isFiniteNumber(geo.capturedAt) ? ` • ${new Date(geo.capturedAt).toLocaleString()}` : "";
+
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-// Prediction required (FR-A5-07)
 function hasPrediction(run: Activity5RunDraft) {
     return Boolean(run.prediction?.createdAt);
 }
 
 function hasAnyDataset(run: Activity5RunDraft) {
     return (run.trials ?? []).some(
-        (t) => t?.dataset && Array.isArray(t.dataset.samples) && t.dataset.samples.length > 0
+        (trial) => trial?.dataset && Array.isArray(trial.dataset.samples) && trial.dataset.samples.length > 0
     );
 }
 
-// Improvement display helper (FR-A5-11/13)
-function movementTitleForType(run: Activity5RunDraft, t?: A5MovementType) {
-    if (!t) return "—";
-    const mv = run.session.movements.find((m) => m.type === t);
-    return mv?.title ?? t;
+function movementTitleForType(run: Activity5RunDraft, movementType?: A5MovementType) {
+    if (!movementType) return "—";
+    const movement = run.session.movements.find((item) => item.type === movementType);
+    return movement?.title ?? movementType;
 }
 
-/**
- * UX decision: Session video is OPTIONAL for Activity 5.
- * We still allow attaching for evidence, but do not block submission.
- */
 function stripVideoFromMissing(missing: string[]): string[] {
-    return (missing ?? []).filter((m) => !String(m).toLowerCase().includes("video"));
+    return (missing ?? []).filter((item) => !String(item).toLowerCase().includes("video"));
 }
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity5RunDraft | null>(null);
-
     const [reflectionText, setReflectionText] = useState("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflectionText),
+        [reflectionText]
+    );
 
     const refreshDraft = useCallback(() => {
         const d = getActivity5RunDraft(runId);
         setDraft(d ?? null);
+
         if (d) {
             setReflectionText(d.reflection?.reflectionText ?? "");
             setRating(d.reflection?.rating ?? 4);
         }
     }, [runId]);
 
-    // initial load
     useEffect(() => {
         if (!user) return;
 
@@ -165,7 +149,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         setRating(d.reflection?.rating ?? 4);
     }, [activityId, navigation, runId, user]);
 
-    // refresh when returning to this screen
     useFocusEffect(
         useCallback(() => {
             if (!user) return;
@@ -179,8 +162,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         const best = getA5BestImprovement(draft);
         const missingAll = validateA5Submission(draft);
         const missingNoVideo = stripVideoFromMissing(missingAll);
-
-        // ✅ use the SAME scaling logic as submission
         const bestImprovementScaled = scaleA5Score(best.bestScore);
 
         return {
@@ -188,35 +169,48 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
             bestParticipantId: best.participantId,
             bestMovementType: best.movementType,
             bestMovementTitle: movementTitleForType(draft, best.movementType),
-
             predictionOk: hasPrediction(draft),
             datasetOk: hasAnyDataset(draft),
-
-            // OPTIONAL now
             sessionVid: hasSessionVideo(draft),
-
             gpsGranted: hasGpsGranted(draft),
             geoCaptured: hasRealGeo(draft),
             geoText: formatGeoText(draft.session.geo),
-
-            // For UI messaging only
-            missingListAll: missingAll,
             missingListNoVideo: missingNoVideo,
-
             gpsEnabled: draft.session.gpsEnabled === true,
         };
     }, [draft]);
 
+    const smartReflectionSummary = useMemo(() => {
+        if (!draft || !viewModel) {
+            return "Explain how your movement changed between baseline and feedback mode.";
+        }
+
+        const participantName = viewModel.bestParticipantId
+            ? draft.session.participants.find((participant) => participant.id === viewModel.bestParticipantId)?.name ?? "the selected participant"
+            : "the selected participant";
+
+        const scoreText = Number.isFinite(viewModel.bestImprovementScaled)
+            ? `${viewModel.bestImprovementScaled}`
+            : "—";
+
+        return `${participantName} showed the strongest improvement in ${viewModel.bestMovementTitle}, with a leaderboard improvement score of ${scoreText}. Compare the baseline and feedback trials, then explain what helped the movement become smoother or more controlled.`;
+    }, [draft, viewModel]);
+
     function validateLocal(): string | null {
         if (!draft) return "Draft not found.";
 
-        // Keep in sync with store validator, but treat VIDEO as OPTIONAL here.
         const missingNoVideo = stripVideoFromMissing(validateA5Submission(draft));
-        if (missingNoVideo.length > 0) return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
+        if (missingNoVideo.length > 0) {
+            return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
+        }
 
-        const text = reflectionText.trim();
-        if (text.length < 20) return "Reflection is too short. Write at least 1–2 meaningful sentences.";
-        if (!isFiniteNumber(rating) || rating < 1 || rating > 5) return "Rating must be between 1 and 5.";
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
+
+        if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
+            return "Rating must be between 1 and 5.";
+        }
 
         return null;
     }
@@ -229,8 +223,8 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity5SessionVideo(runId, {uri: picked.uri, createdAt: Date.now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to pick video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -244,8 +238,8 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity5SessionVideo(runId, {uri: recorded.uri, createdAt: Date.now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to record video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -265,12 +259,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         ]);
     }
 
-    /**
-     * UX fix:
-     * - Session video is OPTIONAL
-     * - If user tapped by accident, they can safely choose "Close" and do nothing
-     * - We never force them to pick/record
-     */
     function onAttachVideoMenu() {
         const hasVid = !!draft && hasSessionVideo(draft);
 
@@ -290,45 +278,42 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
     async function onSubmit() {
         if (!user || !draft) return;
 
-        // Save reflection into draft first (local)
         const updated = setActivity5Reflection(runId, {
             reflectionText: reflectionText.trim(),
             rating: clampInt(rating, 1, 5),
         });
+
         setDraft(updated);
 
         const err = validateLocal();
         if (err) {
             const low = err.toLowerCase();
-            Alert.alert(
-                "Cannot submit",
-                err,
-                [
-                    low.includes("gps") || low.includes("coordinate")
+
+            Alert.alert("Cannot submit", err, [
+                low.includes("gps") || low.includes("coordinate")
+                    ? {
+                        text: "Capture Location",
+                        onPress: () => navigation.navigate("A5SessionSetup", {activityId, runId}),
+                    }
+                    : low.includes("prediction")
                         ? {
-                            text: "Capture Location",
-                            onPress: () => navigation.navigate("A5SessionSetup", {activityId, runId}),
+                            text: "Go to Prediction",
+                            onPress: () => navigation.navigate("A5Prediction", {activityId, runId}),
                         }
-                        : low.includes("prediction")
+                        : low.includes("trial") || low.includes("dataset") || low.includes("baseline") || low.includes("feedback")
                             ? {
-                                text: "Go to Prediction",
-                                onPress: () => navigation.navigate("A5Prediction", {activityId, runId}),
+                                text: "Go to Trials",
+                                onPress: () => navigation.navigate("A5GuidedTrials", {activityId, runId}),
                             }
-                            : low.includes("trial") || low.includes("dataset") || low.includes("baseline") || low.includes("feedback")
-                                ? {
-                                    text: "Go to Trials",
-                                    onPress: () => navigation.navigate("A5GuidedTrials", {activityId, runId}),
-                                }
-                                : {text: "OK"},
-                ]
-            );
+                            : {text: "OK"},
+            ]);
+
             return;
         }
 
         try {
             setSubmitting(true);
 
-            // Fetch teamId safely
             const userSnap = await getDoc(doc(db, "users", user.uid));
             const teamId = userSnap.data()?.teamId;
 
@@ -337,7 +322,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                 return;
             }
 
-            // ✅ Compute canonical score that MUST be written to leaderboard
             const best = getA5BestImprovement(updated);
             const bestImprovementScore = scaleA5Score(best.bestScore);
 
@@ -345,12 +329,8 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                 run: updated,
                 teamId,
                 createdBy: user.uid,
-
-                // keep explicit values (matches your style)
                 reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
                 rating: updated.reflection?.rating ?? rating,
-
-                // ✅ NEW: store scaled score + metadata (so leaderboard matches UI)
                 bestImprovementScore,
                 bestParticipantId: best.participantId,
                 bestMovementType: best.movementType,
@@ -358,13 +338,11 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
             clearActivity5RunDraft(runId);
 
-            // Prefer returned score; fallback to our computed score.
-            const shownScore =
-                typeof (res as any)?.score === "number" && Number.isFinite((res as any).score)
-                    ? (res as any).score
-                    : bestImprovementScore;
+            const returnedScore = "score" in res && typeof res.score === "number" && Number.isFinite(res.score)
+                ? res.score
+                : bestImprovementScore;
 
-            Alert.alert("Submitted ✅", `Your best improvement: ${shownScore}`, [
+            Alert.alert("Submitted ✅", `Your best improvement: ${returnedScore}`, [
                 {
                     text: "View Leaderboard",
                     onPress: () =>
@@ -383,13 +361,13 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                         }),
                 },
             ]);
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!isNonEmptyString(teamId)) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
 
@@ -422,11 +400,8 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -444,14 +419,14 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         );
     }
 
-    const bestParticipantName =
-        viewModel.bestParticipantId
-            ? draft.session.participants.find((p) => p.id === viewModel.bestParticipantId)?.name ?? "—"
-            : "—";
+    const bestParticipantName = viewModel.bestParticipantId
+        ? draft.session.participants.find((participant) => participant.id === viewModel.bestParticipantId)?.name ?? "—"
+        : "—";
 
     const attachedName = (() => {
         const uri = getSessionVideoUri(draft);
         if (!uri) return null;
+
         const last = uri.split("/").slice(-1)[0];
         return last || "video";
     })();
@@ -461,12 +436,11 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Reflection & Submit</Text>
                 <Text style={styles.sub}>
-                    Leaderboard score uses your best improvement (scaled ×{A5_LEADERBOARD_SCORE_SCALE}).
+                    Leaderboard score uses your best improvement, scaled ×{A5_LEADERBOARD_SCORE_SCALE}.
                 </Text>
 
-                {/* Best improvement card */}
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Best Improvement (Leaderboard Score)</Text>
+                    <Text style={styles.cardTitle}>Best Improvement</Text>
                     <Text style={styles.scoreText}>
                         {Number.isFinite(viewModel.bestImprovementScaled) ? String(viewModel.bestImprovementScaled) : "—"}
                     </Text>
@@ -475,7 +449,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                     </Text>
                 </View>
 
-                {/* Checklist */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Submission Checklist</Text>
 
@@ -483,7 +456,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                         <ChecklistRow label="Prediction completed (required)" ok={viewModel.predictionOk}/>
                         <ChecklistRow label="Recorded sensor dataset (required)" ok={viewModel.datasetOk}/>
 
-                        {/* ✅ OPTIONAL VIDEO */}
                         <ChecklistRow
                             label="Session video (optional)"
                             ok={viewModel.sessionVid}
@@ -504,24 +476,22 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                                 />
                             </>
                         ) : (
-                            <ChecklistRow label="GPS (disabled for this session)" ok={true} meta="Not required"/>
+                            <ChecklistRow label="GPS disabled for this session" ok={true} meta="Not required"/>
                         )}
 
                         <ChecklistRow
-                            label="Reflection + rating (required)"
-                            ok={reflectionText.trim().length >= 20 && rating >= 1 && rating <= 5}
-                            meta="Write ≥ 1–2 meaningful sentences and rate 1–5"
+                            label="Reflection quality"
+                            ok={!reflectionQuality.isSubmissionBlocked}
+                            meta={`${reflectionQuality.wordCount} words • ${reflectionQuality.status.replace("_", " ")}`}
                         />
                     </View>
 
-                    {/* Missing list preview (video-stripped) */}
                     {viewModel.missingListNoVideo.length > 0 ? (
                         <Text style={styles.tiny}>Missing: {viewModel.missingListNoVideo.join(", ")}</Text>
                     ) : (
                         <Text style={styles.tiny}>All required items are present.</Text>
                     )}
 
-                    {/* GPS coordinate badge */}
                     {viewModel.gpsEnabled ? (
                         <View style={styles.badgeRow}>
                             <Text style={styles.badgeLabel}>Saved coordinate</Text>
@@ -540,7 +510,6 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                         </View>
                     ) : null}
 
-                    {/* Video attach UI (safe menu with "Close") */}
                     <Pressable
                         style={[styles.secondaryBtn, {marginTop: 12}, attaching && {opacity: 0.7}]}
                         onPress={onAttachVideoMenu}
@@ -561,28 +530,34 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                     {attachedName ? <Text style={styles.tiny}>Attached: {attachedName}</Text> : null}
                 </View>
 
-                {/* Reflection */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reflection</Text>
 
-                    <View style={styles.promptBox}>
-                        <Text style={styles.promptTitle}>Prompts (plain language)</Text>
-                        <Text style={styles.promptText}>• Which movement was hardest to keep vibration low?</Text>
-                        <Text style={styles.promptText}>• Were you right about your prediction? Any surprises?</Text>
-                        <Text style={styles.promptText}>• What changed between baseline vs feedback mode?</Text>
+                    <View style={styles.smartBox}>
+                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                        <Text style={styles.smartText}>Try to include:</Text>
+                        <Text style={styles.promptText}>• Which movement was hardest to keep smooth or
+                            controlled.</Text>
+                        <Text style={styles.promptText}>• Whether your prediction matched the baseline and feedback
+                            results.</Text>
+                        <Text style={styles.promptText}>• What changed between baseline mode and feedback mode.</Text>
+                        <Text style={styles.promptText}>• One way to improve the test or participant performance next
+                            time.</Text>
                     </View>
 
                     <Text style={styles.label}>Your reflection</Text>
                     <TextInput
                         value={reflectionText}
                         onChangeText={setReflectionText}
-                        placeholder="Write at least 1–2 meaningful sentences..."
-                        style={[styles.input, {height: 140, textAlignVertical: "top"}]}
+                        placeholder="Example: The feedback trial improved smoothness because the participant adjusted their movement speed..."
+                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
                     />
+
+                    <ReflectionQualityCard result={reflectionQuality}/>
                 </View>
 
-                {/* Rating */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Rating</Text>
                     <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
@@ -603,9 +578,11 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                {/* Submit */}
-                <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                           disabled={submitting}>
+                <Pressable
+                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                    onPress={onSubmit}
+                    disabled={submitting}
+                >
                     {submitting ? (
                         <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                             <ActivityIndicator color="white"/>
@@ -629,16 +606,13 @@ function ChecklistRow(props: { label: string; ok: boolean; meta?: string }) {
                 <Text style={{fontWeight: "900"}}>{props.label}</Text>
                 {props.meta ? <Text style={{marginTop: 4, opacity: 0.7}}>{props.meta}</Text> : null}
             </View>
+
             <View style={[styles.tickPill, props.ok ? styles.tickYes : styles.tickNo]}>
                 <Text style={styles.tickText}>{props.ok ? "OK" : "Missing"}</Text>
             </View>
         </View>
     );
 }
-
-/* =========================================================
-   Styles
-========================================================= */
 
 const styles = StyleSheet.create({
     container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
@@ -662,15 +636,16 @@ const styles = StyleSheet.create({
 
     scoreText: {marginTop: 10, fontSize: 34, fontWeight: "900"},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

@@ -12,26 +12,23 @@ import {
     View,
 } from "react-native";
 import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
+import {submitActivity3} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 import {
+    clearActivity3RunDraft,
     getActivity3RunDraft,
     setActivity3Reflection,
-    clearActivity3RunDraft,
     type Activity3RunDraft,
 } from "../../../store/activity3RunDraftStore";
 
-import {doc, getDoc} from "firebase/firestore";
-import {submitActivity3} from "../../../services/activitySubmissionService";
-
 type Props = NativeStackScreenProps<AppStackParamList, "A3ReflectionSubmit">;
-
-/* =========================================================
-   Utilities
-========================================================= */
 
 function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
@@ -76,38 +73,24 @@ function newestGeoText(d: Activity3RunDraft) {
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${acc}`;
 }
 
-function friendlyFirebaseError(e: any) {
-    const msg = String(e?.message ?? e ?? "");
-    const code = String(e?.code ?? "");
-
-    // Common Firebase cases (nice UX)
-    if (code.includes("permission-denied") || msg.toLowerCase().includes("permission")) {
-        return "Permission denied by Firebase rules. Check that you're signed in, have a user profile, and your teamId matches. Also confirm the Storage path uses evidence/{teamId}/...";
-    }
-    if (code.includes("unauthenticated") || msg.toLowerCase().includes("not signed in")) {
-        return "You're not signed in. Please log in again.";
-    }
-    if (msg.toLowerCase().includes("network")) {
-        return "Network error. Please check your connection and try again.";
-    }
-
-    return msg || "Submission failed.";
+function friendlyFirebaseError(error: unknown) {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
 }
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
-
     const [reflectionText, setReflectionText] = useState("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflectionText),
+        [reflectionText]
+    );
 
     useEffect(() => {
         if (!user) return;
@@ -140,6 +123,43 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
         };
     }, [draft]);
 
+    const bestMeasurement = useMemo(() => {
+        if (!draft || draft.measurements.length === 0) return null;
+
+        const valid = draft.measurements.filter(
+            (m) => typeof m.bendAngleDeg === "number" && Number.isFinite(m.bendAngleDeg)
+        );
+
+        if (valid.length === 0) return null;
+
+        return valid.reduce((best, current) => {
+            const bestAngle = best.bendAngleDeg ?? 0;
+            const currentAngle = current.bendAngleDeg ?? 0;
+            return currentAngle > bestAngle ? current : best;
+        }, valid[0]);
+    }, [draft]);
+
+    const smartReflectionSummary = useMemo(() => {
+        if (!draft || !bestMeasurement) {
+            return "Use your measurements to explain which fan setup produced the strongest air movement.";
+        }
+
+        const angle = bestMeasurement.bendAngleDeg;
+        const angleText = typeof angle === "number" ? `${angle.toFixed(1)}°` : "the highest recorded angle";
+        const distanceText =
+            typeof bestMeasurement.distanceCm === "number"
+                ? ` at ${bestMeasurement.distanceCm} cm`
+                : "";
+
+        const predictedDistance = draft.prediction?.predictedBestDistanceCm;
+        const predictedDistanceText =
+            typeof predictedDistance === "number"
+                ? ` Your predicted best distance was ${predictedDistance} cm.`
+                : "";
+
+        return `Your strongest result was a bend angle of ${angleText}${distanceText}.${predictedDistanceText}`;
+    }, [bestMeasurement, draft]);
+
     function validate(): string | null {
         if (!draft) return "Draft not found.";
 
@@ -151,12 +171,14 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
             return "Prediction is required before submission.";
         }
 
-        const text = reflectionText.trim();
-        if (text.length < 20) return "Reflection is too short. Please write at least 1–2 meaningful sentences.";
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
 
-        if (!Number.isFinite(rating) || rating < 1 || rating > 5) return "Rating must be between 1 and 5.";
+        if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+            return "Rating must be between 1 and 5.";
+        }
 
-        // FR-A3-07 policy
         if (!hasSessionVideo(draft)) {
             return "Session video is required before submission. Go back and attach a session video.";
         }
@@ -187,8 +209,6 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                 lower.includes("session video")
                     ? {
                         text: "Go attach video",
-                        // Best UX is to go where session video is attached.
-                        // If you have a dedicated screen, switch this target to it.
                         onPress: () => navigation.navigate("A3SessionSetup", {activityId, runId}),
                     }
                     : lower.includes("measurements")
@@ -204,17 +224,14 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
         try {
             setSubmitting(true);
 
-            // 1) Persist reflection to local draft (so submit uses latest values)
             const updated = setActivity3Reflection(runId, {
                 reflectionText: reflectionText.trim(),
                 rating,
             });
             setDraft(updated);
 
-            // 2) Get teamId (must come from Firestore to satisfy rules)
             const teamId = await fetchTeamIdOrThrow(user.uid);
 
-            // 3) Submit (uploads videos + writes submission + updates team totals)
             const res = await submitActivity3({
                 run: updated,
                 teamId,
@@ -223,7 +240,6 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                 rating,
             });
 
-            // 4) Clear local run AFTER successful remote submit
             clearActivity3RunDraft(runId);
 
             Alert.alert("Submitted ✅", `Your score: ${res.score}`, [
@@ -245,7 +261,7 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                         }),
                 },
             ]);
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const teamId = await fetchTeamIdOrThrow(user.uid);
 
@@ -254,14 +270,6 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     rating,
                 });
 
-                const submitArgs = {
-                    run: updated,
-                    teamId,
-                    createdBy: user.uid,
-                    reflection: reflectionText.trim(),
-                    rating,
-                };
-
                 await queueFinalSubmission({
                     runId: updated.runId,
                     activityId: "activity03_handFan",
@@ -269,7 +277,13 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     teamId,
                     payload: {
                         activityNumber: 3,
-                        args: submitArgs,
+                        args: {
+                            run: updated,
+                            teamId,
+                            createdBy: user.uid,
+                            reflection: reflectionText.trim(),
+                            rating,
+                        },
                     },
                 });
 
@@ -277,11 +291,8 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? friendlyFirebaseError(e)
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", friendlyFirebaseError(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -303,9 +314,10 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
         <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Reflection & Submit</Text>
-                <Text style={styles.sub}>Check evidence, write reflection, and submit.</Text>
+                <Text style={styles.sub}>
+                    Check evidence, write a meaningful reflection, and submit your Hand Fan Challenge result.
+                </Text>
 
-                {/* Evidence / GPS */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Evidence Checklist</Text>
 
@@ -336,32 +348,34 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     ) : null}
                 </View>
 
-                {/* Reflection */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reflection</Text>
 
-                    <View style={styles.promptBox}>
-                        <Text style={styles.promptTitle}>Prompts</Text>
-                        <Text style={styles.promptText}>• Which fan design bent the material the most? Why?</Text>
-                        <Text style={styles.promptText}>
-                            • How did folds/layers/size change airflow (air velocity) and movement?
-                        </Text>
-                        <Text style={styles.promptText}>• Were you correct in your prediction? What surprised
-                            you?</Text>
-                        <Text style={styles.promptText}>• What would you improve for a fairer test next time?</Text>
+                    <View style={styles.smartBox}>
+                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                        <Text style={styles.smartText}>Try to include:</Text>
+                        <Text style={styles.promptText}>• Which fan design bent the material the most, and why.</Text>
+                        <Text style={styles.promptText}>• How distance, folds, layers, or material stiffness affected
+                            airflow.</Text>
+                        <Text style={styles.promptText}>• Whether your prediction matched the measured bend
+                            angle.</Text>
+                        <Text style={styles.promptText}>• One improvement for making the test fairer or more
+                            accurate.</Text>
                     </View>
 
                     <Text style={styles.label}>Your reflection</Text>
                     <TextInput
                         value={reflectionText}
                         onChangeText={setReflectionText}
-                        placeholder="Write at least 1–2 meaningful sentences..."
-                        style={[styles.input, {height: 140, textAlignVertical: "top"}]}
+                        placeholder="Example: The strongest fan setup created the largest bend angle because the airflow was more focused..."
+                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
                     />
+
+                    <ReflectionQualityCard result={reflectionQuality}/>
                 </View>
 
-                {/* Rating */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Rating</Text>
                     <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
@@ -382,9 +396,11 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                {/* Submit */}
-                <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                           disabled={submitting}>
+                <Pressable
+                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                    onPress={onSubmit}
+                    disabled={submitting}
+                >
                     {submitting ? (
                         <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                             <ActivityIndicator color="white"/>
@@ -434,15 +450,16 @@ const styles = StyleSheet.create({
     label: {marginTop: 12, fontWeight: "800"},
     help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

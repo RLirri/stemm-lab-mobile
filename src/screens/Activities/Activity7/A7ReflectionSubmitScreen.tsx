@@ -19,9 +19,7 @@ import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
-
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-
 import {
     clearActivity7RunDraft,
     getActivity7RunDraft,
@@ -32,9 +30,10 @@ import {
     isA7LeaderboardEligible,
     type Activity7RunDraft,
 } from "../../../store/activity7RunDraftStore";
-
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 import {submitActivity7} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A7ReflectionSubmit">;
 
@@ -54,9 +53,18 @@ function isNonEmptyString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
 
-function trimOrUndef(s?: string) {
-    const t = s?.trim();
-    return t ? t : undefined;
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
+function getNumberProperty(value: unknown, key: string): number | undefined {
+    if (typeof value !== "object" || value === null) return undefined;
+
+    const record = value as Record<string, unknown>;
+    const rawValue = record[key];
+
+    return isFiniteNumber(rawValue) ? rawValue : undefined;
 }
 
 function getSessionVideoUri(run: Activity7RunDraft): string | null {
@@ -82,13 +90,13 @@ function formatGeoText(geo: Activity7RunDraft["session"]["geo"] | undefined): st
     if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return "No coordinate saved yet";
 
     const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
-    const timeText = isFiniteNumber(geo.capturedAt) ? ` • ${new Date(geo.capturedAt).toLocaleString()}` : "";
+    const timeText = isFiniteNumber(geo.capturedAt)
+        ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
+        : "";
+
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-/**
- * A7 video is optional.
- */
 function stripVideoFromMissing(missing: string[]): string[] {
     return (missing ?? []).filter((m) => !String(m).toLowerCase().includes("video"));
 }
@@ -108,16 +116,20 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity7RunDraft | null>(null);
-
     const [reflectionText, setReflectionText] = useState("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflectionText),
+        [reflectionText]
+    );
 
     const refreshDraft = useCallback(() => {
         const d = getActivity7RunDraft(runId);
         setDraft(d ?? null);
+
         if (d) {
             setReflectionText(d.reflection?.reflectionText ?? "");
             setRating(d.reflection?.rating ?? 4);
@@ -157,13 +169,15 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
         const eligible = isA7LeaderboardEligible(draft);
 
         const summaries = draft.metrics?.participantSummaries ?? [];
-        const hasAllMeasurements = summaries.length > 0 && summaries.every(
-            (s) =>
-                isFiniteNumber(s.restBpm) &&
-                isFiniteNumber(s.postJogBpm) &&
-                isFiniteNumber(s.postStarJumpBpm) &&
-                isFiniteNumber(s.recoveryConsistencyScore)
-        );
+        const hasAllMeasurements =
+            summaries.length > 0 &&
+            summaries.every(
+                (summary) =>
+                    isFiniteNumber(summary.restBpm) &&
+                    isFiniteNumber(summary.postJogBpm) &&
+                    isFiniteNumber(summary.postStarJumpBpm) &&
+                    isFiniteNumber(summary.recoveryConsistencyScore)
+            );
 
         return {
             teamRecoveryConsistencyScore: leaderboard?.teamRecoveryConsistencyScore,
@@ -180,19 +194,42 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
             geoCaptured: hasRealGeo(draft),
             geoText: formatGeoText(draft.session.geo),
 
-            missingListAll: missingAll,
             missingListNoVideo: missingNoVideo,
         };
     }, [draft]);
 
+    const bestParticipantName = useMemo(() => {
+        if (!draft || !viewModel?.bestParticipantId) return "—";
+
+        return (
+            draft.session.participants.find((participant) => participant.id === viewModel.bestParticipantId)?.name ??
+            "—"
+        );
+    }, [draft, viewModel?.bestParticipantId]);
+
+    const smartReflectionSummary = useMemo(() => {
+        if (!draft || !viewModel) {
+            return "Explain how breathing rate changed from rest to exercise and recovery.";
+        }
+
+        const predictedRest = fmtBpm(draft.prediction?.predictedRestBpm);
+        const predictedAfterExercise = fmtBpm(draft.prediction?.predictedAfterExerciseBpm);
+        const teamScore = fmtScore(viewModel.teamRecoveryConsistencyScore);
+
+        return `Your team recovery consistency score was ${teamScore}. Your prediction estimated ${predictedRest} at rest and ${predictedAfterExercise} after exercise. Compare these predictions with the measured breathing phases and explain how exercise affected recovery.`;
+    }, [draft, viewModel]);
+
     function validateLocal(targetDraft: Activity7RunDraft): string | null {
         const missingNoVideo = stripVideoFromMissing(validateA7Submission(targetDraft));
-        if (missingNoVideo.length > 0) return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
 
-        const text = trimOrUndef(reflectionText);
-        if (!text || text.length < 20) {
-            return "Reflection is too short. Write at least 1–2 meaningful sentences.";
+        if (missingNoVideo.length > 0) {
+            return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
         }
+
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
+
         if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
             return "Rating must be between 1 and 5.";
         }
@@ -208,8 +245,8 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity7SessionVideo(runId, {uri: picked.uri, createdAt: now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to pick video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -223,8 +260,8 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity7SessionVideo(runId, {uri: recorded.uri, createdAt: now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to record video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -248,7 +285,6 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
         const hasVid = !!draft && hasSessionVideo(draft);
 
         const buttons: Array<{ text: string; onPress?: () => void; style?: "cancel" | "destructive" }> = [
-            {text: "Close", style: "cancel"},
             {text: "Pick from library", onPress: () => void onAttachVideoPick()},
             {text: "Record with camera", onPress: () => void onAttachVideoRecord()},
         ];
@@ -256,6 +292,8 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
         if (hasVid) {
             buttons.push({text: "Remove attached video", style: "destructive", onPress: onRemoveVideo});
         }
+
+        buttons.push({text: "Cancel", style: "cancel"});
 
         Alert.alert("Session video evidence", "Optional — attach if you have it.", buttons);
     }
@@ -267,34 +305,34 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
             reflectionText: reflectionText.trim(),
             rating: clampInt(rating, 1, 5),
         });
+
         setDraft(updated);
 
         const err = validateLocal(updated);
         if (err) {
             const low = err.toLowerCase();
 
-            Alert.alert(
-                "Cannot submit",
-                err,
-                [
-                    low.includes("gps") || low.includes("coordinate")
+            Alert.alert("Cannot submit", err, [
+                low.includes("gps") || low.includes("coordinate")
+                    ? {
+                        text: "Capture Location",
+                        onPress: () => navigation.navigate("A7SessionSetup", {activityId, runId}),
+                    }
+                    : low.includes("prediction")
                         ? {
-                            text: "Capture Location",
-                            onPress: () => navigation.navigate("A7SessionSetup", {activityId, runId}),
+                            text: "Go to Prediction",
+                            onPress: () => navigation.navigate("A7Prediction", {activityId, runId}),
                         }
-                        : low.includes("prediction")
+                        : low.includes("measurement") ||
+                        low.includes("rest") ||
+                        low.includes("post-jog") ||
+                        low.includes("post-star")
                             ? {
-                                text: "Go to Prediction",
-                                onPress: () => navigation.navigate("A7Prediction", {activityId, runId}),
+                                text: "Go to Measurements",
+                                onPress: () => navigation.navigate("A7Measurements", {activityId, runId}),
                             }
-                            : low.includes("measurement") || low.includes("rest") || low.includes("post-jog") || low.includes("post-star")
-                                ? {
-                                    text: "Go to Measurements",
-                                    onPress: () => navigation.navigate("A7Measurements", {activityId, runId}),
-                                }
-                                : [{text: "OK"} as any][0],
-                ]
-            );
+                            : {text: "OK"},
+            ]);
             return;
         }
 
@@ -309,18 +347,20 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                 return;
             }
 
-            const res = await submitActivity7({
+            const submitArgs = {
                 run: updated,
                 teamId,
                 createdBy: user.uid,
                 reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
                 rating: updated.reflection?.rating ?? rating,
-            });
+            };
+
+            const res = await submitActivity7(submitArgs);
 
             clearActivity7RunDraft(runId);
 
-            const scoreTxt = `${Math.round((res as any)?.score ?? 0)}`;
-            const recoveryTxt = fmtScore((res as any)?.teamRecoveryConsistencyScore);
+            const scoreTxt = `${Math.round(getNumberProperty(res, "score") ?? 0)}`;
+            const recoveryTxt = fmtScore(getNumberProperty(res, "teamRecoveryConsistencyScore"));
 
             Alert.alert(
                 "Submitted ✅",
@@ -345,13 +385,13 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                     },
                 ]
             );
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!isNonEmptyString(teamId)) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
 
@@ -378,11 +418,8 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -403,14 +440,9 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
     const attachedName = (() => {
         const uri = getSessionVideoUri(draft);
         if (!uri) return null;
+
         const last = uri.split("/").slice(-1)[0];
         return last || "video";
-    })();
-
-    const bestParticipantName = (() => {
-        const pid = viewModel.bestParticipantId;
-        if (!pid) return "—";
-        return draft.session.participants.find((p) => p.id === pid)?.name ?? "—";
     })();
 
     return (
@@ -418,26 +450,30 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Reflection & Submit</Text>
                 <Text style={styles.sub}>
-                    Submission requires all breathing measurements, reflection + rating, and GPS (video optional).
+                    Submission requires all breathing measurements, reflection quality, rating, and GPS if enabled.
                 </Text>
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Performance Summary</Text>
 
                     <Text style={styles.scoreText}>{fmtScore(viewModel.teamRecoveryConsistencyScore)}</Text>
-                    <Text style={styles.help}>Team recovery consistency score (lower is better scientifically).</Text>
+                    <Text style={styles.help}>Team recovery consistency score. Lower is scientifically better.</Text>
 
-                    <View style={{marginTop: 12}}>
+                    <View style={{marginTop: 12, gap: 10}}>
                         <ChecklistRow label="All required breathing phases recorded" ok={viewModel.hasAllMeasurements}/>
                         <ChecklistRow
                             label="Leaderboard eligible"
                             ok={viewModel.eligible}
-                            meta={`Best participant: ${bestParticipantName} • Best score: ${fmtScore(viewModel.bestParticipantRecoveryConsistencyScore)}`}
+                            meta={`Best participant: ${bestParticipantName} • Best score: ${fmtScore(
+                                viewModel.bestParticipantRecoveryConsistencyScore
+                            )}`}
                         />
                         <ChecklistRow
                             label="Prediction available"
                             ok={!!draft.prediction?.createdAt}
-                            meta={`Rest: ${fmtBpm(draft.prediction?.predictedRestBpm)} • After exercise: ${fmtBpm(draft.prediction?.predictedAfterExerciseBpm)}`}
+                            meta={`Rest: ${fmtBpm(draft.prediction?.predictedRestBpm)} • After exercise: ${fmtBpm(
+                                draft.prediction?.predictedAfterExerciseBpm
+                            )}`}
                         />
                     </View>
                 </View>
@@ -446,8 +482,11 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                     <Text style={styles.cardTitle}>Submission Checklist</Text>
 
                     <View style={{marginTop: 10, gap: 10}}>
-                        <ChecklistRow label="Breathing measurement dataset recorded (required)"
-                                      ok={viewModel.hasAllMeasurements}/>
+                        <ChecklistRow
+                            label="Breathing measurement dataset recorded (required)"
+                            ok={viewModel.hasAllMeasurements}
+                        />
+
                         <ChecklistRow
                             label="Session video (optional)"
                             ok={viewModel.sessionVid}
@@ -468,13 +507,13 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                                 />
                             </>
                         ) : (
-                            <ChecklistRow label="GPS (disabled for this session)" ok={true} meta="Not required"/>
+                            <ChecklistRow label="GPS disabled for this session" ok={true} meta="Not required"/>
                         )}
 
                         <ChecklistRow
-                            label="Reflection + rating (required)"
-                            ok={reflectionText.trim().length >= 20 && rating >= 1 && rating <= 5}
-                            meta="Write ≥ 1–2 meaningful sentences and rate 1–5"
+                            label="Reflection quality"
+                            ok={!reflectionQuality.isSubmissionBlocked}
+                            meta={`${reflectionQuality.wordCount} words • ${reflectionQuality.status.replace("_", " ")}`}
                         />
                     </View>
 
@@ -525,22 +564,27 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reflection</Text>
 
-                    <View style={styles.promptBox}>
-                        <Text style={styles.promptTitle}>Prompts (plain language)</Text>
-                        <Text style={styles.promptText}>• Were you correct in your prediction?</Text>
-                        <Text style={styles.promptText}>• Which stage had the highest breathing rate?</Text>
-                        <Text style={styles.promptText}>• Were there any surprises?</Text>
-                        <Text style={styles.promptText}>• How did exercise affect breathing?</Text>
+                    <View style={styles.smartBox}>
+                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                        <Text style={styles.smartText}>Try to include:</Text>
+                        <Text style={styles.promptText}>• Whether your breathing-rate prediction matched the measured
+                            BPM values.</Text>
+                        <Text style={styles.promptText}>• Which stage had the highest breathing rate and why.</Text>
+                        <Text style={styles.promptText}>• How exercise affected recovery and breathing control.</Text>
+                        <Text style={styles.promptText}>• One way to improve the test accuracy next time.</Text>
                     </View>
 
                     <Text style={styles.label}>Your reflection</Text>
                     <TextInput
                         value={reflectionText}
                         onChangeText={setReflectionText}
-                        placeholder="Write at least 1–2 meaningful sentences..."
-                        style={[styles.input, {height: 140, textAlignVertical: "top"}]}
+                        placeholder="Example: My breathing rate increased after exercise, and the recovery phase showed how quickly it returned toward rest..."
+                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
                     />
+
+                    <ReflectionQualityCard result={reflectionQuality}/>
                 </View>
 
                 <View style={styles.card}>
@@ -563,8 +607,11 @@ export default function A7ReflectionSubmitScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                           disabled={submitting}>
+                <Pressable
+                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                    onPress={onSubmit}
+                    disabled={submitting}
+                >
                     {submitting ? (
                         <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                             <ActivityIndicator color="white"/>
@@ -617,15 +664,16 @@ const styles = StyleSheet.create({
 
     scoreText: {marginTop: 10, fontSize: 34, fontWeight: "900"},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {

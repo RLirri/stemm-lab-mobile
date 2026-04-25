@@ -17,9 +17,7 @@ import {doc, getDoc} from "firebase/firestore";
 
 import type {AppStackParamList} from "../../../navigation/AppStack";
 import {auth, db} from "../../../services/firebase";
-
 import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-
 import {
     clearActivity6RunDraft,
     getActivity6RunDraft,
@@ -30,12 +28,12 @@ import {
     getA6LeaderboardMetrics,
     type Activity6RunDraft,
 } from "../../../store/activity6RunDraftStore";
-
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
 import {submitActivity6} from "../../../services/activitySubmissionService";
+import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
+import {checkReflectionQuality} from "../../../services/reflectionQualityService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A6ReflectionSubmit">;
-
 
 function now() {
     return Date.now();
@@ -53,9 +51,18 @@ function isNonEmptyString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
 
-function trimOrUndef(s?: string) {
-    const t = s?.trim();
-    return t ? t : undefined;
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return "Submission failed.";
+}
+
+function getNumberProperty(value: unknown, key: string): number | undefined {
+    if (typeof value !== "object" || value === null) return undefined;
+
+    const record = value as Record<string, unknown>;
+    const rawValue = record[key];
+
+    return isFiniteNumber(rawValue) ? rawValue : undefined;
 }
 
 function getSessionVideoUri(run: Activity6RunDraft): string | null {
@@ -82,12 +89,10 @@ function formatGeoText(geo: Activity6RunDraft["session"]["geo"] | undefined): st
 
     const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
     const timeText = isFiniteNumber(geo.capturedAt) ? ` • ${new Date(geo.capturedAt).toLocaleString()}` : "";
+
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-/**
- * A6 video is optional.
- */
 function stripVideoFromMissing(missing: string[]): string[] {
     return (missing ?? []).filter((m) => !String(m).toLowerCase().includes("video"));
 }
@@ -102,25 +107,25 @@ function fmtPct(v?: number) {
     return `${Math.round(v)}%`;
 }
 
-/* =========================================================
-   Screen
-========================================================= */
-
 export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity6RunDraft | null>(null);
-
     const [reflectionText, setReflectionText] = useState("");
     const [rating, setRating] = useState<number>(4);
-
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
+
+    const reflectionQuality = useMemo(
+        () => checkReflectionQuality(reflectionText),
+        [reflectionText]
+    );
 
     const refreshDraft = useCallback(() => {
         const d = getActivity6RunDraft(runId);
         setDraft(d ?? null);
+
         if (d) {
             setReflectionText(d.reflection?.reflectionText ?? "");
             setRating(d.reflection?.rating ?? 4);
@@ -155,7 +160,6 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
 
         const missingAll = validateA6Submission(draft);
         const missingNoVideo = stripVideoFromMissing(missingAll);
-
         const leaderboard = getA6LeaderboardMetrics(draft);
         const eligible = isA6LeaderboardEligible(draft);
         const accThreshold = clampInt(draft.session.accuracyThresholdPct ?? 70, 0, 100);
@@ -187,19 +191,29 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
             geoCaptured: hasRealGeo(draft),
             geoText: formatGeoText(draft.session.geo),
 
-            missingListAll: missingAll,
             missingListNoVideo: missingNoVideo,
         };
     }, [draft]);
 
+    const smartReflectionSummary = useMemo(() => {
+        if (!viewModel) {
+            return "Explain how your reaction time and tracing accuracy changed during the activity.";
+        }
+
+        return `Your team mean reaction time was ${fmtMs(viewModel.teamMeanReactionTimeMs)}, and your average tracing accuracy was ${fmtPct(viewModel.avgTracingAccuracyPct)}. Compare your reaction performance with tracing control, then explain what affected speed, accuracy, and consistency.`;
+    }, [viewModel]);
+
     function validateLocal(targetDraft: Activity6RunDraft): string | null {
         const missingNoVideo = stripVideoFromMissing(validateA6Submission(targetDraft));
-        if (missingNoVideo.length > 0) return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
 
-        const text = trimOrUndef(reflectionText);
-        if (!text || text.length < 20) {
-            return "Reflection is too short. Write at least 1–2 meaningful sentences.";
+        if (missingNoVideo.length > 0) {
+            return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
         }
+
+        if (reflectionQuality.isSubmissionBlocked) {
+            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+        }
+
         if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
             return "Rating must be between 1 and 5.";
         }
@@ -215,8 +229,8 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity6SessionVideo(runId, {uri: picked.uri, createdAt: now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to pick video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -230,8 +244,8 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
 
             setActivity6SessionVideo(runId, {uri: recorded.uri, createdAt: now()});
             refreshDraft();
-        } catch (e: any) {
-            Alert.alert("Attach failed", e?.message ?? "Failed to record video.");
+        } catch (error: unknown) {
+            Alert.alert("Attach failed", getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -255,7 +269,6 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
         const hasVid = !!draft && hasSessionVideo(draft);
 
         const buttons: Array<{ text: string; onPress?: () => void; style?: "cancel" | "destructive" }> = [
-            {text: "Close", style: "cancel"},
             {text: "Pick from library", onPress: () => void onAttachVideoPick()},
             {text: "Record with camera", onPress: () => void onAttachVideoRecord()},
         ];
@@ -263,6 +276,8 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
         if (hasVid) {
             buttons.push({text: "Remove attached video", style: "destructive", onPress: onRemoveVideo});
         }
+
+        buttons.push({text: "Cancel", style: "cancel"});
 
         Alert.alert("Session video evidence", "Optional — attach if you have it.", buttons);
     }
@@ -274,39 +289,36 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
             reflectionText: reflectionText.trim(),
             rating: clampInt(rating, 1, 5),
         });
+
         setDraft(updated);
 
         const err = validateLocal(updated);
         if (err) {
             const low = err.toLowerCase();
 
-            Alert.alert(
-                "Cannot submit",
-                err,
-                [
-                    low.includes("gps") || low.includes("coordinate")
+            Alert.alert("Cannot submit", err, [
+                low.includes("gps") || low.includes("coordinate")
+                    ? {
+                        text: "Capture Location",
+                        onPress: () => navigation.navigate("A6SessionSetup", {activityId, runId}),
+                    }
+                    : low.includes("prediction")
                         ? {
-                            text: "Capture Location",
-                            onPress: () => navigation.navigate("A6SessionSetup", {activityId, runId}),
+                            text: "Go to Prediction",
+                            onPress: () => navigation.navigate("A6Prediction", {activityId, runId}),
                         }
-                        : low.includes("prediction")
+                        : low.includes("reaction")
                             ? {
-                                text: "Go to Prediction",
-                                onPress: () => navigation.navigate("A6Prediction", {activityId, runId}),
+                                text: "Go to Reaction",
+                                onPress: () => navigation.navigate("A6ReactionTrial", {activityId, runId}),
                             }
-                            : low.includes("reaction")
+                            : low.includes("tracing")
                                 ? {
-                                    text: "Go to Reaction",
-                                    onPress: () => navigation.navigate("A6ReactionTrial", {activityId, runId}),
+                                    text: "Go to Tracing",
+                                    onPress: () => navigation.navigate("A6TracingChallenge", {activityId, runId}),
                                 }
-                                : low.includes("tracing")
-                                    ? {
-                                        text: "Go to Tracing",
-                                        onPress: () => navigation.navigate("A6TracingChallenge", {activityId, runId}),
-                                    }
-                                    : [{text: "OK"} as any][0],
-                ]
-            );
+                                : {text: "OK"},
+            ]);
             return;
         }
 
@@ -321,19 +333,21 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                 return;
             }
 
-            const res = await submitActivity6({
+            const submitArgs = {
                 run: updated,
                 teamId,
                 createdBy: user.uid,
                 reflection: updated.reflection?.reflectionText ?? reflectionText.trim(),
                 rating: updated.reflection?.rating ?? rating,
                 accuracyThreshold: updated.session.accuracyThresholdPct ?? 70,
-            });
+            };
+
+            const res = await submitActivity6(submitArgs);
 
             clearActivity6RunDraft(runId);
 
-            const meanTxt = fmtMs((res as any)?.meanReactionTimeMs);
-            const accTxt = fmtPct((res as any)?.avgAccuracyPct);
+            const meanTxt = fmtMs(getNumberProperty(res, "meanReactionTimeMs"));
+            const accTxt = fmtPct(getNumberProperty(res, "avgAccuracyPct"));
 
             Alert.alert("Submitted ✅", `Team mean reaction time: ${meanTxt}\nAvg accuracy: ${accTxt}`, [
                 {
@@ -354,13 +368,13 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                         }),
                 },
             ]);
-        } catch (e: any) {
+        } catch (error: unknown) {
             try {
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!isNonEmptyString(teamId)) {
-                    Alert.alert("Error", e?.message ?? "Submission failed.");
+                    Alert.alert("Error", getErrorMessage(error));
                     return;
                 }
 
@@ -388,11 +402,8 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                     "Saved offline",
                     "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
                 );
-            } catch (queueError: any) {
-                Alert.alert(
-                    "Error",
-                    queueError?.message ?? e?.message ?? "Submission failed."
-                );
+            } catch (queueError: unknown) {
+                Alert.alert("Error", getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -413,6 +424,7 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
     const attachedName = (() => {
         const uri = getSessionVideoUri(draft);
         if (!uri) return null;
+
         const last = uri.split("/").slice(-1)[0];
         return last || "video";
     })();
@@ -422,19 +434,20 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
             <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Reflection & Submit</Text>
                 <Text style={styles.sub}>
-                    Submission requires reaction trials, tracing results, reflection + rating, and GPS (video optional).
+                    Submission requires reaction trials, tracing results, reflection quality, rating, and GPS if
+                    enabled.
                 </Text>
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Performance Summary</Text>
 
                     <Text style={styles.scoreText}>{fmtMs(viewModel.teamMeanReactionTimeMs)}</Text>
-                    <Text style={styles.help}>Team mean reaction time (lower is better).</Text>
+                    <Text style={styles.help}>Team mean reaction time. Lower is better.</Text>
 
-                    <View style={{marginTop: 12}}>
-                        <ChecklistRow label="Reaction trials recorded (required)" ok={viewModel.reactionOk}/>
+                    <View style={{marginTop: 12, gap: 10}}>
+                        <ChecklistRow label="Reaction trials recorded" ok={viewModel.reactionOk}/>
                         <ChecklistRow
-                            label={`Tracing accuracy meets threshold (≥ ${viewModel.accThreshold}%)`}
+                            label={`Tracing accuracy threshold ≥ ${viewModel.accThreshold}%`}
                             ok={viewModel.eligible}
                             meta={`Avg: ${fmtPct(viewModel.avgTracingAccuracyPct)} • Min: ${fmtPct(viewModel.minTracingAccuracyPct)}`}
                         />
@@ -477,13 +490,13 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                                 />
                             </>
                         ) : (
-                            <ChecklistRow label="GPS (disabled for this session)" ok={true} meta="Not required"/>
+                            <ChecklistRow label="GPS disabled for this session" ok={true} meta="Not required"/>
                         )}
 
                         <ChecklistRow
-                            label="Reflection + rating (required)"
-                            ok={reflectionText.trim().length >= 20 && rating >= 1 && rating <= 5}
-                            meta="Write ≥ 1–2 meaningful sentences and rate 1–5"
+                            label="Reflection quality"
+                            ok={!reflectionQuality.isSubmissionBlocked}
+                            meta={`${reflectionQuality.wordCount} words • ${reflectionQuality.status.replace("_", " ")}`}
                         />
                     </View>
 
@@ -534,22 +547,30 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Reflection</Text>
 
-                    <View style={styles.promptBox}>
-                        <Text style={styles.promptTitle}>Prompts (plain language)</Text>
-                        <Text style={styles.promptText}>• Predict your reaction time — were you right?</Text>
-                        <Text style={styles.promptText}>• Compare dominant vs non-dominant — what changed?</Text>
-                        <Text style={styles.promptText}>• What surprised you in tracing accuracy or reaction
-                            consistency?</Text>
+                    <View style={styles.smartBox}>
+                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
+                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
+                        <Text style={styles.smartText}>Try to include:</Text>
+                        <Text style={styles.promptText}>• Whether your reaction-time prediction matched the
+                            result.</Text>
+                        <Text style={styles.promptText}>• How dominant and non-dominant hand performance
+                            differed.</Text>
+                        <Text style={styles.promptText}>• What affected tracing accuracy, such as speed, control, or
+                            focus.</Text>
+                        <Text style={styles.promptText}>• One way to improve fairness or accuracy if repeating the
+                            test.</Text>
                     </View>
 
                     <Text style={styles.label}>Your reflection</Text>
                     <TextInput
                         value={reflectionText}
                         onChangeText={setReflectionText}
-                        placeholder="Write at least 1–2 meaningful sentences..."
-                        style={[styles.input, {height: 140, textAlignVertical: "top"}]}
+                        placeholder="Example: My dominant hand reacted faster, but tracing accuracy dropped when I moved too quickly..."
+                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
                     />
+
+                    <ReflectionQualityCard result={reflectionQuality}/>
                 </View>
 
                 <View style={styles.card}>
@@ -572,8 +593,11 @@ export default function A6ReflectionSubmitScreen({route, navigation}: Props) {
                     </View>
                 </View>
 
-                <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                           disabled={submitting}>
+                <Pressable
+                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                    onPress={onSubmit}
+                    disabled={submitting}
+                >
                     {submitting ? (
                         <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
                             <ActivityIndicator color="white"/>
@@ -626,15 +650,16 @@ const styles = StyleSheet.create({
 
     scoreText: {marginTop: 10, fontSize: 34, fontWeight: "900"},
 
-    promptBox: {
+    smartBox: {
         marginTop: 10,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
+        borderColor: "#dbeafe",
+        backgroundColor: "#eff6ff",
         borderRadius: 12,
         padding: 12,
     },
-    promptTitle: {fontWeight: "900"},
+    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
+    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
     promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
 
     input: {
