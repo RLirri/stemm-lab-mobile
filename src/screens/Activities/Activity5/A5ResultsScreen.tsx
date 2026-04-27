@@ -28,7 +28,9 @@ import A5SmoothnessComparisonChart, {
     type A5SmoothnessComparisonPoint,
 } from "../../../components/charts/A5SmoothnessComparisonChart";
 import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
 import type {ResultInsight} from "../../../types/visualization";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A5Results">;
 
@@ -54,7 +56,7 @@ function fmtScaledSmooth(n: number | undefined, digits = 1): string {
 
 function improvementScoreScaled(
     baselineSmooth?: number,
-    feedbackSmooth?: number
+    feedbackSmooth?: number,
 ): number | undefined {
     if (!isFiniteNumber(baselineSmooth) || !isFiniteNumber(feedbackSmooth)) {
         return undefined;
@@ -71,14 +73,14 @@ function latestTrial(
     trials: A5TrialDraft[],
     participantId: string,
     movementType: A5MovementType,
-    mode: A5TrialMode
+    mode: A5TrialMode,
 ): A5TrialDraft | undefined {
     return trials
         .filter(
             trial =>
                 trial.participantId === participantId &&
                 trial.movementType === movementType &&
-                trial.mode === mode
+                trial.mode === mode,
         )
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
 }
@@ -138,14 +140,14 @@ export default function A5ResultsScreen({
                     trials,
                     participant.id,
                     movement.type,
-                    "baseline"
+                    "baseline",
                 );
 
                 const feedback = latestTrial(
                     trials,
                     participant.id,
                     movement.type,
-                    "feedback"
+                    "feedback",
                 );
 
                 const baselineSmooth = baseline?.metrics?.smoothnessIndex;
@@ -160,14 +162,12 @@ export default function A5ResultsScreen({
                     feedbackSmooth,
                     improvementScore: improvementScoreScaled(
                         baselineSmooth,
-                        feedbackSmooth
+                        feedbackSmooth,
                     ),
                     baselineDuration: baseline?.metrics?.durationSec,
-                    baselineDisp:
-                    baseline?.metrics?.displacementMagnitudeCm,
+                    baselineDisp: baseline?.metrics?.displacementMagnitudeCm,
                     feedbackDuration: feedback?.metrics?.durationSec,
-                    feedbackDisp:
-                    feedback?.metrics?.displacementMagnitudeCm,
+                    feedbackDisp: feedback?.metrics?.displacementMagnitudeCm,
                 });
             }
         }
@@ -233,25 +233,25 @@ export default function A5ResultsScreen({
                     row =>
                         isFiniteNumber(row.baselineSmooth) &&
                         isFiniteNumber(row.feedbackSmooth) &&
-                        isFiniteNumber(row.improvementScore)
+                        isFiniteNumber(row.improvementScore),
                 )
                 .map(row => ({
                     label: `${row.participantName}\n${row.movementTitle.replace(
                         "Movement ",
-                        "M"
+                        "M",
                     )}`,
                     baselineValue: Number(
                         ((row.baselineSmooth ?? 0) * SMOOTHNESS_SCALE).toFixed(
-                            1
-                        )
+                            1,
+                        ),
                     ),
                     feedbackValue: Number(
                         ((row.feedbackSmooth ?? 0) * SMOOTHNESS_SCALE).toFixed(
-                            1
-                        )
+                            1,
+                        ),
                     ),
                     improvementScore: Number(
-                        (row.improvementScore ?? 0).toFixed(1)
+                        (row.improvementScore ?? 0).toFixed(1),
                     ),
                 }));
         }, [table]);
@@ -261,7 +261,7 @@ export default function A5ResultsScreen({
             .filter(row => isFiniteNumber(row.improvementScore))
             .sort(
                 (a, b) =>
-                    (b.improvementScore ?? 0) - (a.improvementScore ?? 0)
+                    (b.improvementScore ?? 0) - (a.improvementScore ?? 0),
             );
 
         const bestRow = improvedRows[0];
@@ -286,11 +286,31 @@ export default function A5ResultsScreen({
                     bestRow.movementTitle
                 }. The feedback trial reduced the smoothness index by ${fmt(
                     bestRow.improvementScore,
-                    1
+                    1,
                 )} points, indicating smoother movement after feedback.`
                 : "The feedback trials did not produce a lower smoothness index than baseline in the completed trials. This is still useful because it shows where technique or instruction may need adjustment.",
             severity: hasImproved ? "positive" : "neutral",
         };
+    }, [table]);
+
+    const performanceFeedback = useMemo(() => {
+        const feedbackTrials = table
+            .filter(
+                row =>
+                    isFiniteNumber(row.feedbackSmooth) &&
+                    isFiniteNumber(row.feedbackDuration) &&
+                    isFiniteNumber(row.feedbackDisp),
+            )
+            .map(row => ({
+                label: `${row.participantName} • ${row.movementTitle}`,
+                duration: row.feedbackDuration as number,
+                displacement: row.feedbackDisp as number,
+                smoothness: row.feedbackSmooth as number,
+            }));
+
+        return generatePerformanceFeedback("activity5", {
+            trials: feedbackTrials,
+        });
     }, [table]);
 
     function goToTrials() {
@@ -351,6 +371,8 @@ export default function A5ResultsScreen({
 
                 <ResultsInsightCard insight={insight}/>
 
+                <PerformanceFeedbackCard feedback={performanceFeedback}/>
+
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Summary Table</Text>
                     <Text style={styles.help}>
@@ -368,17 +390,17 @@ export default function A5ResultsScreen({
                             {participants.map(participant => {
                                 const rows = table.filter(
                                     row =>
-                                        row.participantId === participant.id
+                                        row.participantId === participant.id,
                                 );
 
                                 const bestRow = rows
                                     .filter(row =>
-                                        isFiniteNumber(row.improvementScore)
+                                        isFiniteNumber(row.improvementScore),
                                     )
                                     .sort(
                                         (a, b) =>
                                             (b.improvementScore ?? 0) -
-                                            (a.improvementScore ?? 0)
+                                            (a.improvementScore ?? 0),
                                     )[0];
 
                                 return (
@@ -397,7 +419,7 @@ export default function A5ResultsScreen({
                                                 null
                                                     ? fmt(
                                                         bestRow.improvementScore,
-                                                        1
+                                                        1,
                                                     )
                                                     : "—"}
                                             </Text>
@@ -419,12 +441,12 @@ export default function A5ResultsScreen({
                                                     leftLabel={`Baseline smoothness (×${SMOOTHNESS_SCALE})`}
                                                     leftValue={fmtScaledSmooth(
                                                         row.baselineSmooth,
-                                                        1
+                                                        1,
                                                     )}
                                                     rightLabel={`Feedback smoothness (×${SMOOTHNESS_SCALE})`}
                                                     rightValue={fmtScaledSmooth(
                                                         row.feedbackSmooth,
-                                                        1
+                                                        1,
                                                     )}
                                                 />
 
@@ -435,7 +457,7 @@ export default function A5ResultsScreen({
                                                         null
                                                             ? `${fmt(
                                                                 row.baselineDuration,
-                                                                1
+                                                                1,
                                                             )} s`
                                                             : "—"
                                                     }
@@ -445,7 +467,7 @@ export default function A5ResultsScreen({
                                                         null
                                                             ? `${fmt(
                                                                 row.feedbackDuration,
-                                                                1
+                                                                1,
                                                             )} s`
                                                             : "—"
                                                     }
@@ -457,7 +479,7 @@ export default function A5ResultsScreen({
                                                         row.baselineDisp != null
                                                             ? `${fmt(
                                                                 row.baselineDisp,
-                                                                1
+                                                                1,
                                                             )} cm`
                                                             : "—"
                                                     }
@@ -466,7 +488,7 @@ export default function A5ResultsScreen({
                                                         row.feedbackDisp != null
                                                             ? `${fmt(
                                                                 row.feedbackDisp,
-                                                                1
+                                                                1,
                                                             )} cm`
                                                             : "—"
                                                     }
@@ -484,7 +506,7 @@ export default function A5ResultsScreen({
                                                         style={[
                                                             styles.improveValue,
                                                             isFiniteNumber(
-                                                                row.improvementScore
+                                                                row.improvementScore,
                                                             ) &&
                                                             row.improvementScore >
                                                             0
@@ -493,21 +515,21 @@ export default function A5ResultsScreen({
                                                         ]}
                                                     >
                                                         {isFiniteNumber(
-                                                            row.improvementScore
+                                                            row.improvementScore,
                                                         )
                                                             ? fmt(
                                                                 row.improvementScore,
-                                                                1
+                                                                1,
                                                             )
                                                             : "—"}
                                                     </Text>
                                                 </View>
 
                                                 {isFiniteNumber(
-                                                    row.baselineSmooth
+                                                    row.baselineSmooth,
                                                 ) &&
                                                 isFiniteNumber(
-                                                    row.feedbackSmooth
+                                                    row.feedbackSmooth,
                                                 ) &&
                                                 row.baselineSmooth -
                                                 row.feedbackSmooth <
@@ -545,10 +567,7 @@ export default function A5ResultsScreen({
                         <Text style={styles.secondaryBtnText}>Compare</Text>
                     </Pressable>
 
-                    <Pressable
-                        style={styles.primaryBtn}
-                        onPress={goToSubmit}
-                    >
+                    <Pressable style={styles.primaryBtn} onPress={goToSubmit}>
                         <Text style={styles.primaryBtnText}>
                             Reflection & Submit
                         </Text>

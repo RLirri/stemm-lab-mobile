@@ -23,11 +23,13 @@ import {
 
 import A1PredictedActualChart from "../../../components/charts/A1PredictedActualChart";
 import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
 import {
     buildA1Visualization,
     theoreticalDropTimeSec,
     type A1PredictionPoint,
 } from "../../../services/resultInsights/activity1VisualizationService";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A1Result">;
 
@@ -212,6 +214,11 @@ export default function A1ResultScreen({
         return buildA1Visualization(points);
     }, [draft]);
 
+    const performanceFeedback = useMemo(
+        () => generatePerformanceFeedback("activity1", visualization.points),
+        [visualization.points],
+    );
+
     function persistComputed() {
         const updated = updateAttempt(runId, attemptIndex, {computed});
         setDraft(updated);
@@ -313,6 +320,8 @@ export default function A1ResultScreen({
             />
 
             <ResultsInsightCard insight={visualization.insight}/>
+
+            <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
             <View style={styles.formulaCard}>
                 <Text style={styles.cardTitle}>Physics Formula</Text>

@@ -29,10 +29,12 @@ import {
 
 import ActivityBarChart from "../../../components/charts/ActivityBarChart";
 import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
 import {
     buildA2Visualization,
     type A2VisualizationTrial,
 } from "../../../services/resultInsights/activity2VisualizationService";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A2Results">;
 
@@ -198,6 +200,29 @@ export default function A2ResultsScreen({
         return buildA2Visualization(trials);
     }, [computed]);
 
+    const performanceFeedback = useMemo(() => {
+        const trials = computed
+            ? computed.validActions.map(action => ({
+                label: action.actionLabel?.trim() || "Action",
+                avgDb: action.dbAvg as number,
+                maxDb: isFiniteNumber(action.dbMax)
+                    ? action.dbMax
+                    : action.dbAvg as number,
+                riskLabel:
+                    action.riskLabel ?? formatRiskLabel(action.riskCategory),
+            }))
+            : [];
+
+        return generatePerformanceFeedback("activity2", {
+            trials,
+            predictedLoudestAction: computed?.predicted,
+            loudestActionLabel: computed?.loudestActionLabel,
+            wasPredictionCorrect: computed?.wasPredictionCorrect,
+            averageDb: computed?.avgDb,
+            maxDb: computed?.maxDb,
+        });
+    }, [computed]);
+
     const predictionSummary = useMemo(() => {
         const predicted = computed?.predicted;
         const loudest = computed?.loudestActionLabel;
@@ -314,6 +339,8 @@ export default function A2ResultsScreen({
             />
 
             <ResultsInsightCard insight={visualization.insight}/>
+
+            <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Noise Level Guide</Text>

@@ -22,10 +22,12 @@ import {
 
 import ActivityBarChart from "../../../components/charts/ActivityBarChart";
 import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
 import {
     buildA4Visualization,
     type A4VisualizationTrial,
 } from "../../../services/resultInsights/activity4VisualizationService";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A4Results">;
 
@@ -36,10 +38,6 @@ type MeasuredRow = {
     hasScore: boolean;
 };
 
-function safeNum(x: unknown, fallback = 0): number {
-    return typeof x === "number" && Number.isFinite(x) ? x : fallback;
-}
-
 function rankLabel(rank: number): string {
     return `#${rank}`;
 }
@@ -48,7 +46,10 @@ function hasValidScore(row: MeasuredRow): row is MeasuredRow & { score: number }
     return row.hasScore && typeof row.score === "number" && Number.isFinite(row.score);
 }
 
-export default function A4ResultsScreen({route, navigation}: Props): React.JSX.Element | null {
+export default function A4ResultsScreen({
+                                            route,
+                                            navigation,
+                                        }: Props): React.JSX.Element | null {
     const user = auth.currentUser;
     const {activityId, runId} = route.params;
 
@@ -174,6 +175,19 @@ export default function A4ResultsScreen({route, navigation}: Props): React.JSX.E
         };
     }, [best, draft]);
 
+    const performanceFeedback = useMemo(() => {
+        return generatePerformanceFeedback("activity4", {
+            trials: measuredRows.filter(hasValidScore).map(row => ({
+                label: row.name,
+                movementScore: row.score,
+            })),
+            predictedBestDesign: predictionInfo?.predictedName,
+            measuredBestDesign: best?.name,
+            wasPredictionCorrect: predictionInfo?.correct,
+            averageMovementScore,
+        });
+    }, [averageMovementScore, best?.name, measuredRows, predictionInfo]);
+
     function onBackToMeasurements() {
         navigation.navigate("A4Measurements", {activityId, runId});
     }
@@ -243,6 +257,8 @@ export default function A4ResultsScreen({route, navigation}: Props): React.JSX.E
             />
 
             <ResultsInsightCard insight={visualization.insight}/>
+
+            <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
             <View style={[styles.card, styles.highlightCard]}>
                 <Text style={styles.cardTitle}>Most Stable Design</Text>

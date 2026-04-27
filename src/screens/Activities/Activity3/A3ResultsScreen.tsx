@@ -29,10 +29,12 @@ import {
 
 import ActivityBarChart from "../../../components/charts/ActivityBarChart";
 import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
 import {
     buildA3Visualization,
     type A3VisualizationTrial,
 } from "../../../services/resultInsights/activity3VisualizationService";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A3Results">;
 
@@ -108,6 +110,20 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         }));
 
         return buildA3Visualization(trials);
+    }, [designAverages]);
+
+    const performanceFeedback = useMemo(() => {
+        const best = designAverages[0];
+        const worst = designAverages[designAverages.length - 1];
+
+        return generatePerformanceFeedback("activity3", {
+            trials: designAverages.map(item => ({
+                label: `Design ${item.designIndex + 1}`,
+                value: item.avg,
+            })),
+            bestValue: best?.avg,
+            worstValue: worst?.avg,
+        });
     }, [designAverages]);
 
     const leaderboardScore = useMemo(() => {
@@ -202,6 +218,8 @@ export default function A3ResultsScreen({route, navigation}: Props) {
             />
 
             <ResultsInsightCard insight={visualization.insight}/>
+
+            <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>Design Ranking</Text>

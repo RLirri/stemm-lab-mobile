@@ -33,6 +33,10 @@ import {
     type A7RecoveryParticipant,
 } from "../../../services/resultInsights/activity7VisualizationService";
 
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
+
+
 type Props = NativeStackScreenProps<AppStackParamList, "A7Results">;
 
 function isFiniteNumber(v: unknown): v is number {
@@ -262,6 +266,44 @@ export default function A7ResultsScreen({
         });
     }, [draft, metrics]);
 
+    const performanceFeedback = useMemo(() => {
+        if (!metrics) return null;
+
+        const trials = metrics.participantSummaries.flatMap(summary => {
+            const arr: Array<{
+                label: string;
+                restingBpm: number;
+                postExerciseBpm: number;
+            }> = [];
+
+            if (
+                summary.restBpm != null &&
+                summary.postJogBpm != null
+            ) {
+                arr.push({
+                    label: `${summary.participantId}-jog`,
+                    restingBpm: summary.restBpm,
+                    postExerciseBpm: summary.postJogBpm,
+                });
+            }
+
+            if (
+                summary.restBpm != null &&
+                summary.postStarJumpBpm != null
+            ) {
+                arr.push({
+                    label: `${summary.participantId}-star`,
+                    restingBpm: summary.restBpm,
+                    postExerciseBpm: summary.postStarJumpBpm,
+                });
+            }
+
+            return arr;
+        });
+
+        return generatePerformanceFeedback("activity7", {trials});
+    }, [metrics]);
+
     function refresh() {
         const d = getActivity7RunDraft(runId);
         if (d) setDraft(d);
@@ -347,6 +389,10 @@ export default function A7ResultsScreen({
                 />
 
                 <ResultsInsightCard insight={visualization.insight}/>
+
+                {performanceFeedback && (
+                    <PerformanceFeedbackCard feedback={performanceFeedback}/>
+                )}
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Highlights</Text>

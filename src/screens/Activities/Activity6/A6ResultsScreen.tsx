@@ -33,6 +33,9 @@ import {
     type A6VisualizationParticipant,
 } from "../../../services/resultInsights/activity6VisualizationService";
 
+import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
+import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
+
 type Props = NativeStackScreenProps<AppStackParamList, "A6Results">;
 
 function fmtMs(v?: number): string {
@@ -195,6 +198,7 @@ export default function A6ResultsScreen({
             return buildA6Visualization([]);
         }
 
+
         const participants: A6VisualizationParticipant[] =
             metrics.participantSummaries.map(summary => ({
                 label: participantName(draft, summary.participantId),
@@ -204,6 +208,38 @@ export default function A6ResultsScreen({
 
         return buildA6Visualization(participants);
     }, [draft, metrics]);
+
+    const performanceFeedback = useMemo(() => {
+        if (!metrics) return null;
+
+        const trials = metrics.participantSummaries.flatMap(summary => {
+            const arr: Array<{
+                label: string;
+                reactionTime: number;
+                hand: "dominant" | "non-dominant";
+            }> = [];
+
+            if (summary.dominant?.meanReactionTimeMs != null) {
+                arr.push({
+                    label: `${summary.participantId}-dominant`,
+                    reactionTime: summary.dominant.meanReactionTimeMs,
+                    hand: "dominant",
+                });
+            }
+
+            if (summary.nonDominant?.meanReactionTimeMs != null) {
+                arr.push({
+                    label: `${summary.participantId}-non-dominant`,
+                    reactionTime: summary.nonDominant.meanReactionTimeMs,
+                    hand: "non-dominant",
+                });
+            }
+
+            return arr;
+        });
+
+        return generatePerformanceFeedback("activity6", {trials});
+    }, [metrics]);
 
     function refresh() {
         const d = getActivity6RunDraft(runId);
@@ -286,6 +322,10 @@ export default function A6ResultsScreen({
                 />
 
                 <ResultsInsightCard insight={visualization.insight}/>
+                
+                {performanceFeedback ? (
+                    <PerformanceFeedbackCard feedback={performanceFeedback}/>
+                ) : null}
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Highlights</Text>
