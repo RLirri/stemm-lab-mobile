@@ -28,7 +28,8 @@
     },
     "plugins": [
       "expo-web-browser",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-background-task"
     ]
   }
 }
