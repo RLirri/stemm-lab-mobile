@@ -65,6 +65,10 @@ export class OfflineDraftService {
         });
     }
 
+    async countActiveDrafts(): Promise<number> {
+        return offlineDraftRepository.countActiveDrafts();
+    }
+
     async markRecovered(runId: string): Promise<void> {
         await offlineDraftRepository.markRecovered(
             runId,

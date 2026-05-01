@@ -165,6 +165,20 @@ export class OfflineDraftRepository {
         return row ? mapRowToRecord<TPayload>(row) : null;
     }
 
+    async countActiveDrafts(): Promise<number> {
+        const db = await getLocalDb();
+
+        const row = await db.getFirstAsync<{ count: number }>(
+            `
+        SELECT COUNT(*) as count
+        FROM ${LOCAL_DB_TABLES.OFFLINE_DRAFTS}
+        WHERE status IN ('draft', 'ready_for_submission', 'submission_failed')
+      `
+        );
+
+        return row?.count ?? 0;
+    }
+
     async markRecovered(runId: string, recoveredAt: string): Promise<void> {
         const db = await getLocalDb();
 
