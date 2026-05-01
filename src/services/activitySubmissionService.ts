@@ -25,6 +25,8 @@ import type {Activity7RunDraft} from "../store/activity7RunDraftStore";
 
 import {markRunDraftSubmittedInLocalDb} from "../store/activityRunDraftStore";
 
+import {notifyActivityCompleted} from "./notifications/notificationService";
+
 /* =========================================================
    Utilities
 ========================================================= */
@@ -65,6 +67,15 @@ export const ACTIVITY_KEYS = {
 } as const;
 
 const DEFAULT_SEASON_ID = "season_2026_s1";
+
+async function safelyNotifyActivityCompleted(activityTitle: string): Promise<void> {
+    try {
+        const result = await notifyActivityCompleted(activityTitle);
+        console.log("[Notifications] Activity completion:", result);
+    } catch (error) {
+        console.log("[Notifications] Activity completion notification skipped:", error);
+    }
+}
 
 /* =========================================================
    TEAM SCORE UPDATE
@@ -308,6 +319,7 @@ export async function submitActivity1({
     });
 
     await markRunDraftSubmittedInLocalDb(run.runId, result.submissionId);
+    await safelyNotifyActivityCompleted("Parachute Drop");
 
     return {submissionId: result.submissionId, score};
 }
@@ -406,6 +418,7 @@ export async function submitActivity2({
         score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Sound Pollution Mapping");
 
     return {submissionId: result.submissionId, score};
 }
@@ -575,6 +588,7 @@ export async function submitActivity3({
         score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Hand Fan Physics");
 
     return {submissionId: result.submissionId, score};
 }
@@ -670,6 +684,7 @@ export async function submitActivity4({
         score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Earthquake Engineering");
 
     return {submissionId: result.submissionId, score};
 }
@@ -918,6 +933,7 @@ export async function submitActivity5({
         score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Human Performance");
 
     return {submissionId: result.submissionId, score};
 }
@@ -1194,6 +1210,7 @@ export async function submitActivity6({
         score: scored.score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Reaction Board");
 
     return {
         submissionId: result.submissionId,
@@ -1543,6 +1560,7 @@ export async function submitActivity7({
         score: scored.score,
         payload,
     });
+    await safelyNotifyActivityCompleted("Breathing Pace Trainer");
 
     return {
         submissionId: result.submissionId,
