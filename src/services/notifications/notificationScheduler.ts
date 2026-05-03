@@ -72,6 +72,7 @@ export async function scheduleUnfinishedActivityReminder(
                 sound: false,
             },
             trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
                 seconds: options.delaySeconds ?? 6 * 60 * 60,
             },
         });
