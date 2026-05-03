@@ -29,6 +29,7 @@ import {
     type Activity5RunDraft,
     type A5ParticipantDraft,
 } from "../../../store/activity5RunDraftStore";
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
 
 /* =========================================================
    Helpers
@@ -462,13 +463,21 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         setDraft(next);
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user || !draft) return;
 
         if (sessionError) {
             Alert.alert("Check setup", sessionError);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 5: Human Performance",
+            intensity: "HIGH",
+        });
+
+        if (!canContinue) return;
 
         const next = persistSessionBase();
         if (!next) return;

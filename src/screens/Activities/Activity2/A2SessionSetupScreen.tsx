@@ -25,6 +25,8 @@ import {
     type Activity2RunDraft,
 } from "../../../store/activity2RunDraftStore";
 
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
+
 type Props = NativeStackScreenProps<AppStackParamList, "A2SessionSetup">;
 
 function normalizeLabel(x: string): string | undefined {
@@ -165,7 +167,7 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
         return {ok: true};
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user) return;
         if (!runId || !draft) return;
 
@@ -174,6 +176,14 @@ export default function A2SessionSetupScreen({route, navigation}: Props) {
             Alert.alert("Check fields", v.message);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 2: Sound Pollution Mapping",
+            intensity: gpsEnabled ? "HIGH" : "MEDIUM",
+        });
+
+        if (!canContinue) return;
 
         persistSessionPatch({
             sessionLabel: normalizeLabel(sessionLabel),

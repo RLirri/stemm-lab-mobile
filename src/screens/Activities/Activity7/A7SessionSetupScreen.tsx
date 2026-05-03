@@ -30,6 +30,8 @@ import {
     type A7ParticipantDraft,
 } from "../../../store/activity7RunDraftStore";
 
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
+
 /* =========================================================
    Helpers
 ========================================================= */
@@ -566,7 +568,7 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user || !draft) return;
 
         const persisted = persistSessionBase();
@@ -577,6 +579,14 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
             Alert.alert("Check setup", err);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 7: Breathing Pace Trainer",
+            intensity: "HIGH",
+        });
+
+        if (!canContinue) return;
 
         navigation.navigate("A7Prediction", {
             activityId,

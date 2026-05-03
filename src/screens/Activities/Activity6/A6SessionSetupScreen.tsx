@@ -31,6 +31,8 @@ import {
     type A6TracingPathType,
 } from "../../../store/activity6RunDraftStore";
 
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
+
 /* =========================================================
    Helpers
 ========================================================= */
@@ -476,7 +478,7 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user || !draft) return;
 
         const persisted = persistSessionBase();
@@ -487,6 +489,14 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             Alert.alert("Check setup", err);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 6: Reaction Board",
+            intensity: "HIGH",
+        });
+
+        if (!canContinue) return;
 
         navigation.navigate("A6Prediction", {
             activityId,

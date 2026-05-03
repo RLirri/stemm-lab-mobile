@@ -29,6 +29,7 @@ import {
     type Activity4RunDraft,
     type A4MaterialContext,
 } from "../../../store/activity4RunDraftStore";
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A4SessionSetup">;
 
@@ -383,13 +384,21 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user || !draft) return;
 
         if (sessionError) {
             Alert.alert("Check setup", sessionError);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 4: Earthquake Resistant Structure",
+            intensity: gpsEnabled || geoCaptured ? "HIGH" : "MEDIUM",
+        });
+
+        if (!canContinue) return;
 
         const next = persistSession();
         if (!next) return;

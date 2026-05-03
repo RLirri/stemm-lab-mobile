@@ -26,6 +26,8 @@ import {
     type SessionDraft,
 } from "../../../store/activityRunDraftStore";
 
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
+
 type Props = NativeStackScreenProps<AppStackParamList, "A1SessionSetup">;
 
 function toNumberOrUndefined(raw: string): number | undefined {
@@ -267,7 +269,7 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
         return {ok: true};
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user) return;
         if (!runId) return;
 
@@ -277,17 +279,25 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
             return;
         }
 
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 1: Parachute Drop",
+            intensity: "MEDIUM",
+        });
+
+        if (!canContinue) return;
+
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
         const payloadMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
 
         persistSessionPatch({
-            dropHeightM: dropHeightM,
+            dropHeightM,
             targetZoneEnabled: targetEnabled,
             targetPreset: targetEnabled ? (targetPreset ?? "none") : "none",
             environment,
             payloadType: payloadType.trim() ? payloadType.trim() : undefined,
             payloadMassUnknown: massUnknown,
-            payloadMassG: payloadMassG,
+            payloadMassG,
             safety: {
                 stableSurface: safetyStableSurface,
                 keepAreaClear: safetyKeepAreaClear,

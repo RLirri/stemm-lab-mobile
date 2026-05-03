@@ -33,6 +33,7 @@ import {
 } from "../../../store/activity3RunDraftStore";
 
 import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
+import {confirmBatteryBeforeActivity} from "../../../services/battery";
 
 type Props = NativeStackScreenProps<AppStackParamList, "A3SessionSetup">;
 
@@ -306,7 +307,7 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
         }
     }
 
-    function onContinue() {
+    async function onContinue() {
         if (!user) return;
         if (!draft) return;
 
@@ -315,6 +316,14 @@ export default function A3SessionSetupScreen({route, navigation}: Props) {
             Alert.alert("Check setup", err);
             return;
         }
+
+        const canContinue = await confirmBatteryBeforeActivity({
+            activityId,
+            activityTitle: "Activity 3: Hand Fan Challenge",
+            intensity: gpsEnabled || !!draft.evidence?.sessionVideo?.uri ? "HIGH" : "MEDIUM",
+        });
+
+        if (!canContinue) return;
 
         const next = persistSession();
         if (!next) return;
