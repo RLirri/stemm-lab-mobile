@@ -41,8 +41,8 @@ export function AppGradientScreen({
     return (
         <LinearGradient
             colors={[
-                '#78BDFB',
-                '#EDF6F8',
+                '#A8D5FF',
+                '#EAF6FF',
                 '#F8FAFC',
             ]}
             locations={[0, 0.18, 1]}

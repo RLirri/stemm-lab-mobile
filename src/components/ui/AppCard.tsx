@@ -44,8 +44,8 @@ export function AppCard({
 const styles = StyleSheet.create({
     card: {
         backgroundColor: colors.surface,
-        borderRadius: radius.xl,
-        padding: spacing.lg,
+        borderRadius: 28,
+        padding: spacing.xl,
         borderWidth: 1,
         borderColor: colors.border,
         marginBottom: spacing.md,
