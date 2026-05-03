@@ -16,6 +16,8 @@ import type {
     BackgroundSyncTrigger,
 } from '../../types/backgroundSync';
 
+import {canRunNonUrgentBackgroundSync, measureAsyncOperation} from '../battery';
+
 let isSyncRunning = false;
 let lastSyncAttemptAt = 0;
 
@@ -83,6 +85,21 @@ export const runBackgroundSyncSafely = async (
             message: 'No network',
         };
     }
+    const batteryDecision = await canRunNonUrgentBackgroundSync();
+
+    if (!batteryDecision.canRun) {
+        lastSyncAttemptAt = now;
+
+        log(batteryDecision.reason);
+
+        return {
+            status: 'skipped',
+            trigger,
+            startedAt,
+            finishedAt: nowIso(),
+            message: batteryDecision.reason,
+        };
+    }
 
     try {
         isSyncRunning = true;
@@ -90,8 +107,10 @@ export const runBackgroundSyncSafely = async (
 
         log(`Sync started (${trigger})`);
 
-        await syncQueuedSubmissions({
-            submitToRemote: submitOfflineToFirebase,
+        await measureAsyncOperation('background-sync', async () => {
+            await syncQueuedSubmissions({
+                submitToRemote: submitOfflineToFirebase,
+            });
         });
 
         log(`Sync success (${trigger})`);
