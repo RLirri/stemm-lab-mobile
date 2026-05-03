@@ -1,135 +1,260 @@
-import React, {useState} from "react";
-import {View, Text, TextInput, Pressable, StyleSheet, Alert} from "react-native";
-import {useForm} from "react-hook-form";
-import {z} from "zod";
-import {zodResolver} from "@hookform/resolvers/zod";
-import {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {AuthStackParamList} from "../../navigation/AuthStack";
-import {registerWithEmail} from "../../services/authService";
-import {friendlyAuthError} from "../../utils/firebaseErrors";
+import React, {useEffect, useState} from 'react';
+import {Pressable, StyleSheet} from 'react-native';
+
+import {useForm} from 'react-hook-form';
+import {z} from 'zod';
+import {zodResolver} from '@hookform/resolvers/zod';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+
+import {AuthStackParamList} from '../../navigation/AuthStack';
+import {registerWithEmail} from '../../services/authService';
+import {friendlyAuthError} from '../../utils/firebaseErrors';
+
+import {
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppStatusToast,
+    AppText,
+} from '../../components/ui';
+
+import {spacing} from '../../theme';
 
 const schema = z
     .object({
-        displayName: z.string().min(2, "Name must be at least 2 characters"),
-        email: z.string().email("Enter a valid email"),
-        password: z.string().min(6, "Password must be at least 6 characters"),
-        confirmPassword: z.string().min(6, "Confirm your password"),
+        displayName: z.string().min(2, 'Name must be at least 2 characters'),
+        email: z.string().email('Enter a valid email'),
+        password: z.string().min(6, 'Password must be at least 6 characters'),
+        confirmPassword: z.string().min(6, 'Confirm your password'),
     })
     .refine((d) => d.password === d.confirmPassword, {
-        message: "Passwords do not match",
-        path: ["confirmPassword"],
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
     });
 
 type FormData = z.infer<typeof schema>;
-type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
+type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone?: 'success' | 'info' | 'warning' | 'danger';
+};
 
 export default function RegisterScreen({navigation}: Props) {
     const [submitting, setSubmitting] = useState(false);
+
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+    });
 
     const {
         register,
         setValue,
         handleSubmit,
         formState: {errors},
-    } = useForm<FormData>({resolver: zodResolver(schema)});
+    } = useForm<FormData>({
+        resolver: zodResolver(schema),
+    });
 
-    React.useEffect(() => {
-        register("displayName");
-        register("email");
-        register("password");
-        register("confirmPassword");
+    useEffect(() => {
+        register('displayName');
+        register('email');
+        register('password');
+        register('confirmPassword');
     }, [register]);
+
+    const showToast = (
+        title: string,
+        message?: string,
+        tone: ToastState['tone'] = 'danger',
+    ) => {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    };
 
     const onSubmit = async (data: FormData) => {
         try {
             setSubmitting(true);
-            await registerWithEmail(data.email, data.password, data.displayName);
+
+            await registerWithEmail(
+                data.email,
+                data.password,
+                data.displayName,
+            );
+
+            showToast(
+                'Account created',
+                'Your STEMM Lab account has been created successfully.',
+                'success',
+            );
         } catch (e: any) {
-            Alert.alert("Registration failed", friendlyAuthError(e?.code));
+            showToast(
+                'Registration failed',
+                friendlyAuthError(e?.code),
+                'danger',
+            );
         } finally {
             setSubmitting(false);
         }
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Create account</Text>
+        <AppGradientScreen contentStyle={styles.screenContent}>
+            <AppText variant="caption" color="textMuted">
+                STEMM Lab
+            </AppText>
 
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="Your name"
-                onChangeText={(t) => setValue("displayName", t, {shouldValidate: true})}
-            />
-            {!!errors.displayName && <Text style={styles.error}>{errors.displayName.message}</Text>}
+            <AppText variant="title" style={styles.title}>
+                Create account
+            </AppText>
 
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                placeholder="you@example.com"
-                onChangeText={(t) => setValue("email", t, {shouldValidate: true})}
-            />
-            {!!errors.email && <Text style={styles.error}>{errors.email.message}</Text>}
+            <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                Join STEMM Lab to participate in collaborative activities, experiments,
+                and offline learning workflows.
+            </AppText>
 
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-                style={styles.input}
-                secureTextEntry
-                placeholder="At least 6 characters"
-                onChangeText={(t) => setValue("password", t, {shouldValidate: true})}
-            />
-            {!!errors.password && <Text style={styles.error}>{errors.password.message}</Text>}
+            <AppCard style={styles.card}>
+                <AppText variant="sectionTitle">
+                    Register
+                </AppText>
 
-            <Text style={styles.label}>Confirm password</Text>
-            <TextInput
-                style={styles.input}
-                secureTextEntry
-                placeholder="Repeat password"
-                onChangeText={(t) => setValue("confirmPassword", t, {shouldValidate: true})}
-            />
-            {!!errors.confirmPassword && (
-                <Text style={styles.error}>{errors.confirmPassword.message}</Text>
-            )}
+                <AppInput
+                    placeholder="Your name"
+                    onChangeText={(text) =>
+                        setValue('displayName', text, {
+                            shouldValidate: true,
+                        })
+                    }
+                />
 
-            <Pressable
-                style={[styles.button, submitting && styles.buttonDisabled]}
-                disabled={submitting}
-                onPress={handleSubmit(onSubmit)}
-            >
-                <Text style={styles.buttonText}>
-                    {submitting ? "Creating..." : "Register"}
-                </Text>
+                {errors.displayName ? (
+                    <AppText variant="caption" color="danger" style={styles.error}>
+                        {errors.displayName.message}
+                    </AppText>
+                ) : null}
+
+                <AppInput
+                    placeholder="you@example.com"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    onChangeText={(text) =>
+                        setValue('email', text, {
+                            shouldValidate: true,
+                        })
+                    }
+                />
+
+                {errors.email ? (
+                    <AppText variant="caption" color="danger" style={styles.error}>
+                        {errors.email.message}
+                    </AppText>
+                ) : null}
+
+                <AppInput
+                    placeholder="At least 6 characters"
+                    secureTextEntry
+                    onChangeText={(text) =>
+                        setValue('password', text, {
+                            shouldValidate: true,
+                        })
+                    }
+                />
+
+                {errors.password ? (
+                    <AppText variant="caption" color="danger" style={styles.error}>
+                        {errors.password.message}
+                    </AppText>
+                ) : null}
+
+                <AppInput
+                    placeholder="Repeat password"
+                    secureTextEntry
+                    onChangeText={(text) =>
+                        setValue('confirmPassword', text, {
+                            shouldValidate: true,
+                        })
+                    }
+                />
+
+                {errors.confirmPassword ? (
+                    <AppText variant="caption" color="danger" style={styles.error}>
+                        {errors.confirmPassword.message}
+                    </AppText>
+                ) : null}
+
+                <AppButton
+                    title={submitting ? 'Creating account...' : 'Register'}
+                    onPress={handleSubmit(onSubmit)}
+                    loading={submitting}
+                    disabled={submitting}
+                    style={styles.registerButton}
+                />
+            </AppCard>
+
+            <Pressable onPress={() => navigation.navigate('Login')}>
+                <AppText
+                    variant="bodyStrong"
+                    color="primary"
+                    align="center"
+                    style={styles.link}
+                >
+                    Already have an account? Login
+                </AppText>
             </Pressable>
 
-            <Pressable onPress={() => navigation.navigate("Login")}>
-                <Text style={styles.link}>Already have an account? Login</Text>
-            </Pressable>
-        </View>
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+        </AppGradientScreen>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flex: 1, padding: 20, justifyContent: "center"},
-    title: {fontSize: 28, fontWeight: "700", marginBottom: 24},
-    label: {fontSize: 14, fontWeight: "600", marginTop: 10},
-    input: {
-        borderWidth: 1,
-        borderColor: "#ddd",
-        borderRadius: 12,
-        padding: 12,
-        marginTop: 6,
+    screenContent: {
+        justifyContent: 'center',
     },
-    error: {color: "crimson", marginTop: 6},
-    button: {
-        backgroundColor: "#111",
-        padding: 14,
-        borderRadius: 12,
-        alignItems: "center",
-        marginTop: 18,
+
+    title: {
+        marginTop: spacing.xs,
     },
-    buttonDisabled: {opacity: 0.6},
-    buttonText: {color: "white", fontWeight: "700"},
-    link: {marginTop: 16, textAlign: "center", fontWeight: "600"},
+
+    subtitle: {
+        marginTop: spacing.sm,
+        marginBottom: spacing.xl,
+    },
+
+    card: {
+        marginBottom: spacing.lg,
+    },
+
+    error: {
+        marginTop: -spacing.sm,
+        marginBottom: spacing.sm,
+    },
+
+    registerButton: {
+        marginTop: spacing.md,
+    },
+
+    link: {
+        marginTop: spacing.sm,
+        marginBottom: spacing.lg,
+    },
 });

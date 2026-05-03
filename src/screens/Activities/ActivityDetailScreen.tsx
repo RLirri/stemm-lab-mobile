@@ -1,48 +1,37 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+
+import type {AppStackParamList} from '../../navigation/AppStack';
+import {auth} from '../../services/firebase';
+import {getActivityById} from '../../services/activityService';
+import type {Activity} from '../../types/activity';
+import {activityCatalog} from '../../features/activities/activityCatalog';
+
+import {createRunDraft} from '../../store/activityRunDraftStore';
+import {createActivity2RunDraft} from '../../store/activity2RunDraftStore';
+import {createActivity3RunDraft} from '../../store/activity3RunDraftStore';
+import {createActivity4RunDraft} from '../../store/activity4RunDraftStore';
+import {createActivity5RunDraft} from '../../store/activity5RunDraftStore';
+import {createActivity6RunDraft} from '../../store/activity6RunDraftStore';
+import {createActivity7RunDraft} from '../../store/activity7RunDraftStore';
+
 import {
-    View,
-    Text,
-    StyleSheet,
-    ActivityIndicator,
-    Pressable,
-    Alert,
-    ScrollView,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppText,
+    InfoBanner,
+    LoadingState,
+    AppExpandableCard,
+    AppStepList,
+} from '../../components/ui';
 
-import type {AppStackParamList} from "../../navigation/AppStack";
-import {auth} from "../../services/firebase";
-import {getActivityById} from "../../services/activityService";
-import type {Activity} from "../../types/activity";
+import {spacing} from '../../theme';
 
-import {activityCatalog} from "../../features/activities/activityCatalog";
+type Props = NativeStackScreenProps<AppStackParamList, 'ActivityDetail'>;
 
-// Activity 1 draft store
-import {createRunDraft} from "../../store/activityRunDraftStore";
-
-// Activity 2 draft store
-import {createActivity2RunDraft} from "../../store/activity2RunDraftStore";
-
-// Activity 3 draft store
-import {createActivity3RunDraft} from "../../store/activity3RunDraftStore";
-
-import {createActivity4RunDraft} from "../../store/activity4RunDraftStore";
-
-import {createActivity5RunDraft} from "../../store/activity5RunDraftStore";
-
-import {createActivity6RunDraft} from "../../store/activity6RunDraftStore";
-
-import {createActivity7RunDraft} from "../../store/activity7RunDraftStore";
-
-type Props = NativeStackScreenProps<AppStackParamList, "ActivityDetail">;
-
-/**
- * Local-only routing metadata (keeps your ActivityDoc clean).
- * activityCatalog items should include:
- *  - id
- *  - slug
- *  - startRoute
- */
 type ActivityFlowMeta = {
     id: string;
     slug?: string;
@@ -52,12 +41,13 @@ type ActivityFlowMeta = {
 function getActivitySlug(activity: Activity | null): string | null {
     if (!activity) return null;
     const maybeSlug = (activity as unknown as { slug?: string }).slug;
-    if (typeof maybeSlug === "string" && maybeSlug.trim()) return maybeSlug.trim();
-    return null;
+    return typeof maybeSlug === 'string' && maybeSlug.trim()
+        ? maybeSlug.trim()
+        : null;
 }
 
 function isNonEmptyString(x: unknown): x is string {
-    return typeof x === "string" && x.trim().length > 0;
+    return typeof x === 'string' && x.trim().length > 0;
 }
 
 export default function ActivityDetailScreen({route, navigation}: Props) {
@@ -74,11 +64,10 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
         (async () => {
             try {
                 const a = await getActivityById(activityId);
-                if (!mounted) return;
-                setActivity(a);
+                if (mounted) setActivity(a);
             } catch (e: unknown) {
-                const msg = e instanceof Error ? e.message : "Failed to load activity";
-                Alert.alert("Error", msg);
+                const msg = e instanceof Error ? e.message : 'Failed to load activity';
+                Alert.alert('Error', msg);
             } finally {
                 if (mounted) setLoading(false);
             }
@@ -91,16 +80,16 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
 
     const flow = useMemo<ActivityFlowMeta | null>(() => {
         const defs = activityCatalog as unknown as ActivityFlowMeta[];
-
         const slug = getActivitySlug(activity);
+
         if (slug) {
-            const bySlug = defs.find((d) => isNonEmptyString(d.slug) && d.slug === slug);
+            const bySlug = defs.find(
+                (d) => isNonEmptyString(d.slug) && d.slug === slug,
+            );
             if (bySlug) return bySlug;
         }
 
-        // Fallback: match by deterministic id
-        const byId = defs.find((d) => d.id === activityId);
-        return byId ?? null;
+        return defs.find((d) => d.id === activityId) ?? null;
     }, [activity, activityId]);
 
     const timeSpanLabel =
@@ -108,13 +97,8 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
             ? `~${activity.timeSpanMinutes} min`
             : null;
 
-    function assertNever(_x: never): never {
-        throw new Error("Unexpected route");
-    }
-
     async function onStart() {
-        if (!user) return;
-        if (!activity) return;
+        if (!user || !activity) return;
 
         try {
             setStarting(true);
@@ -123,145 +107,125 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
 
             if (!startRoute) {
                 Alert.alert(
-                    "Not implemented",
-                    "This activity flow hasn’t been implemented yet for this build."
+                    'Not implemented',
+                    'This activity flow hasn’t been implemented yet for this build.',
                 );
                 return;
             }
 
-            /**
-             * IMPORTANT:
-             * The “NAVIGATE not handled” error happens when the route name string
-             * is not exactly registered in AppStack OR you navigate with wrong params.
-             *
-             * We keep routing strict here with a switch on known routes.
-             */
             switch (startRoute) {
-                /* =========================
-                   Activity 1
-                ========================= */
-                case "A1SessionSetup": {
+                case 'A1SessionSetup': {
                     const draft = createRunDraft(activityId, user.uid);
-                    navigation.navigate("A1SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A1SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-                // If someone sets startRoute to later steps by mistake, still handle safely
-                case "A1AttemptPlan":
-                case "A1Measurements":
-                case "A1Result":
-                case "A1Comparison":
-                case "A1ReflectionSubmit": {
+                case 'A1AttemptPlan':
+                case 'A1Measurements':
+                case 'A1Result':
+                case 'A1Comparison':
+                case 'A1ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 1 must start at Session Setup. Please set startRoute to A1SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 1 must start at Session Setup. Please set startRoute to A1SessionSetup.',
                     );
                     return;
                 }
 
-                /* =========================
-                   Activity 2
-                ========================= */
-
-                // If you want an overview-first UX (recommended)
-                case "A2Overview": {
-                    // A2Overview in your current AppStack expects ONLY { activityId }.
-                    // The run draft is created later (usually in A2SessionSetup) OR
-                    // you can create it inside A2Overview when user taps Continue.
-                    navigation.navigate("A2Overview", {activityId});
+                case 'A2Overview': {
+                    navigation.navigate('A2Overview', {activityId});
                     return;
                 }
 
-                // If you want to start directly with Session Setup
-                case "A2SessionSetup": {
+                case 'A2SessionSetup': {
                     const draft = createActivity2RunDraft(activityId, user.uid);
-                    navigation.navigate("A2SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A2SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-                // Guard against misconfigured startRoute
-                case "A2Prediction":
-                case "A2Measurement":
-                case "A2Map":
-                case "A2Results":
-                case "A2ReflectionSubmit": {
+                case 'A2Prediction':
+                case 'A2Measurement':
+                case 'A2Map':
+                case 'A2Results':
+                case 'A2ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 2 must start at Overview or Session Setup. Please set startRoute to A2Overview or A2SessionSetup."
-                    );
-                    return;
-                }
-                /* =========================
-   Activity 3
-========================= */
-
-                // Recommended: overview-first UX
-                case "A3Overview": {
-                    navigation.navigate("A3Overview", {activityId});
-                    return;
-                }
-
-                // If starting directly at Session Setup (also supported)
-                case "A3SessionSetup": {
-                    const draft = createActivity3RunDraft({activityId, createdBy: user.uid});
-                    navigation.navigate("A3SessionSetup", {activityId, runId: draft.runId});
-                    return;
-                }
-
-                // Guard against misconfigured startRoute
-                case "A3Prediction":
-                case "A3Measurements":
-                case "A3Results":
-                case "A3Comparison":
-                case "A3ReflectionSubmit": {
-                    Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 3 must start at Overview or Session Setup. Please set startRoute to A3Overview or A3SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 2 must start at Overview or Session Setup. Please set startRoute to A2Overview or A2SessionSetup.',
                     );
                     return;
                 }
 
-                /* =========================
-                   App-level routes (don’t start activities here)
-                ========================= */
-                case "A4Overview": {
-                    navigation.navigate("A4Overview", {activityId});
+                case 'A3Overview': {
+                    navigation.navigate('A3Overview', {activityId});
                     return;
                 }
 
-                case "A4SessionSetup": {
+                case 'A3SessionSetup': {
+                    const draft = createActivity3RunDraft({
+                        activityId,
+                        createdBy: user.uid,
+                    });
+                    navigation.navigate('A3SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
+                    return;
+                }
+
+                case 'A3Prediction':
+                case 'A3Measurements':
+                case 'A3Results':
+                case 'A3Comparison':
+                case 'A3ReflectionSubmit': {
+                    Alert.alert(
+                        'Flow misconfigured',
+                        'Activity 3 must start at Overview or Session Setup. Please set startRoute to A3Overview or A3SessionSetup.',
+                    );
+                    return;
+                }
+
+                case 'A4Overview': {
+                    navigation.navigate('A4Overview', {activityId});
+                    return;
+                }
+
+                case 'A4SessionSetup': {
                     const draft = createActivity4RunDraft({
                         activityId,
                         createdBy: user.uid,
                         designCount: 3,
                     });
-                    navigation.navigate("A4SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A4SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-                case "A4Prediction":
-                case "A4Measurements":
-                case "A4Results":
-                case "A4Comparison":
-                case "A4ReflectionSubmit": {
+                case 'A4Prediction':
+                case 'A4Measurements':
+                case 'A4Results':
+                case 'A4Comparison':
+                case 'A4ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 4 must start at Overview or Session Setup. Please set startRoute to A4Overview or A4SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 4 must start at Overview or Session Setup. Please set startRoute to A4Overview or A4SessionSetup.',
                     );
                     return;
                 }
-                /* =========================
-   Activity 5
-========================= */
 
-                // Recommended: overview-first UX
-                case "A5Overview": {
-                    navigation.navigate("A5Overview", {activityId});
+                case 'A5Overview': {
+                    navigation.navigate('A5Overview', {activityId});
                     return;
                 }
 
-                // If starting directly at Session Setup (also supported)
-                case "A5SessionSetup": {
+                case 'A5SessionSetup': {
                     const draft = createActivity5RunDraft({
                         activityId,
                         createdBy: user.uid,
@@ -272,142 +236,128 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
                         feedbackEnabled: true,
                     });
 
-                    navigation.navigate("A5SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A5SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-                // Guard against misconfigured startRoute
-                case "A5Prediction":
-                case "A5GuidedTrials":
-                // case "A5Measurements":
-                case "A5Results":
-                case "A5Comparison":
-                case "A5ReflectionSubmit": {
+                case 'A5Prediction':
+                case 'A5GuidedTrials':
+                case 'A5Results':
+                case 'A5Comparison':
+                case 'A5ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 5 must start at Overview or Session Setup. Please set startRoute to A5Overview or A5SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 5 must start at Overview or Session Setup. Please set startRoute to A5Overview or A5SessionSetup.',
                     );
                     return;
                 }
-                /* =========================
-   Activity 6
-========================= */
 
-// Recommended: overview-first UX
-                case "A6Overview": {
-                    navigation.navigate("A6Overview", {activityId});
+                case 'A6Overview': {
+                    navigation.navigate('A6Overview', {activityId});
                     return;
                 }
 
-// If starting directly at Session Setup (also supported)
-                case "A6SessionSetup": {
+                case 'A6SessionSetup': {
                     const draft = createActivity6RunDraft({
                         activityId,
                         createdBy: user.uid,
-
                         participantCount: 1,
                         trialsPerHand: 3,
-                        target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
-
-                        tracingPathType: "circle",
+                        target: {
+                            delayMinSec: 1.0,
+                            delayMaxSec: 3.0,
+                            targetSizePx: 56,
+                        },
+                        tracingPathType: 'circle',
                         maxAllowedDeviationPx: 100,
                         accuracyThresholdPct: 60,
-
                         gpsEnabled: true,
                         sessionLabel: undefined,
                     });
 
-                    navigation.navigate("A6SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A6SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-// Guard against misconfigured startRoute
-                case "A6Prediction":
-                case "A6ReactionTrial":
-                case "A6TracingChallenge":
-                case "A6Results":
-                case "A6ReflectionSubmit": {
+                case 'A6Prediction':
+                case 'A6ReactionTrial':
+                case 'A6TracingChallenge':
+                case 'A6Results':
+                case 'A6ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 6 must start at Overview or Session Setup. Please set startRoute to A6Overview or A6SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 6 must start at Overview or Session Setup. Please set startRoute to A6Overview or A6SessionSetup.',
                     );
                     return;
                 }
-                /* =========================
-   Activity 7
-========================= */
 
-                // Recommended: overview-first UX
-                case "A7Overview": {
-                    navigation.navigate("A7Overview", {activityId});
+                case 'A7Overview': {
+                    navigation.navigate('A7Overview', {activityId});
                     return;
                 }
 
-                // If starting directly at Session Setup (also supported)
-                case "A7SessionSetup": {
+                case 'A7SessionSetup': {
                     const draft = createActivity7RunDraft({
                         activityId,
                         createdBy: user.uid,
-
                         participantCount: 1,
                         measurementDurationSec: 30,
                         targetSamplingHz: 25,
                         smoothingWindowSec: 0.6,
                         minPeakGapMs: 1500,
-
                         gpsEnabled: true,
                         sessionLabel: undefined,
                     });
 
-                    navigation.navigate("A7SessionSetup", {activityId, runId: draft.runId});
+                    navigation.navigate('A7SessionSetup', {
+                        activityId,
+                        runId: draft.runId,
+                    });
                     return;
                 }
 
-                // Guard against misconfigured startRoute
-                case "A7Prediction":
-                case "A7Measurements":
-                case "A7Results":
-                case "A7ReflectionSubmit": {
+                case 'A7Prediction':
+                case 'A7Measurements':
+                case 'A7Results':
+                case 'A7ReflectionSubmit': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "Activity 7 must start at Overview or Session Setup. Please set startRoute to A7Overview or A7SessionSetup."
+                        'Flow misconfigured',
+                        'Activity 7 must start at Overview or Session Setup. Please set startRoute to A7Overview or A7SessionSetup.',
                     );
                     return;
                 }
 
-                /* =========================
-                   App-level routes (don’t start activities here)
-                ========================= */
-                case "Home":
-                case "Profile":
-                case "TeamUp":
-                case "TeamDetail":
-                case "ExploreTeams":
-                case "Leaderboard":
-                case "Activities":
-                case "ActivityDetail": {
+                case 'Home':
+                case 'Profile':
+                case 'TeamUp':
+                case 'TeamDetail':
+                case 'ExploreTeams':
+                case 'Leaderboard':
+                case 'Activities':
+                case 'ActivityDetail': {
                     Alert.alert(
-                        "Flow misconfigured",
-                        "startRoute must point to an activity flow screen (A1*/A2*/A3*/A4*/A5*/A6*/A7*)."
+                        'Flow misconfigured',
+                        'startRoute must point to an activity flow screen.',
                     );
                     return;
                 }
 
                 default: {
-                    // If TypeScript can’t narrow (e.g., because startRoute comes from data),
-                    // keep a safe runtime message.
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const r = startRoute as any;
                     Alert.alert(
-                        "Unknown route",
-                        `startRoute "${String(r)}" is not supported. Check your activityCatalog mapping.`
+                        'Unknown route',
+                        `startRoute "${String(startRoute)}" is not supported.`,
                     );
-                    return;
                 }
             }
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : "Unknown error";
-            Alert.alert("Start failed", msg);
+            const msg = e instanceof Error ? e.message : 'Unknown error';
+            Alert.alert('Start failed', msg);
         } finally {
             setStarting(false);
         }
@@ -417,105 +367,160 @@ export default function ActivityDetailScreen({route, navigation}: Props) {
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10}}>Loading activity...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading activity..."/>
+            </AppGradientScreen>
         );
     }
 
     if (!activity) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>Activity not found</Text>
-                <Text style={styles.body}>
-                    This activity doesn’t exist or you don’t have permission to view it.
-                </Text>
-            </View>
+            <AppGradientScreen>
+                <AppText variant="title">Activity not found</AppText>
+                <InfoBanner
+                    title="Unable to open activity"
+                    message="This activity doesn’t exist or you don’t have permission to view it."
+                    tone="danger"
+                />
+            </AppGradientScreen>
         );
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>{activity.title}</Text>
+        <AppGradientScreen>
+            <AppText variant="caption" color="textMuted">
+                STEMM Activity
+            </AppText>
 
-            <Text style={styles.meta}>
-                {activity.category} • {activity.difficulty}
-                {timeSpanLabel ? ` • ${timeSpanLabel}` : ""}
-            </Text>
+            <AppText variant="title" style={styles.title}>
+                {activity.title}
+            </AppText>
+
+            <View style={styles.badgeRow}>
+                <AppBadge label={activity.category} tone="info"/>
+                <AppBadge label={activity.difficulty} tone="primary"/>
+                {timeSpanLabel ? <AppBadge label={timeSpanLabel} tone="success"/> : null}
+            </View>
 
             {activity.shortDescription ? (
-                <Text style={[styles.body, {marginTop: 12}]}>{activity.shortDescription}</Text>
+                <AppText variant="body" color="textMuted" style={styles.shortDescription}>
+                    {activity.shortDescription}
+                </AppText>
             ) : null}
 
+
             {activity.description ? (
-                <>
-                    <Text style={styles.section}>Overview</Text>
-                    <Text style={styles.body}>{activity.description}</Text>
-                </>
+                <AppExpandableCard title="Overview" defaultExpanded>
+                    <AppText variant="body" color="textMuted" style={styles.sectionBody}>
+                        {activity.description}
+                    </AppText>
+                </AppExpandableCard>
             ) : null}
 
             {activity.instructions ? (
-                <>
-                    <Text style={styles.section}>Instructions</Text>
-                    <Text style={styles.body}>{activity.instructions}</Text>
-                </>
+                <AppExpandableCard title="Instructions">
+                    <AppStepList
+                        items={activity.instructions
+                            .split('\n')
+                            .map((s) =>
+                                s
+                                    .trim()
+                                    .replace(/^\d+\)\s*/, '')
+                                    .replace(/^\d+\.\s*/, ''),
+                            )
+                            .filter(Boolean)}
+                    />
+                </AppExpandableCard>
             ) : null}
 
             {activity.equipment?.length ? (
-                <>
-                    <Text style={styles.section}>Equipment</Text>
-                    {activity.equipment.map((e, idx) => (
-                        <Text key={`${e}-${idx}`} style={styles.body}>
-                            • {e}
-                        </Text>
-                    ))}
-                </>
+                <AppExpandableCard title="Equipment">
+                    <View style={styles.equipmentList}>
+                        {activity.equipment.map((item, idx) => (
+                            <View key={`${item}-${idx}`} style={styles.equipmentItem}>
+                                <AppText variant="bodyStrong" color="primary">
+                                    {idx + 1}.
+                                </AppText>
+
+                                <AppText variant="body" color="textMuted" style={styles.equipmentText}>
+                                    {item}
+                                </AppText>
+                            </View>
+                        ))}
+                    </View>
+                </AppExpandableCard>
             ) : null}
 
-            <View style={{height: 18}}/>
-
-            <Pressable
-                style={[styles.primaryBtn, starting && {opacity: 0.6}]}
+            <AppButton
+                title={starting ? 'Starting...' : 'Start Activity'}
                 onPress={onStart}
                 disabled={starting}
-            >
-                <Text style={styles.primaryBtnText}>{starting ? "Starting..." : "Start"}</Text>
-            </Pressable>
+                loading={starting}
+                style={styles.startButton}
+            />
 
             {!flow?.startRoute ? (
-                <Text style={styles.hint}>
-                    Flow routing isn’t configured for this activity yet (missing startRoute in activityCatalog).
-                </Text>
-            ) : (
-                <Text style={styles.hint}>
-                    Start route: <Text style={{fontWeight: "900"}}>{String(flow.startRoute)}</Text>
-                </Text>
-            )}
-
-            <View style={{height: 24}}/>
-        </ScrollView>
+                <InfoBanner
+                    title="Flow routing not configured"
+                    message="Missing startRoute in activityCatalog."
+                    tone="warning"
+                />
+            ) : __DEV__ ? (
+                <AppText variant="caption" color="textMuted" style={styles.hint}>
+                    Start route: {String(flow.startRoute)}
+                </AppText>
+            ) : null}
+        </AppGradientScreen>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 28, fontWeight: "900", marginTop: 10},
-    meta: {marginTop: 8, opacity: 0.8},
-
-    section: {marginTop: 16, fontWeight: "900", fontSize: 16},
-    body: {marginTop: 8, opacity: 0.9, lineHeight: 20},
-
-    primaryBtn: {
-        marginTop: 10,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    title: {
+        marginTop: spacing.xs,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    hint: {marginTop: 12, opacity: 0.7, lineHeight: 18},
+    badgeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.lg,
+    },
+
+    shortDescription: {
+        marginTop: spacing.lg,
+    },
+
+    sectionCard: {
+        marginTop: spacing.md,
+        padding: spacing.lg,
+    },
+
+    sectionBody: {
+        marginTop: spacing.sm,
+    },
+
+    equipmentList: {
+        marginTop: spacing.md,
+        gap: spacing.sm,
+    },
+
+    equipmentItem: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        alignItems: 'flex-start',
+    },
+
+    equipmentText: {
+        flex: 1,
+    },
+
+    startButton: {
+        marginTop: spacing.xl,
+        marginBottom: spacing.md,
+    },
+
+    hint: {
+        marginTop: spacing.sm,
+        marginBottom: spacing.xl,
+    },
 });

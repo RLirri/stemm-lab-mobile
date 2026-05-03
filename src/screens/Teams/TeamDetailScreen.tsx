@@ -1,22 +1,29 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, FlatList, StyleSheet, View} from 'react-native';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {doc, onSnapshot, updateDoc} from 'firebase/firestore';
+import * as Clipboard from 'expo-clipboard';
+
+import {auth, db} from '../../services/firebase';
+import {leaveTeam} from '../../services/teamService';
+import type {AppStackParamList} from '../../navigation/AppStack';
+
 import {
-    View,
-    Text,
-    Pressable,
-    StyleSheet,
-    ActivityIndicator,
-    Alert,
-    FlatList,
-} from "react-native";
-import {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {doc, onSnapshot, updateDoc} from "firebase/firestore";
-import * as Clipboard from "expo-clipboard";
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppConfirmDialog,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../components/ui';
 
-import {auth, db} from "../../services/firebase";
-import {leaveTeam} from "../../services/teamService";
-import type {AppStackParamList} from "../../navigation/AppStack";
+import {colors, spacing} from '../../theme';
 
-type Props = NativeStackScreenProps<AppStackParamList, "TeamDetail">;
+type Props = NativeStackScreenProps<AppStackParamList, 'TeamDetail'>;
 
 type TeamDoc = {
     name: string;
@@ -32,20 +39,30 @@ type TeamDoc = {
     };
 };
 
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone?: 'success' | 'info' | 'warning' | 'danger';
+};
+
 export default function TeamDetailScreen({route}: Props) {
     const user = auth.currentUser;
 
-    // --- Mode handling ---
-    const mode: "my" | "view" = route.params?.mode ?? "my";
+    const mode: 'my' | 'view' = route.params?.mode ?? 'my';
     const routeTeamId = route.params?.teamId ?? null;
-    const isViewMode = mode === "view";
+    const isViewMode = mode === 'view';
 
     const [teamId, setTeamId] = useState<string | null>(null);
     const [team, setTeam] = useState<TeamDoc | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+    });
 
-    // A) Resolve teamId depending on mode
     useEffect(() => {
         setError(null);
         setLoading(true);
@@ -57,36 +74,34 @@ export default function TeamDetailScreen({route}: Props) {
             return;
         }
 
-        // View mode: directly show the team from the route param
         if (isViewMode) {
             if (!routeTeamId) {
                 setTeamId(null);
                 setLoading(false);
-                setError("No teamId provided for view mode.");
+                setError('No teamId provided for view mode.');
                 return;
             }
+
             setTeamId(routeTeamId);
             return;
         }
 
-        // My mode: listen to user doc -> teamId (your existing behavior)
         const unsub = onSnapshot(
-            doc(db, "users", user.uid),
+            doc(db, 'users', user.uid),
             (snap) => {
                 const data = snap.data() as any;
                 setTeamId(data?.teamId ?? null);
             },
             (err) => {
-                setError(err?.message ?? "Failed to load user profile.");
+                setError(err?.message ?? 'Failed to load user profile.');
                 setTeamId(null);
                 setLoading(false);
-            }
+            },
         );
 
         return unsub;
     }, [user?.uid, isViewMode, routeTeamId]);
 
-    // B) Listen to team doc
     useEffect(() => {
         if (!teamId) {
             setTeam(null);
@@ -95,23 +110,23 @@ export default function TeamDetailScreen({route}: Props) {
         }
 
         const unsub = onSnapshot(
-            doc(db, "teams", teamId),
+            doc(db, 'teams', teamId),
             (snap) => {
                 if (!snap.exists()) {
                     setTeam(null);
                     setLoading(false);
-                    setError("Team not found.");
+                    setError('Team not found.');
                     return;
                 }
+
                 setTeam(snap.data() as TeamDoc);
                 setLoading(false);
             },
             (err) => {
-                // If user has no permission to read a private team, you'll land here
                 setTeam(null);
                 setLoading(false);
-                setError(err?.message ?? "Failed to load team.");
-            }
+                setError(err?.message ?? 'Failed to load team.');
+            },
         );
 
         return unsub;
@@ -130,56 +145,74 @@ export default function TeamDetailScreen({route}: Props) {
 
     if (loading) {
         return (
-            <View style={[styles.container, {alignItems: "center"}]}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10}}>Loading team...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading team..."/>
+            </AppGradientScreen>
         );
     }
 
-    // If view mode fails due to permissions (private team), show a clear message
     if (error && isViewMode) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>Cannot view this team</Text>
-                <Text style={styles.subtitle}>
-                    {error.includes("Missing or insufficient permissions")
-                        ? "This team is private or you don't have permission to view it."
-                        : error}
-                </Text>
-            </View>
+            <AppGradientScreen>
+                <AppText variant="title">Cannot view this team</AppText>
+                <InfoBanner
+                    title="Team unavailable"
+                    message={
+                        error.includes('Missing or insufficient permissions')
+                            ? "This team is private or you don't have permission to view it."
+                            : error
+                    }
+                    tone="warning"
+                />
+            </AppGradientScreen>
         );
     }
 
     if (!teamId || !team) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>No team yet</Text>
-                <Text style={styles.subtitle}>
-                    {isViewMode ? "This team could not be loaded." : "Create or join a team from Team Up."}
-                </Text>
-            </View>
+            <AppGradientScreen>
+                <AppText variant="title">No team yet</AppText>
+                <InfoBanner
+                    title={isViewMode ? 'Team could not be loaded' : 'Create or join a team'}
+                    message={
+                        isViewMode
+                            ? 'This team could not be loaded.'
+                            : 'Go to Team Up to create a new team or join with a team code.'
+                    }
+                    tone="info"
+                />
+            </AppGradientScreen>
         );
     }
 
     const isCreator = team.createdBy === user.uid;
-    const visibilityLabel = team.isPublic ? "Public" : "Private";
-
-    // In view mode, keep it read-only: no leave, no visibility toggle.
-    // Copy code: allow only if team is public OR you're in my-mode (your own team view).
+    const visibilityLabel = team.isPublic ? 'Public' : 'Private';
     const canCopyCode = !!team.isPublic || !isViewMode;
+
+    const showToast = (
+        title: string,
+        message?: string,
+        tone: ToastState['tone'] = 'success',
+    ) => {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    };
 
     const copyCode = async () => {
         if (!canCopyCode) {
-            Alert.alert("Unavailable", "Team code is hidden for private teams.");
+            showToast('Unavailable', 'Team code is hidden for private teams.', 'warning');
             return;
         }
 
         try {
             await Clipboard.setStringAsync(team.code);
-            Alert.alert("Copied ✅", "Team code copied to clipboard.");
+            showToast('Team code copied', 'You can now share it with your teammate.', 'success');
         } catch {
-            Alert.alert("Copy failed", "Please try again.");
+            showToast('Copy failed', 'Please try again.', 'danger');
         }
     };
 
@@ -188,168 +221,240 @@ export default function TeamDetailScreen({route}: Props) {
 
         try {
             await leaveTeam(teamId, user.uid);
-            Alert.alert("Left team", "You have left the team.");
+            showToast('You left the team', 'You can create or join another team later.', 'info');
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Failed to leave team.");
+            Alert.alert('Error', e?.message ?? 'Failed to leave team.');
         }
     };
 
     const toggleVisibility = async () => {
-        if (isViewMode) return;
-        if (!isCreator) return;
+        if (isViewMode || !isCreator) return;
 
         try {
-            await updateDoc(doc(db, "teams", teamId), {
+            await updateDoc(doc(db, 'teams', teamId), {
                 isPublic: !team.isPublic,
                 updatedAt: new Date(),
             });
-            Alert.alert("Updated", `Team is now ${!team.isPublic ? "Public" : "Private"}.`);
+
+            showToast(
+                'Visibility updated',
+                `Team is now ${!team.isPublic ? 'Public' : 'Private'}.`,
+                'success',
+            );
         } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Failed to update visibility.");
+            Alert.alert('Error', e?.message ?? 'Failed to update visibility.');
         }
     };
 
     return (
-        <View style={styles.container}>
-            {isViewMode ? (
-                <View style={styles.banner}>
-                    <Text style={styles.bannerText}>Viewing Team (Read-only)</Text>
-                </View>
-            ) : null}
-
-            <View style={styles.codeRow}>
-                <Text style={styles.subtitle}>
-                    Team code: {canCopyCode ? team.code : "Hidden"}
-                </Text>
-
-                <Pressable
-                    style={[styles.copyBtn, !canCopyCode && styles.copyBtnDisabled]}
-                    onPress={copyCode}
-                    disabled={!canCopyCode}
-                >
-                    <Text style={styles.copyBtnText}>Copy</Text>
-                </Pressable>
-            </View>
-
-            <View style={styles.visibilityBox}>
-                <Text style={styles.visibilityText}>Visibility: {visibilityLabel}</Text>
-
-                {/* Only allow toggling in MY mode and creator only */}
-                {!isViewMode ? (
-                    isCreator ? (
-                        <Pressable style={styles.visibilityBtn} onPress={toggleVisibility}>
-                            <Text style={styles.visibilityBtnText}>
-                                Make {team.isPublic ? "Private" : "Public"}
-                            </Text>
-                        </Pressable>
-                    ) : (
-                        <Text style={styles.visibilityHint}>Only the creator can change visibility.</Text>
-                    )
-                ) : (
-                    <Text style={styles.visibilityHint}>Read-only view from leaderboard.</Text>
-                )}
-            </View>
-
-            <Text style={styles.section}>Members</Text>
+        <AppGradientScreen scroll={false} padded={false}>
             <FlatList
                 data={memberList}
                 keyExtractor={(item) => item.uid}
-                renderItem={({item}) => (
-                    <View style={styles.memberRow}>
-                        <Text style={styles.memberName}>{item.displayName ?? "(No name)"}</Text>
-                        <Text style={styles.memberEmail}>{item.email ?? ""}</Text>
+                contentContainerStyle={styles.content}
+                ListHeaderComponent={
+                    <View>
+                        <AppText variant="caption" color="textMuted">
+                            Collaboration
+                        </AppText>
+
+                        <AppText variant="title" style={styles.title}>
+                            {isViewMode ? 'Team Preview' : 'My Team'}
+                        </AppText>
+
+                        {isViewMode ? (
+                            <InfoBanner
+                                title="Viewing Team"
+                                message="This is a read-only team view."
+                                tone="info"
+                            />
+                        ) : null}
+
+                        <AppCard style={styles.card}>
+                            <View style={styles.codeRow}>
+                                <View style={styles.codeTextArea}>
+                                    <AppText variant="caption" color="textMuted">
+                                        Team code
+                                    </AppText>
+
+                                    <AppText variant="subtitle" style={styles.code}>
+                                        {canCopyCode ? team.code : 'Hidden'}
+                                    </AppText>
+                                </View>
+
+                                <AppButton
+                                    title="Copy"
+                                    onPress={copyCode}
+                                    disabled={!canCopyCode}
+                                    fullWidth={false}
+                                    style={styles.copyButton}
+                                />
+                            </View>
+                        </AppCard>
+
+                        <AppCard style={styles.card}>
+                            <View style={styles.visibilityHeader}>
+                                <View>
+                                    <AppText variant="caption" color="textMuted">
+                                        Visibility
+                                    </AppText>
+                                    <AppText variant="subtitle" style={styles.visibilityTitle}>
+                                        {visibilityLabel}
+                                    </AppText>
+                                </View>
+
+                                <AppBadge
+                                    label={visibilityLabel}
+                                    tone={team.isPublic ? 'success' : 'warning'}
+                                />
+                            </View>
+
+                            {!isViewMode ? (
+                                isCreator ? (
+                                    <AppButton
+                                        title={`Make ${team.isPublic ? 'Private' : 'Public'}`}
+                                        variant="outline"
+                                        onPress={toggleVisibility}
+                                        style={styles.visibilityButton}
+                                    />
+                                ) : (
+                                    <AppText variant="body" color="textMuted" style={styles.helperText}>
+                                        Only the creator can change visibility.
+                                    </AppText>
+                                )
+                            ) : (
+                                <AppText variant="body" color="textMuted" style={styles.helperText}>
+                                    Read-only view from leaderboard.
+                                </AppText>
+                            )}
+                        </AppCard>
+
+                        <AppSectionHeader
+                            title="Members"
+                            subtitle={`${memberList.length} member${memberList.length === 1 ? '' : 's'} in this team`}
+                        />
                     </View>
+                }
+                renderItem={({item}) => (
+                    <AppCard style={styles.memberCard}>
+                        <AppText variant="bodyStrong">
+                            {item.displayName ?? '(No name)'}
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.memberEmail}>
+                            {item.email ?? ''}
+                        </AppText>
+                    </AppCard>
                 )}
+                ListFooterComponent={
+                    !isViewMode ? (
+                        <AppButton
+                            title="Leave Team"
+                            variant="outline"
+                            onPress={() => setLeaveDialogVisible(true)}
+                            style={styles.leaveButton}
+                        />
+                    ) : null
+                }
             />
 
-            {/* Leave team only in MY mode */}
-            {!isViewMode ? (
-                <Pressable style={[styles.button, styles.leave]} onPress={handleLeave}>
-                    <Text style={styles.buttonText}>Leave Team</Text>
-                </Pressable>
-            ) : null}
-        </View>
+            <AppConfirmDialog
+                visible={leaveDialogVisible}
+                title="Leave this team?"
+                message="You will no longer be part of this team. You can join again later if you have the team code."
+                confirmLabel="Leave"
+                cancelLabel="Stay"
+                danger
+                onCancel={() => setLeaveDialogVisible(false)}
+                onConfirm={() => {
+                    setLeaveDialogVisible(false);
+                    void handleLeave();
+                }}
+            />
+
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+        </AppGradientScreen>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flex: 1, padding: 20},
-    title: {fontSize: 28, fontWeight: "900", marginTop: 20},
-    subtitle: {marginTop: 8, opacity: 0.8},
-
-    banner: {
-        padding: 10,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        marginBottom: 12,
+    content: {
+        padding: spacing.lg,
+        paddingBottom: spacing.xxxl,
     },
-    bannerText: {fontWeight: "800", opacity: 0.85},
 
-    section: {marginTop: 18, fontWeight: "800", fontSize: 16},
+    title: {
+        marginTop: spacing.xs,
+        marginBottom: spacing.lg,
+    },
 
-    memberRow: {
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: "#eee",
+    card: {
+        marginBottom: spacing.md,
     },
-    memberName: {fontWeight: "800"},
-    memberEmail: {opacity: 0.7, marginTop: 2},
-
-    button: {
-        backgroundColor: "#111",
-        padding: 14,
-        borderRadius: 12,
-        alignItems: "center",
-        marginTop: 18,
-    },
-    leave: {backgroundColor: "#B00020"},
-    buttonText: {color: "white", fontWeight: "800"},
-
-    visibilityBox: {
-        marginTop: 14,
-        padding: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-    },
-    visibilityText: {fontWeight: "900"},
-    visibilityHint: {marginTop: 8, opacity: 0.7},
-    visibilityBtn: {
-        marginTop: 10,
-        backgroundColor: "#111",
-        paddingVertical: 10,
-        borderRadius: 10,
-        alignItems: "center",
-    },
-    visibilityBtnText: {color: "white", fontWeight: "800"},
 
     codeRow: {
-        marginTop: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        backgroundColor: "#fafafa",
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#eee",
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
     },
 
-    copyBtn: {
-        backgroundColor: "#111",
-        paddingHorizontal: 14,
-        paddingVertical: 6,
-        borderRadius: 999,
+    codeTextArea: {
+        flex: 1,
     },
-    copyBtnDisabled: {opacity: 0.5},
 
-    copyBtnText: {
-        color: "white",
-        fontWeight: "800",
-        fontSize: 12,
+    code: {
+        marginTop: spacing.xs,
+        letterSpacing: 1,
+    },
+
+    copyButton: {
+        minWidth: 92,
+        minHeight: 42,
+        paddingHorizontal: spacing.lg,
+    },
+
+    visibilityHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+
+    visibilityTitle: {
+        marginTop: spacing.xs,
+    },
+
+    visibilityButton: {
+        marginTop: spacing.md,
+    },
+
+    helperText: {
+        marginTop: spacing.sm,
+    },
+
+    memberCard: {
+        marginBottom: spacing.sm,
+        padding: spacing.lg,
+    },
+
+    memberEmail: {
+        marginTop: spacing.xs,
+    },
+
+    leaveButton: {
+        marginTop: spacing.xl,
+        marginBottom: spacing.xl,
+        borderColor: colors.danger,
+        backgroundColor: colors.dangerSoft,
     },
 });

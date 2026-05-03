@@ -1,18 +1,27 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useState} from 'react';
+import {StyleSheet, View} from 'react-native';
+import {doc, onSnapshot, updateDoc} from 'firebase/firestore';
+
+import {auth, db} from '../../services/firebase';
+import {logout} from '../../services/authService';
+import {syncQueuedSubmissions} from '../../services/syncService';
+import {submitOfflineToFirebase} from '../../services/offlineSubmissionSyncAdapter';
+
 import {
-    View,
-    Text,
-    TextInput,
-    Pressable,
-    StyleSheet,
-    ActivityIndicator,
-    Alert,
-} from "react-native";
-import {doc, onSnapshot, updateDoc} from "firebase/firestore";
-import {auth, db} from "../../services/firebase";
-import {logout} from "../../services/authService";
-import {syncQueuedSubmissions} from "../../services/syncService";
-import {submitOfflineToFirebase} from "../../services/offlineSubmissionSyncAdapter";
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppConfirmDialog,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../components/ui';
+
+import {colors, spacing} from '../../theme';
 
 type UserProfileDoc = {
     uid: string;
@@ -24,42 +33,72 @@ type UserProfileDoc = {
     updatedAt?: any;
 };
 
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone?: 'success' | 'info' | 'warning' | 'danger';
+};
+
 export default function ProfileScreen() {
     const user = auth.currentUser;
 
     const [profile, setProfile] = useState<UserProfileDoc | null>(null);
-    const [name, setName] = useState("");
+    const [name, setName] = useState('');
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+    });
 
     useEffect(() => {
         if (!user) return;
 
-        const ref = doc(db, "users", user.uid);
+        const ref = doc(db, 'users', user.uid);
         const unsub = onSnapshot(ref, (snap) => {
             if (!snap.exists()) return;
+
             const data = snap.data() as UserProfileDoc;
             setProfile(data);
-            setName(data.displayName ?? "");
+            setName(data.displayName ?? '');
         });
 
         return unsub;
     }, [user?.uid]);
 
+    const showToast = (
+        title: string,
+        message?: string,
+        tone: ToastState['tone'] = 'success',
+    ) => {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    };
+
     if (!user) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>Not logged in</Text>
-            </View>
+            <AppGradientScreen>
+                <AppText variant="title">Not logged in</AppText>
+                <InfoBanner
+                    title="Session unavailable"
+                    message="Please sign in again to access your profile."
+                    tone="warning"
+                />
+            </AppGradientScreen>
         );
     }
 
     if (!profile) {
         return (
-            <View style={[styles.container, {alignItems: "center"}]}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10}}>Loading profile...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading profile..."/>
+            </AppGradientScreen>
         );
     }
 
@@ -67,18 +106,20 @@ export default function ProfileScreen() {
         const trimmed = name.trim();
 
         if (trimmed.length < 2) {
-            Alert.alert("Invalid name", "Name must be at least 2 characters.");
+            showToast('Invalid name', 'Name must be at least 2 characters.', 'warning');
             return;
         }
 
         try {
             setSaving(true);
-            await updateDoc(doc(db, "users", user.uid), {
+
+            await updateDoc(doc(db, 'users', user.uid), {
                 displayName: trimmed,
             });
-            Alert.alert("Saved", "Your name has been updated.");
+
+            showToast('Profile updated', 'Your display name has been saved.', 'success');
         } catch (e: any) {
-            Alert.alert("Update failed", e?.message ?? "Please try again.");
+            showToast('Update failed', e?.message ?? 'Please try again.', 'danger');
         } finally {
             setSaving(false);
         }
@@ -93,21 +134,23 @@ export default function ProfileScreen() {
             });
 
             const syncedCount = results.filter(
-                (result) => result.status === "synced"
+                (result) => result.status === 'synced',
             ).length;
 
             const failedCount = results.filter(
-                (result) => result.status === "failed"
+                (result) => result.status === 'failed',
             ).length;
 
-            Alert.alert(
-                "Offline sync complete",
-                `Synced: ${syncedCount}\nFailed: ${failedCount}`
+            showToast(
+                'Offline sync complete',
+                `Synced: ${syncedCount} · Failed: ${failedCount}`,
+                failedCount > 0 ? 'warning' : 'success',
             );
         } catch (e: any) {
-            Alert.alert(
-                "Sync failed",
-                e?.message ?? "Unable to retry offline submissions."
+            showToast(
+                'Sync failed',
+                e?.message ?? 'Unable to retry offline submissions.',
+                'danger',
             );
         } finally {
             setSyncing(false);
@@ -115,93 +158,211 @@ export default function ProfileScreen() {
     };
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Profile</Text>
+        <AppGradientScreen>
+            <AppText variant="caption" color="textMuted">
+                Account
+            </AppText>
 
-            <View style={styles.card}>
-                <Text style={styles.row}>
-                    <Text style={styles.k}>Email: </Text>
-                    {profile.email ?? "-"}
-                </Text>
-                <Text style={styles.row}>
-                    <Text style={styles.k}>Provider: </Text>
-                    {profile.provider}
-                </Text>
-                <Text style={styles.row}>
-                    <Text style={styles.k}>Team ID: </Text>
-                    {profile.teamId ?? "Not in a team"}
-                </Text>
-                <Text style={styles.row}>
-                    <Text style={styles.k}>UID: </Text>
-                    {profile.uid}
-                </Text>
-            </View>
+            <AppText variant="title" style={styles.title}>
+                Profile
+            </AppText>
 
-            <Text style={styles.label}>Display name</Text>
-            <TextInput
-                style={styles.input}
-                value={name}
-                placeholder="Your name"
-                onChangeText={setName}
+            <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                Manage your display name, account information, and offline submission sync.
+            </AppText>
+
+            <AppCard style={styles.profileCard}>
+                <View style={styles.avatar}>
+                    <AppText variant="subtitle" color="inverseText">
+                        {(profile.displayName ?? profile.email ?? 'U').charAt(0).toUpperCase()}
+                    </AppText>
+                </View>
+
+                <View style={styles.profileTextArea}>
+                    <AppText variant="subtitle">
+                        {profile.displayName ?? 'Unnamed user'}
+                    </AppText>
+
+                    <AppText variant="caption" color="textMuted" style={styles.email}>
+                        {profile.email ?? '-'}
+                    </AppText>
+
+                    <View style={styles.badgeRow}>
+                        <AppBadge label={profile.provider} tone="info"/>
+                        <AppBadge
+                            label={profile.teamId ? 'In team' : 'No team'}
+                            tone={profile.teamId ? 'success' : 'warning'}
+                        />
+                    </View>
+                </View>
+            </AppCard>
+
+            <AppCard style={styles.sectionCard}>
+                <AppSectionHeader
+                    title="Display name"
+                    subtitle="This name is shown in teams and activity collaboration."
+                />
+
+                <AppInput
+                    value={name}
+                    placeholder="Your name"
+                    onChangeText={setName}
+                    editable={!saving}
+                />
+
+                <AppButton
+                    title={saving ? 'Saving...' : 'Save Changes'}
+                    onPress={saveName}
+                    loading={saving}
+                    disabled={saving}
+                />
+            </AppCard>
+
+            <AppCard style={styles.sectionCard}>
+                <AppSectionHeader
+                    title="Account Details"
+                    subtitle="Technical account information used by STEMM Lab."
+                />
+
+                <View style={styles.infoRow}>
+                    <AppText variant="caption" color="textMuted">
+                        Email
+                    </AppText>
+                    <AppText variant="bodyStrong" style={styles.infoValue}>
+                        {profile.email ?? '-'}
+                    </AppText>
+                </View>
+
+                <View style={styles.infoRow}>
+                    <AppText variant="caption" color="textMuted">
+                        Team ID
+                    </AppText>
+                    <AppText variant="bodyStrong" style={styles.infoValue}>
+                        {profile.teamId ?? 'Not in a team'}
+                    </AppText>
+                </View>
+
+                <View style={styles.infoRow}>
+                    <AppText variant="caption" color="textMuted">
+                        UID
+                    </AppText>
+                    <AppText variant="caption" color="textMuted" style={styles.uidText}>
+                        {profile.uid}
+                    </AppText>
+                </View>
+            </AppCard>
+
+            <AppCard style={styles.sectionCard}>
+                <AppSectionHeader
+                    title="Offline Submissions"
+                    subtitle="Retry queued activity submissions when connection is available."
+                />
+
+                <AppButton
+                    title={syncing ? 'Retrying sync...' : 'Retry Offline Submissions'}
+                    onPress={retryOfflineSubmissions}
+                    loading={syncing}
+                    disabled={syncing}
+                />
+            </AppCard>
+
+            <AppButton
+                title="Logout"
+                variant="outline"
+                onPress={() => setLogoutDialogVisible(true)}
+                style={styles.logoutButton}
             />
 
-            <Pressable
-                style={[styles.button, saving && styles.buttonDisabled]}
-                disabled={saving}
-                onPress={saveName}
-            >
-                <Text style={styles.buttonText}>
-                    {saving ? "Saving..." : "Save"}
-                </Text>
-            </Pressable>
+            <AppConfirmDialog
+                visible={logoutDialogVisible}
+                title="Logout?"
+                message="You will need to sign in again to access your STEMM Lab account."
+                confirmLabel="Logout"
+                cancelLabel="Stay"
+                danger
+                onCancel={() => setLogoutDialogVisible(false)}
+                onConfirm={() => {
+                    setLogoutDialogVisible(false);
+                    void logout();
+                }}
+            />
 
-            <Pressable
-                style={[styles.button, styles.syncButton, syncing && styles.buttonDisabled]}
-                disabled={syncing}
-                onPress={retryOfflineSubmissions}
-            >
-                <Text style={styles.buttonText}>
-                    {syncing ? "Retrying sync..." : "Retry Offline Submissions"}
-                </Text>
-            </Pressable>
-
-            <Pressable style={[styles.button, styles.logout]} onPress={logout}>
-                <Text style={styles.buttonText}>Logout</Text>
-            </Pressable>
-        </View>
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+        </AppGradientScreen>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flex: 1, padding: 20, justifyContent: "center"},
-    title: {fontSize: 28, fontWeight: "800", marginBottom: 18},
-    card: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        borderRadius: 14,
-        padding: 14,
-        marginBottom: 18,
-        backgroundColor: "#fafafa",
+    title: {
+        marginTop: spacing.xs,
     },
-    row: {marginBottom: 6},
-    k: {fontWeight: "700"},
-    label: {fontSize: 14, fontWeight: "700", marginTop: 6},
-    input: {
-        borderWidth: 1,
-        borderColor: "#ddd",
-        borderRadius: 12,
-        padding: 12,
-        marginTop: 8,
+
+    subtitle: {
+        marginTop: spacing.sm,
+        marginBottom: spacing.lg,
     },
-    button: {
-        backgroundColor: "#111",
-        padding: 14,
-        borderRadius: 12,
-        alignItems: "center",
-        marginTop: 14,
+
+    profileCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
     },
-    buttonDisabled: {opacity: 0.6},
-    buttonText: {color: "white", fontWeight: "800"},
-    syncButton: {backgroundColor: "#2563eb"},
-    logout: {backgroundColor: "#444"},
+
+    avatar: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    profileTextArea: {
+        flex: 1,
+    },
+
+    email: {
+        marginTop: spacing.xs,
+    },
+
+    badgeRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+
+    sectionCard: {
+        marginTop: spacing.md,
+    },
+
+    infoRow: {
+        marginTop: spacing.md,
+    },
+
+    infoValue: {
+        marginTop: spacing.xs,
+    },
+
+    uidText: {
+        marginTop: spacing.xs,
+    },
+
+    logoutButton: {
+        marginTop: spacing.xl,
+        marginBottom: spacing.xl,
+        borderColor: colors.danger,
+        backgroundColor: colors.dangerSoft,
+    },
 });

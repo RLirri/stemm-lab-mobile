@@ -1,11 +1,24 @@
-import React, {useEffect, useState} from "react";
-import {View, Text, Pressable, FlatList, ActivityIndicator, StyleSheet} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import type {AppStackParamList} from "../../navigation/AppStack";
-import {listActiveActivities} from "../../services/activityService";
-import type {Activity} from "../../types/activity";
+import React, {useEffect, useState} from 'react';
+import {FlatList, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-type Props = NativeStackScreenProps<AppStackParamList, "Activities">;
+import type {AppStackParamList} from '../../navigation/AppStack';
+import {listActiveActivities} from '../../services/activityService';
+import type {Activity} from '../../types/activity';
+
+import {
+    AppBadge,
+    AppCard,
+    AppGradientScreen,
+    AppText,
+    EmptyState,
+    LoadingState,
+    InfoBanner,
+} from '../../components/ui';
+
+import {spacing} from '../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'Activities'>;
 
 export default function ActivitiesListScreen({navigation}: Props) {
     const [items, setItems] = useState<Activity[]>([]);
@@ -14,16 +27,24 @@ export default function ActivitiesListScreen({navigation}: Props) {
 
     useEffect(() => {
         let mounted = true;
+
         (async () => {
             try {
                 const data = await listActiveActivities();
-                if (mounted) setItems(data);
+                if (mounted) {
+                    setItems(data);
+                }
             } catch (e: any) {
-                if (mounted) setError(e?.message ?? "Failed to load activities");
+                if (mounted) {
+                    setError(e?.message ?? 'Failed to load activities');
+                }
             } finally {
-                if (mounted) setLoading(false);
+                if (mounted) {
+                    setLoading(false);
+                }
             }
         })();
+
         return () => {
             mounted = false;
         };
@@ -31,79 +52,157 @@ export default function ActivitiesListScreen({navigation}: Props) {
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10}}>Loading activities...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading activities..."/>
+            </AppGradientScreen>
         );
     }
 
     if (error) {
         return (
-            <View style={styles.container}>
-                <Text style={styles.title}>Activities</Text>
-                <Text style={{marginTop: 10, fontWeight: "800"}}>Couldn’t load</Text>
-                <Text style={{marginTop: 6, opacity: 0.8}}>{error}</Text>
-            </View>
+            <AppGradientScreen>
+                <AppText variant="title">Activities</AppText>
+
+                <InfoBanner
+                    title="Couldn’t load activities"
+                    message={error}
+                    tone="danger"
+                />
+            </AppGradientScreen>
         );
     }
 
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Activities</Text>
+        <AppGradientScreen
+            padded={false}
+            scroll={false}
+        >
+            <FlatList
+                data={items}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.listContent}
+                ListHeaderComponent={
+                    <View style={styles.header}>
+                        <AppText variant="caption" color="textMuted">
+                            STEMM Lab
+                        </AppText>
 
-            {items.length === 0 ? (
-                <View style={{marginTop: 18}}>
-                    <Text style={{fontWeight: "800"}}>No activities yet</Text>
-                    <Text style={{marginTop: 6, opacity: 0.7}}>
-                        Ask admin to seed the Activity Catalog or create activity docs in Firestore.
-                    </Text>
-                </View>
-            ) : (
-                <FlatList
-                    data={items}
-                    keyExtractor={(a) => a.id}
-                    ItemSeparatorComponent={() => <View style={{height: 10}}/>}
-                    renderItem={({item}) => (
-                        <Pressable
-                            style={styles.card}
-                            onPress={() => navigation.navigate("ActivityDetail", {activityId: item.id})}
+                        <AppText variant="title" style={styles.title}>
+                            Activities
+                        </AppText>
+
+                        <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                            Choose a STEMM activity to start prediction, measurement,
+                            analysis, and reflection.
+                        </AppText>
+                    </View>
+                }
+                ListEmptyComponent={
+                    <EmptyState
+                        title="No activities yet"
+                        message="Ask admin to seed the Activity Catalog or create activity documents in Firestore."
+                    />
+                }
+                ItemSeparatorComponent={() => <View style={styles.separator}/>}
+                renderItem={({item}) => {
+                    const timeLabel =
+                        item.timeSpanMinutes && item.timeSpanMinutes > 0
+                            ? `~${item.timeSpanMinutes} min`
+                            : null;
+
+                    return (
+                        <AppCard
+                            style={styles.activityCard}
+                            onPress={() =>
+                                navigation.navigate('ActivityDetail', {
+                                    activityId: item.id,
+                                })
+                            }
                         >
-                            <Text style={styles.cardTitle}>{item.title}</Text>
+                            <View style={styles.cardHeader}>
+                                <AppText variant="sectionTitle" style={styles.cardTitle}>
+                                    {item.title}
+                                </AppText>
+
+                                <AppBadge label={item.difficulty} tone="primary"/>
+                            </View>
+
                             {item.shortDescription ? (
-                                <Text style={styles.cardDesc} numberOfLines={2}>
+                                <AppText
+                                    variant="body"
+                                    color="textMuted"
+                                    style={styles.cardDescription}
+                                    numberOfLines={2}
+                                >
                                     {item.shortDescription}
-                                </Text>
+                                </AppText>
                             ) : null}
 
-                            <Text style={styles.cardMeta}>
-                                {item.category} • {item.difficulty}
-                                {item.timeSpanMinutes ? ` • ~${item.timeSpanMinutes} min` : ""}
-                            </Text>
-                            <Text style={styles.cardMeta}>
-                                {item.category} • {item.difficulty}
-                            </Text>
-                        </Pressable>
-                    )}
-                />
-            )}
-        </View>
+                            <View style={styles.cardFooter}>
+                                <AppBadge label={item.category} tone="info"/>
+
+                                {timeLabel ? (
+                                    <AppText variant="caption" color="textMuted">
+                                        {timeLabel}
+                                    </AppText>
+                                ) : null}
+                            </View>
+                        </AppCard>
+                    );
+                }}
+            />
+        </AppGradientScreen>
     );
 }
 
-
 const styles = StyleSheet.create({
-    container: {flex: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-    title: {fontSize: 28, fontWeight: "900", marginTop: 10, marginBottom: 10},
-    card: {
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    listContent: {
+        padding: spacing.lg,
+        paddingBottom: spacing.xxxl,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    cardMeta: {marginTop: 6, opacity: 0.8},
-    cardDesc: {marginTop: 6, opacity: 0.85, lineHeight: 18},
+
+    header: {
+        marginBottom: spacing.xl,
+    },
+
+    title: {
+        marginTop: spacing.xs,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+        maxWidth: 620,
+    },
+
+    separator: {
+        height: spacing.md,
+    },
+
+    activityCard: {
+        padding: spacing.lg,
+        borderRadius: 22,
+    },
+
+    cardHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    cardTitle: {
+        flex: 1,
+    },
+
+    cardDescription: {
+        marginTop: spacing.sm,
+    },
+
+    cardFooter: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
 });
