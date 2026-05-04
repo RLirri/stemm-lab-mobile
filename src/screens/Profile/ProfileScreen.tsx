@@ -60,7 +60,10 @@ function formatMemberSince(createdAt?: any): string {
     })}`;
 }
 
+import {useNavigation} from '@react-navigation/native';
+
 export default function ProfileScreen() {
+    const navigation = useNavigation<any>();
     const user = auth.currentUser;
 
     const [profile, setProfile] = useState<UserProfileDoc | null>(null);
@@ -253,6 +256,15 @@ export default function ProfileScreen() {
             <View style={styles.sectionCard}>
                 <BatteryStatusCard/>
             </View>
+            <AppCard
+                style={styles.sectionCard}
+                onPress={() => navigation.navigate('ActivityHistory')}
+            >
+                <AppText variant="sectionTitle">Learning history</AppText>
+                <AppText variant="caption" color="textMuted">
+                    View your submitted STEMM activities and results.
+                </AppText>
+            </AppCard>
 
             <AppCard style={styles.sectionCard}>
                 <AppSectionHeader

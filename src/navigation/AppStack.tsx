@@ -9,6 +9,7 @@ import ExploreTeamsScreen from "../screens/Teams/ExploreTeamsScreen";
 import LeaderboardScreen from "../screens/Leaderboard/LeaderboardScreen";
 import ActivitiesListScreen from "../screens/Activities/ActivitiesListScreen";
 import ActivityDetailScreen from "../screens/Activities/ActivityDetailScreen";
+import ActivityHistoryScreen from '../screens/Activities/ActivityHistoryScreen';
 
 /* ============================
    Activity 1 (Parachute Drop)
@@ -94,6 +95,7 @@ export type AppStackParamList = {
 
     Activities: undefined;
     ActivityDetail: { activityId: string };
+    ActivityHistory: undefined;
 
     /* ============================
        Activity 1 Flow
@@ -183,6 +185,10 @@ export default function AppStack() {
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{title: "Leaderboard"}}/>
             <Stack.Screen name="Activities" component={ActivitiesListScreen} options={{title: "Activities"}}/>
             <Stack.Screen name="ActivityDetail" component={ActivityDetailScreen} options={{title: "Activity"}}/>
+            <Stack.Screen
+                name="ActivityHistory"
+                component={ActivityHistoryScreen}
+            />
 
             {/* Activity 1 */}
             <Stack.Screen name="A1SessionSetup" component={A1SessionSetupScreen} options={{title: "Session Setup"}}/>
