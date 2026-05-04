@@ -1,11 +1,13 @@
 import React, {useEffect, useState} from 'react';
-import {StyleSheet, View} from 'react-native';
+import {Pressable, StyleSheet, View} from 'react-native';
 import {doc, onSnapshot, updateDoc} from 'firebase/firestore';
 
 import {auth, db} from '../../services/firebase';
 import {logout} from '../../services/authService';
 import {syncQueuedSubmissions} from '../../services/syncService';
 import {submitOfflineToFirebase} from '../../services/offlineSubmissionSyncAdapter';
+
+import {BatteryStatusCard} from '../../components/battery/BatteryStatusCard';
 
 import {
     AppBadge,
@@ -40,6 +42,24 @@ type ToastState = {
     tone?: 'success' | 'info' | 'warning' | 'danger';
 };
 
+function formatMemberSince(createdAt?: any): string {
+    const date =
+        createdAt?.toDate instanceof Function
+            ? createdAt.toDate()
+            : createdAt instanceof Date
+                ? createdAt
+                : null;
+
+    if (!date) {
+        return 'Member since unavailable';
+    }
+
+    return `Member since ${date.toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+    })}`;
+}
+
 export default function ProfileScreen() {
     const user = auth.currentUser;
 
@@ -47,6 +67,7 @@ export default function ProfileScreen() {
     const [name, setName] = useState('');
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [technicalOpen, setTechnicalOpen] = useState(false);
     const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
     const [toast, setToast] = useState<ToastState>({
         visible: false,
@@ -157,6 +178,12 @@ export default function ProfileScreen() {
         }
     };
 
+    const providerLabel =
+        profile.provider === 'password' ? 'Email account' : profile.provider;
+
+    const teamStatusLabel = profile.teamId ? 'Team member' : 'No team';
+    const memberSinceLabel = formatMemberSince(profile.createdAt);
+
     return (
         <AppGradientScreen>
             <AppText variant="caption" color="textMuted">
@@ -168,7 +195,7 @@ export default function ProfileScreen() {
             </AppText>
 
             <AppText variant="body" color="textMuted" style={styles.subtitle}>
-                Manage your display name, account information, and offline submission sync.
+                Manage your account settings, device status, and offline learning data.
             </AppText>
 
             <AppCard style={styles.profileCard}>
@@ -187,10 +214,14 @@ export default function ProfileScreen() {
                         {profile.email ?? '-'}
                     </AppText>
 
+                    <AppText variant="caption" color="textMuted" style={styles.memberSince}>
+                        {memberSinceLabel}
+                    </AppText>
+
                     <View style={styles.badgeRow}>
-                        <AppBadge label={profile.provider} tone="info"/>
+                        <AppBadge label={providerLabel} tone="info"/>
                         <AppBadge
-                            label={profile.teamId ? 'In team' : 'No team'}
+                            label={teamStatusLabel}
                             tone={profile.teamId ? 'success' : 'warning'}
                         />
                     </View>
@@ -215,13 +246,18 @@ export default function ProfileScreen() {
                     onPress={saveName}
                     loading={saving}
                     disabled={saving}
+                    style={styles.cardButton}
                 />
             </AppCard>
 
+            <View style={styles.sectionCard}>
+                <BatteryStatusCard/>
+            </View>
+
             <AppCard style={styles.sectionCard}>
                 <AppSectionHeader
-                    title="Account Details"
-                    subtitle="Technical account information used by STEMM Lab."
+                    title="Account information"
+                    subtitle="Basic account information used in your learning experience."
                 />
 
                 <View style={styles.infoRow}>
@@ -235,26 +271,46 @@ export default function ProfileScreen() {
 
                 <View style={styles.infoRow}>
                     <AppText variant="caption" color="textMuted">
-                        Team ID
+                        Team
                     </AppText>
                     <AppText variant="bodyStrong" style={styles.infoValue}>
                         {profile.teamId ?? 'Not in a team'}
                     </AppText>
                 </View>
 
-                <View style={styles.infoRow}>
-                    <AppText variant="caption" color="textMuted">
-                        UID
+                <Pressable
+                    onPress={() => setTechnicalOpen((prev) => !prev)}
+                    style={styles.technicalHeader}
+                >
+                    <View>
+                        <AppText variant="bodyStrong">
+                            Technical details
+                        </AppText>
+                        <AppText variant="caption" color="textMuted" style={styles.technicalHint}>
+                            {technicalOpen ? 'Hide account identifier' : 'Show account identifier'}
+                        </AppText>
+                    </View>
+
+                    <AppText variant="bodyStrong" color="primary">
+                        {technicalOpen ? 'Hide' : 'Show'}
                     </AppText>
-                    <AppText variant="caption" color="textMuted" style={styles.uidText}>
-                        {profile.uid}
-                    </AppText>
-                </View>
+                </Pressable>
+
+                {technicalOpen ? (
+                    <View style={styles.technicalPanel}>
+                        <AppText variant="caption" color="textMuted">
+                            UID
+                        </AppText>
+                        <AppText variant="caption" color="textMuted" style={styles.uidText}>
+                            {profile.uid}
+                        </AppText>
+                    </View>
+                ) : null}
             </AppCard>
 
             <AppCard style={styles.sectionCard}>
                 <AppSectionHeader
-                    title="Offline Submissions"
+                    title="Offline submissions"
                     subtitle="Retry queued activity submissions when connection is available."
                 />
 
@@ -263,6 +319,7 @@ export default function ProfileScreen() {
                     onPress={retryOfflineSubmissions}
                     loading={syncing}
                     disabled={syncing}
+                    style={styles.cardButton}
                 />
             </AppCard>
 
@@ -336,6 +393,10 @@ const styles = StyleSheet.create({
         marginTop: spacing.xs,
     },
 
+    memberSince: {
+        marginTop: spacing.xs,
+    },
+
     badgeRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -347,12 +408,38 @@ const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
 
+    cardButton: {
+        marginTop: spacing.md,
+    },
+
     infoRow: {
         marginTop: spacing.md,
     },
 
     infoValue: {
         marginTop: spacing.xs,
+    },
+
+    technicalHeader: {
+        marginTop: spacing.lg,
+        paddingTop: spacing.md,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    technicalHint: {
+        marginTop: spacing.xs,
+    },
+
+    technicalPanel: {
+        marginTop: spacing.md,
+        padding: spacing.md,
+        borderRadius: 16,
+        backgroundColor: colors.surfaceMuted,
     },
 
     uidText: {

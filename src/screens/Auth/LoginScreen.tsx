@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Pressable, StyleSheet} from 'react-native';
+import {Pressable, StyleSheet, View} from 'react-native';
 
 import {useForm} from 'react-hook-form';
 import {z} from 'zod';
@@ -113,53 +113,59 @@ export default function LoginScreen({navigation}: Props) {
 
     return (
         <AppGradientScreen contentStyle={styles.screenContent}>
-            <AppText variant="caption" color="textMuted">
-                STEMM Lab
-            </AppText>
+            <View style={styles.hero}>
+                <AppText variant="caption" color="textMuted">
+                    STEMM Lab
+                </AppText>
 
-            <AppText variant="title" style={styles.title}>
-                Welcome back
-            </AppText>
+                <AppText variant="title" style={styles.title}>
+                    Welcome back
+                </AppText>
 
-            <AppText variant="body" color="textMuted" style={styles.subtitle}>
-                Sign in to continue your activities, team collaboration, and offline submissions.
-            </AppText>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Sign in to continue your activities, team collaboration, and offline submissions.
+                </AppText>
+            </View>
 
             <AppCard style={styles.card}>
-                <AppText variant="sectionTitle">Login</AppText>
+                <AppText variant="sectionTitle" style={styles.cardTitle}>
+                    Login
+                </AppText>
 
-                <AppInput
-                    placeholder="you@example.com"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    onChangeText={(text) =>
-                        setValue('email', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                <View style={styles.inputGroup}>
+                    <AppInput
+                        placeholder="you@example.com"
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        onChangeText={(text) =>
+                            setValue('email', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.email ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.email.message}
-                    </AppText>
-                ) : null}
+                    {errors.email ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.email.message}
+                        </AppText>
+                    ) : null}
 
-                <AppInput
-                    placeholder="Password"
-                    secureTextEntry
-                    onChangeText={(text) =>
-                        setValue('password', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                    <AppInput
+                        placeholder="Password"
+                        secureTextEntry
+                        onChangeText={(text) =>
+                            setValue('password', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.password ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.password.message}
-                    </AppText>
-                ) : null}
+                    {errors.password ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.password.message}
+                        </AppText>
+                    ) : null}
+                </View>
 
                 <AppButton
                     title={submitting ? 'Logging in...' : 'Login'}
@@ -206,26 +212,36 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 
+    hero: {
+        marginBottom: spacing.xl,
+    },
+
     title: {
         marginTop: spacing.xs,
     },
 
     subtitle: {
         marginTop: spacing.sm,
-        marginBottom: spacing.xl,
     },
 
     card: {
         marginBottom: spacing.lg,
     },
 
+    cardTitle: {
+        marginBottom: spacing.lg,
+    },
+
+    inputGroup: {
+        gap: spacing.md,
+    },
+
     error: {
         marginTop: -spacing.sm,
-        marginBottom: spacing.sm,
     },
 
     loginButton: {
-        marginTop: spacing.md,
+        marginTop: spacing.xl,
     },
 
     googleButton: {

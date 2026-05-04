@@ -7,7 +7,6 @@ import {auth} from '../../services/firebase';
 import {backfillTeamStats} from '../../services/teamMigrationService';
 import {seedActivities} from '../../services/activityAdminService';
 import {activityCatalog} from '../../features/activities/activityCatalog';
-import {BatteryStatusCard} from '../../components/battery/BatteryStatusCard';
 
 import {
     AppBadge,
@@ -27,20 +26,17 @@ type Props = NativeStackScreenProps<AppStackParamList, 'Home'>;
 
 export default function HomeScreen({navigation}: Props) {
     const user = auth.currentUser;
-
-    console.log(
-        'UID:',
-        user?.uid,
-        'EMAIL:',
-        user?.email,
-        'DISPLAY:',
-        user?.displayName,
-    );
-
     const [migrating, setMigrating] = useState(false);
 
     const ADMIN_UIDS = ['U9Uicg91tbVUTBQvyFpmB3rXtI92'];
     const isAdmin = !!user?.uid && ADMIN_UIDS.includes(user.uid);
+
+    const displayName = user?.displayName ?? user?.email ?? 'STEMM Lab learner';
+
+    const smartHint =
+        user?.displayName || user?.email
+            ? 'Continue your latest experiment, manage your team, or review your learning progress.'
+            : 'Start your first STEMM activity and explore prediction, measurement, and reflection.';
 
     const handleBackfill = async () => {
         try {
@@ -71,21 +67,10 @@ export default function HomeScreen({navigation}: Props) {
         }
     };
 
-    const displayName = user?.displayName ?? user?.email ?? 'STEMM Lab learner';
-
     return (
         <AppGradientScreen>
-            <View style={styles.header}>
-                <View style={styles.headerText}>
-                    <AppText variant="caption" color="textMuted">
-                        Welcome back
-                    </AppText>
-
-                    <AppText variant="title" style={styles.title}>
-                        {displayName}
-                    </AppText>
-                </View>
-
+            <View style={styles.topActionRow}>
+                <View/>
                 <AppIconButton
                     label="⚙"
                     accessibilityLabel="Open profile"
@@ -93,15 +78,29 @@ export default function HomeScreen({navigation}: Props) {
                 />
             </View>
 
+            <View style={styles.hero}>
+                <AppText variant="caption" color="textMuted">
+                    Welcome back
+                </AppText>
+
+                <AppText variant="title" style={styles.title}>
+                    {displayName}
+                </AppText>
+
+                <AppText
+                    variant="body"
+                    color="textMuted"
+                    style={styles.heroSubtitle}
+                >
+                    What would you like to explore today?
+                </AppText>
+            </View>
+
             <InfoBanner
                 title="STEMM Lab is ready"
-                message="Continue your science activities, manage your team, or review leaderboard progress."
+                message={smartHint}
                 tone="info"
             />
-
-            <View style={styles.batteryWrapper}>
-                <BatteryStatusCard compact/>
-            </View>
 
             <AppSectionHeader
                 title="Main actions"
@@ -178,6 +177,7 @@ export default function HomeScreen({navigation}: Props) {
                     />
                 </>
             ) : null}
+
             <AppBottomNavBar
                 items={[
                     {
@@ -203,24 +203,23 @@ export default function HomeScreen({navigation}: Props) {
 }
 
 const styles = StyleSheet.create({
-    header: {
+    topActionRow: {
         flexDirection: 'row',
-        alignItems: 'flex-start',
         justifyContent: 'space-between',
-        marginBottom: spacing.lg,
+        alignItems: 'center',
+        marginBottom: spacing.sm,
     },
 
-    headerText: {
-        flex: 1,
-        paddingRight: spacing.md,
+    hero: {
+        marginBottom: spacing.xl,
     },
 
     title: {
         marginTop: spacing.xs,
     },
 
-    batteryWrapper: {
-        marginBottom: spacing.md,
+    heroSubtitle: {
+        marginTop: spacing.sm,
     },
 
     cardHeader: {

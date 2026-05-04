@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Pressable, StyleSheet} from 'react-native';
+import {Pressable, StyleSheet, View} from 'react-native';
 
 import {useForm} from 'react-hook-form';
 import {z} from 'zod';
@@ -108,87 +108,91 @@ export default function RegisterScreen({navigation}: Props) {
 
     return (
         <AppGradientScreen contentStyle={styles.screenContent}>
-            <AppText variant="caption" color="textMuted">
-                STEMM Lab
-            </AppText>
+            <View style={styles.hero}>
+                <AppText variant="caption" color="textMuted">
+                    STEMM Lab
+                </AppText>
 
-            <AppText variant="title" style={styles.title}>
-                Create account
-            </AppText>
+                <AppText variant="title" style={styles.title}>
+                    Create account
+                </AppText>
 
-            <AppText variant="body" color="textMuted" style={styles.subtitle}>
-                Join STEMM Lab to participate in collaborative activities, experiments,
-                and offline learning workflows.
-            </AppText>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Join STEMM Lab to participate in collaborative activities,
+                    experiments, and offline learning workflows.
+                </AppText>
+            </View>
 
             <AppCard style={styles.card}>
-                <AppText variant="sectionTitle">
+                <AppText variant="sectionTitle" style={styles.cardTitle}>
                     Register
                 </AppText>
 
-                <AppInput
-                    placeholder="Your name"
-                    onChangeText={(text) =>
-                        setValue('displayName', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                <View style={styles.inputGroup}>
+                    <AppInput
+                        placeholder="Your name"
+                        onChangeText={(text) =>
+                            setValue('displayName', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.displayName ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.displayName.message}
-                    </AppText>
-                ) : null}
+                    {errors.displayName ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.displayName.message}
+                        </AppText>
+                    ) : null}
 
-                <AppInput
-                    placeholder="you@example.com"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    onChangeText={(text) =>
-                        setValue('email', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                    <AppInput
+                        placeholder="you@example.com"
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        onChangeText={(text) =>
+                            setValue('email', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.email ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.email.message}
-                    </AppText>
-                ) : null}
+                    {errors.email ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.email.message}
+                        </AppText>
+                    ) : null}
 
-                <AppInput
-                    placeholder="At least 6 characters"
-                    secureTextEntry
-                    onChangeText={(text) =>
-                        setValue('password', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                    <AppInput
+                        placeholder="At least 6 characters"
+                        secureTextEntry
+                        onChangeText={(text) =>
+                            setValue('password', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.password ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.password.message}
-                    </AppText>
-                ) : null}
+                    {errors.password ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.password.message}
+                        </AppText>
+                    ) : null}
 
-                <AppInput
-                    placeholder="Repeat password"
-                    secureTextEntry
-                    onChangeText={(text) =>
-                        setValue('confirmPassword', text, {
-                            shouldValidate: true,
-                        })
-                    }
-                />
+                    <AppInput
+                        placeholder="Repeat password"
+                        secureTextEntry
+                        onChangeText={(text) =>
+                            setValue('confirmPassword', text, {
+                                shouldValidate: true,
+                            })
+                        }
+                    />
 
-                {errors.confirmPassword ? (
-                    <AppText variant="caption" color="danger" style={styles.error}>
-                        {errors.confirmPassword.message}
-                    </AppText>
-                ) : null}
+                    {errors.confirmPassword ? (
+                        <AppText variant="caption" color="danger" style={styles.error}>
+                            {errors.confirmPassword.message}
+                        </AppText>
+                    ) : null}
+                </View>
 
                 <AppButton
                     title={submitting ? 'Creating account...' : 'Register'}
@@ -231,26 +235,36 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 
+    hero: {
+        marginBottom: spacing.xl,
+    },
+
     title: {
         marginTop: spacing.xs,
     },
 
     subtitle: {
         marginTop: spacing.sm,
-        marginBottom: spacing.xl,
     },
 
     card: {
         marginBottom: spacing.lg,
     },
 
+    cardTitle: {
+        marginBottom: spacing.lg,
+    },
+
+    inputGroup: {
+        gap: spacing.md,
+    },
+
     error: {
         marginTop: -spacing.sm,
-        marginBottom: spacing.sm,
     },
 
     registerButton: {
-        marginTop: spacing.md,
+        marginTop: spacing.xl,
     },
 
     link: {
