@@ -1,185 +1,301 @@
-import React from "react";
-import {Pressable, ScrollView, StyleSheet, Text, View} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import React from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {activity05_humanPerformance} from "../../../features/activities/definitions/activity05_humanPerformance";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {activity05_humanPerformance} from '../../../features/activities/definitions/activity05_humanPerformance';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A5Overview">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppExpandableCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppText,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A5Overview'>;
 
 export default function A5OverviewScreen({navigation}: Props) {
     const activity = activity05_humanPerformance;
 
     function onStart() {
-        // Keep Overview lightweight: SessionSetup can create the run draft if needed.
-        navigation.navigate("A5SessionSetup", {
+        navigation.navigate('A5SessionSetup', {
             activityId: activity.id,
         });
     }
 
-    const equipment = Array.isArray(activity.equipment) ? activity.equipment : [];
+    function onBack() {
+        navigation.goBack();
+    }
+
+    const equipment = Array.isArray(activity.equipment)
+        ? activity.equipment
+        : [];
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>{activity.title}</Text>
-            <Text style={styles.short}>{activity.shortDescription}</Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 5" tone="primary"/>
 
-            {/* Objective */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Objective</Text>
-                <Text style={styles.body}>
-                    Investigate how the human body moves by measuring{" "}
-                    <Text style={styles.bold}>speed</Text>,{" "}
-                    <Text style={styles.bold}>smoothness</Text>, and{" "}
-                    <Text style={styles.bold}>range of motion</Text> during controlled stretching movements.
-                </Text>
+                <AppText variant="title" style={styles.title}>
+                    {activity.title}
+                </AppText>
+
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    {activity.shortDescription}
+                </AppText>
             </View>
 
-            {/* What you will do */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>What You Will Do</Text>
-                <Text style={styles.body}>• Hold the phone firmly in one hand.</Text>
-                <Text style={styles.body}>• Follow at least 3 guided movement instructions.</Text>
-                <Text style={styles.body}>• Record motion in Baseline mode (no guidance).</Text>
-                <Text style={styles.body}>• Repeat in Feedback mode (real-time smoothness guidance).</Text>
-                <Text style={styles.body}>• Compare results across movements + participants.</Text>
-            </View>
+            <AppCard>
+                <AppText variant="sectionTitle">
+                    Human Motion Investigation
+                </AppText>
 
-            {/* Movements */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Guided Movements</Text>
-                <Text style={styles.body}>Movement 1 — Slow arm extension</Text>
-                <Text style={styles.body}>Movement 2 — Controlled forward stretch</Text>
-                <Text style={styles.body}>Movement 3 — Coordinated lateral motion</Text>
+                <AppText variant="caption" color="textMuted" style={styles.cardText}>
+                    Measure movement smoothness, control, displacement, and guided
+                    motion performance using accelerometer sensor analysis.
+                </AppText>
 
-                <View style={styles.miniCard}>
-                    <Text style={styles.miniTitle}>Each movement includes</Text>
-                    <Text style={styles.miniText}>• Visual instruction / animation</Text>
-                    <Text style={styles.miniText}>• Duration guidance</Text>
-                    <Text style={styles.miniText}>• Posture guidance</Text>
+                <AppButton
+                    title="Start Activity"
+                    onPress={onStart}
+                    style={styles.startButton}
+                />
+
+                <AppButton
+                    title="Back"
+                    onPress={() =>
+                        Alert.alert('Back', 'Return to the previous screen?', [
+                            {text: 'Cancel', style: 'cancel'},
+                            {text: 'OK', onPress: onBack},
+                        ])
+                    }
+                    variant="ghost"
+                    style={styles.backButton}
+                />
+            </AppCard>
+
+            <AppSectionHeader
+                title="Activity Guide"
+                subtitle="Review the movement tasks, data collection process, safety requirements, and scoring."
+            />
+
+            <AppExpandableCard title="Objective" defaultExpanded>
+                <AppText variant="body" color="textMuted">
+                    Investigate how the human body moves by measuring speed,
+                    smoothness, and range of motion during controlled stretching
+                    movements.
+                </AppText>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="What You Will Do">
+                <StepItem index={1} text="Hold the phone firmly in one hand."/>
+                <StepItem
+                    index={2}
+                    text="Follow at least 3 guided movement instructions."
+                />
+                <StepItem
+                    index={3}
+                    text="Record motion in Baseline mode without guidance."
+                />
+                <StepItem
+                    index={4}
+                    text="Repeat trials in Feedback mode with smoothness guidance."
+                />
+                <StepItem
+                    index={5}
+                    text="Compare movement quality across participants and trials."
+                />
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Guided Movements">
+                <Bullet text="Movement 1 — Slow arm extension"/>
+                <Bullet text="Movement 2 — Controlled forward stretch"/>
+                <Bullet text="Movement 3 — Coordinated lateral motion"/>
+
+                <View style={styles.highlightCard}>
+                    <AppText variant="bodyStrong">
+                        Each movement includes:
+                    </AppText>
+
+                    <Bullet text="Visual instruction or animation"/>
+                    <Bullet text="Duration guidance"/>
+                    <Bullet text="Posture guidance"/>
                 </View>
-            </View>
+            </AppExpandableCard>
 
-            {/* How it works */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>How It Works</Text>
-                <Text style={styles.body}>
-                    • The accelerometer records X/Y/Z motion continuously during each trial.
-                </Text>
-                <Text style={styles.body}>
-                    • The app measures <Text style={styles.bold}>duration</Text> (seconds).
-                </Text>
-                <Text style={styles.body}>
-                    • The app estimates <Text style={styles.bold}>displacement magnitude</Text> (mm/cm).
-                </Text>
-                <Text style={styles.body}>
-                    • The app computes a <Text style={styles.bold}>smoothness index</Text> (lower = smoother).
-                </Text>
-                <Text style={styles.body}>
-                    • Improvement = Baseline Smoothness − Feedback Smoothness (higher = better).
-                </Text>
-            </View>
+            <AppExpandableCard title="How It Works">
+                <StepItem
+                    index={1}
+                    text="The accelerometer continuously records X, Y, and Z motion."
+                />
 
-            {/* Equipment */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Equipment</Text>
+                <StepItem
+                    index={2}
+                    text="The app measures movement duration in seconds."
+                />
+
+                <StepItem
+                    index={3}
+                    text="The app estimates displacement magnitude."
+                />
+
+                <StepItem
+                    index={4}
+                    text="A smoothness index is calculated."
+                />
+
+                <StepItem
+                    index={5}
+                    text="Higher improvement values indicate better guided performance."
+                />
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Equipment">
                 {equipment.length > 0 ? (
                     equipment.map((item) => (
-                        <Text key={item} style={styles.listItem}>
-                            • {item}
-                        </Text>
+                        <Bullet key={item} text={item}/>
                     ))
                 ) : (
-                    <Text style={styles.muted}>No equipment specified.</Text>
+                    <AppText variant="body" color="textMuted">
+                        No equipment specified.
+                    </AppText>
                 )}
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Safety">
+                <Bullet text="Use an open and safe movement space."/>
+                <Bullet text="Keep a stable grip on the phone."/>
+                <Bullet text="Move slowly and carefully."/>
+                <Bullet text="Stop immediately if pain or dizziness occurs."/>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Submission Requirements">
+                <Bullet text="Sensor dataset recorded"/>
+                <Bullet text="Video evidence of movement trials"/>
+                <Bullet text="Reflection text completed"/>
+                <Bullet text="Rating submitted (1–5)"/>
+                <Bullet text="GPS coordinates captured"/>
+            </AppExpandableCard>
+
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
+    );
+}
+
+function Bullet({text}: { text: string }) {
+    return (
+        <View style={styles.bulletRow}>
+            <View style={styles.bulletDot}/>
+
+            <AppText variant="bodyStrong" style={styles.bulletText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
+
+function StepItem({
+                      index,
+                      text,
+                  }: {
+    index: number;
+    text: string;
+}) {
+    return (
+        <View style={styles.stepRow}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
             </View>
 
-            {/* Safety */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Safety</Text>
-                <Text style={styles.body}>• Use an open space and move slowly.</Text>
-                <Text style={styles.body}>• Keep a stable grip on the phone.</Text>
-                <Text style={styles.body}>• Stop if you feel pain or dizziness.</Text>
-            </View>
-
-            {/* Submission checklist */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Submission Requirements</Text>
-                <Text style={styles.body}>• Sensor dataset recorded</Text>
-                <Text style={styles.body}>• Video evidence of movement trials</Text>
-                <Text style={styles.body}>• Reflection text</Text>
-                <Text style={styles.body}>• Rating (1–5)</Text>
-                <Text style={styles.body}>• GPS coordinates</Text>
-            </View>
-
-            <Pressable style={styles.primaryBtn} onPress={onStart}>
-                <Text style={styles.primaryBtnText}>Start Activity</Text>
-            </Pressable>
-
-            <View style={{height: 40}}/>
-        </ScrollView>
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {text}
+            </AppText>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#fff",
+    header: {
+        marginBottom: spacing.lg,
     },
+
     title: {
-        fontSize: 26,
-        fontWeight: "900",
+        marginTop: spacing.md,
     },
-    short: {
-        marginTop: 8,
-        opacity: 0.75,
-        lineHeight: 20,
-    },
-    bold: {fontWeight: "900"},
 
-    card: {
-        marginTop: 16,
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    cardText: {
+        marginTop: spacing.sm,
+    },
+
+    startButton: {
+        marginTop: spacing.lg,
+    },
+
+    backButton: {
+        marginTop: spacing.md,
+    },
+
+    bulletRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+        marginTop: spacing.md,
+    },
+
+    bulletDot: {
+        width: 8,
+        height: 8,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        marginTop: 7,
+    },
+
+    bulletText: {
+        flex: 1,
+    },
+
+    stepRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+        marginTop: spacing.md,
+    },
+
+    stepNumber: {
+        width: 26,
+        height: 26,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    stepText: {
+        flex: 1,
+        paddingTop: 2,
+    },
+
+    highlightCard: {
+        marginTop: spacing.lg,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: "900",
-        marginBottom: 8,
-    },
-    body: {
-        marginTop: 4,
-        lineHeight: 20,
+        borderColor: colors.border,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        backgroundColor: colors.surfaceMuted,
     },
 
-    miniCard: {
-        marginTop: 12,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
-    },
-    miniTitle: {fontWeight: "900"},
-    miniText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
-
-    listItem: {marginTop: 6, opacity: 0.9, lineHeight: 18},
-    muted: {marginTop: 8, opacity: 0.6, lineHeight: 18},
-
-    primaryBtn: {
-        marginTop: 20,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {
-        color: "white",
-        fontWeight: "900",
-        fontSize: 16,
+    bottomSpace: {
+        height: spacing.xxl,
     },
 });

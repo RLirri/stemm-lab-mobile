@@ -1,20 +1,11 @@
 // src/screens/Activities/Activity6/A6TracingChallengeScreen.tsx
-import React, {useEffect, useMemo, useRef, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     getActivity6RunDraft,
@@ -22,19 +13,39 @@ import {
     type Activity6RunDraft,
     type A6TracingPathType,
     type A6TracePoint,
-} from "../../../store/activity6RunDraftStore";
+} from '../../../store/activity6RunDraftStore';
 
 import {
     computeTracingDeviation,
     computeTracingAccuracyScore,
     A6_RECOMMENDED_MAX_DEV_PX,
-} from "../../../services/activity6ReactionBoardService";
+} from '../../../services/activity6ReactionBoardService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A6TracingChallenge">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
 
-/* =========================================================
-   Helpers
-========================================================= */
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A6TracingChallenge'>;
+
+type Mode = 'idle' | 'recording' | 'saved';
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 function now() {
     return Date.now();
@@ -49,68 +60,69 @@ function clampNum(n: number, min: number, max: number) {
 }
 
 function safeParticipantName(run: Activity6RunDraft, pid: string) {
-    return run.session.participants.find((p) => p.id === pid)?.name ?? "—";
+    return run.session.participants.find((p) => p.id === pid)?.name ?? '—';
 }
 
 function formatPct(v?: number) {
-    if (v == null || !Number.isFinite(v)) return "—";
+    if (v == null || !Number.isFinite(v)) return '—';
     return `${Math.round(v)}%`;
 }
 
 function formatPx(v?: number) {
-    if (v == null || !Number.isFinite(v)) return "—";
+    if (v == null || !Number.isFinite(v)) return '—';
     return `${Math.round(v)} px`;
 }
 
-/**
- * Build a reference path in normalized coordinates (0..1).
- * Slightly denser than before to make the guide clearer and improve nearest-point scoring stability.
- */
 function buildReferencePath(args: {
     type: A6TracingPathType;
     pointCount: number;
     durationMs: number;
 }): A6TracePoint[] {
     const n = clampInt(args.pointCount, 100, 900);
-    const T = clampInt(args.durationMs, 2_000, 60_000);
+    const duration = clampInt(args.durationMs, 2_000, 60_000);
 
     const pts: A6TracePoint[] = [];
-    for (let i = 0; i < n; i++) {
+
+    for (let i = 0; i < n; i += 1) {
         const t = i / (n - 1);
-        const tMs = Math.round(t * T);
+        const tMs = Math.round(t * duration);
 
         let x = 0.5;
         let y = 0.5;
 
         switch (args.type) {
-            case "circle": {
+            case 'circle': {
                 const r = 0.32;
                 const ang = 2 * Math.PI * t;
                 x = 0.5 + r * Math.cos(ang);
                 y = 0.5 + r * Math.sin(ang);
                 break;
             }
-            case "wave": {
+
+            case 'wave': {
                 const amp = 0.22;
                 x = 0.12 + 0.76 * t;
                 y = 0.5 + amp * Math.sin(2 * Math.PI * 2 * t);
                 break;
             }
-            case "zigzag": {
+
+            case 'zigzag': {
                 x = 0.12 + 0.76 * t;
                 const bands = 6;
                 const phase = (t * bands) % 1;
                 const up = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
-                y = 0.20 + 0.60 * up;
+                y = 0.2 + 0.6 * up;
                 break;
             }
-            case "figure8": {
-                const a = 0.30;
+
+            case 'figure8': {
+                const a = 0.3;
                 const ang = 2 * Math.PI * t;
                 x = 0.5 + a * Math.sin(ang);
                 y = 0.5 + a * Math.sin(ang) * Math.cos(ang) * 2;
                 break;
             }
+
             default:
                 break;
         }
@@ -127,18 +139,20 @@ function buildReferencePath(args: {
 
 function downsample(path: A6TracePoint[], maxPoints: number): A6TracePoint[] {
     if (path.length <= maxPoints) return path;
+
     const stride = Math.ceil(path.length / maxPoints);
     const out: A6TracePoint[] = [];
-    for (let i = 0; i < path.length; i += stride) out.push(path[i]);
-    if (out[out.length - 1] !== path[path.length - 1]) out.push(path[path.length - 1]);
+
+    for (let i = 0; i < path.length; i += stride) {
+        out.push(path[i]);
+    }
+
+    if (out[out.length - 1] !== path[path.length - 1]) {
+        out.push(path[path.length - 1]);
+    }
+
     return out;
 }
-
-/* =========================================================
-   Screen
-========================================================= */
-
-type Mode = "idle" | "recording" | "saved";
 
 export default function A6TracingChallengeScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -147,10 +161,12 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
     const [draft, setDraft] = useState<Activity6RunDraft | null>(null);
     const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
     const [arena, setArena] = useState<{ width: number; height: number } | null>(null);
-    const [mode, setMode] = useState<Mode>("idle");
+    const [mode, setMode] = useState<Mode>('idle');
 
-    const [pathType, setPathType] = useState<A6TracingPathType>("circle");
-    const [maxAllowedDeviationPx, setMaxAllowedDeviationPx] = useState<number>(A6_RECOMMENDED_MAX_DEV_PX);
+    const [pathType, setPathType] = useState<A6TracingPathType>('circle');
+    const [maxAllowedDeviationPx, setMaxAllowedDeviationPx] = useState<number>(
+        A6_RECOMMENDED_MAX_DEV_PX,
+    );
 
     const [referencePath, setReferencePath] = useState<A6TracePoint[]>([]);
     const [userPath, setUserPath] = useState<A6TracePoint[]>([]);
@@ -165,13 +181,33 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
         accuracyScorePct: number;
     } | null>(null);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity6RunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Please restart Activity 6.", [
-                {text: "OK", onPress: () => navigation.goBack()},
+            Alert.alert('Session expired', 'Please restart Activity 6.', [
+                {
+                    text: 'OK',
+                    onPress: () => navigation.goBack(),
+                },
             ]);
             return;
         }
@@ -181,22 +217,31 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
         const first = d.session.participants?.[0]?.id ?? null;
         setSelectedParticipantId(first);
 
-        const sessionType = (d.session.tracingPathType ?? "circle") as A6TracingPathType;
+        const sessionType = (d.session.tracingPathType ?? 'circle') as A6TracingPathType;
         setPathType(sessionType);
 
         const maxDev = clampInt(
             d.session.maxAllowedDeviationPx ?? A6_RECOMMENDED_MAX_DEV_PX,
             10,
-            200
+            200,
         );
+
         setMaxAllowedDeviationPx(maxDev);
 
-        setReferencePath(buildReferencePath({type: sessionType, pointCount: 320, durationMs: 10_000}));
+        setReferencePath(
+            buildReferencePath({
+                type: sessionType,
+                pointCount: 320,
+                durationMs: 10_000,
+            }),
+        );
     }, [navigation, runId, user]);
 
     const participants = draft?.session.participants ?? [];
-    const selectedName =
-        participants.find((p) => p.id === selectedParticipantId)?.name ?? "Select participant";
+
+    const selectedName = useMemo(() => {
+        return participants.find((p) => p.id === selectedParticipantId)?.name ?? 'Select participant';
+    }, [participants, selectedParticipantId]);
 
     const canStart = useMemo(() => {
         if (!draft) return false;
@@ -205,55 +250,70 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
         return true;
     }, [arena, draft, selectedParticipantId]);
 
+    function rebuildReference() {
+        setReferencePath(
+            buildReferencePath({
+                type: pathType,
+                pointCount: 320,
+                durationMs: 10_000,
+            }),
+        );
+    }
+
     function reset() {
-        setMode("idle");
+        setMode('idle');
         setSavedSummary(null);
         setUserPath([]);
         startEpochRef.current = 0;
         startedAtRef.current = 0;
-        setReferencePath(buildReferencePath({type: pathType, pointCount: 320, durationMs: 10_000}));
-    }
+        rebuildReference();
 
-    function rebuildReference() {
-        setReferencePath(buildReferencePath({type: pathType, pointCount: 320, durationMs: 10_000}));
+        showToast('Tracing reset', 'info', 'You can start a new tracing attempt.');
     }
 
     function startTracing() {
         if (!draft) return;
+
         if (!canStart) {
-            Alert.alert("Not ready", "Please wait until the tracing area is loaded and a participant is selected.");
+            Alert.alert(
+                'Not ready',
+                'Please wait until the tracing area is loaded and a participant is selected.',
+            );
             return;
         }
 
         setSavedSummary(null);
         setUserPath([]);
-        setMode("recording");
+        setMode('recording');
 
         const ts = now();
         startEpochRef.current = ts;
         startedAtRef.current = ts;
 
         rebuildReference();
+
+        showToast('Tracing started', 'info', 'Follow the dotted guide path continuously.');
     }
 
     function finishTracing() {
         if (!draft) return;
+
         const pid = selectedParticipantId ?? participants[0]?.id;
         if (!pid) return;
 
-        if (mode !== "recording") return;
+        if (mode !== 'recording') return;
 
         const endedAt = now();
         const startedAt = startedAtRef.current || endedAt;
         const durationMs = clampInt(Math.max(0, endedAt - startedAt), 0, 10 * 60 * 1000);
 
         if (userPath.length < 20) {
-            Alert.alert("Not enough tracing", "Please follow the path for a bit longer before finishing.");
+            Alert.alert('Not enough tracing', 'Please follow the path for a bit longer before finishing.');
             return;
         }
 
         if (!arena) {
-            Alert.alert("Layout missing", "Tracing area not ready.");
+            Alert.alert('Layout missing', 'Tracing area not ready.');
             return;
         }
 
@@ -263,7 +323,10 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
         const dev = computeTracingDeviation({
             userPath: usr,
             referencePath: ref,
-            screen: {width: arena.width, height: arena.height},
+            screen: {
+                width: arena.width,
+                height: arena.height,
+            },
             startedAt,
             endedAt,
         });
@@ -294,19 +357,27 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
                 accuracyScorePct: score.accuracyScorePct,
             });
 
-            setMode("saved");
-        } catch (e: any) {
-            Alert.alert("Error", e?.message ?? "Failed to save tracing result.");
-            setMode("idle");
+            setMode('saved');
+
+            showToast(
+                'Tracing result saved',
+                'success',
+                `Accuracy ${formatPct(score.accuracyScorePct)} • Avg deviation ${formatPx(dev.avgDeviationPx)}`,
+            );
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : 'Failed to save tracing result.';
+            Alert.alert('Error', message);
+            setMode('idle');
         }
     }
 
     function handleTouch(e: any) {
-        if (mode !== "recording") return;
+        if (mode !== 'recording') return;
         if (!arena) return;
 
         const xPx = e?.nativeEvent?.locationX;
         const yPx = e?.nativeEvent?.locationY;
+
         if (!Number.isFinite(xPx) || !Number.isFinite(yPx)) return;
 
         const tMs = clampInt(now() - (startEpochRef.current || now()), 0, 10 * 60 * 1000);
@@ -320,91 +391,144 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
     }
 
     function goToResults() {
-        navigation.navigate("A6Results", {activityId, runId});
+        showToast('Opening results', 'success', 'Preparing tracing analysis.');
+
+        setTimeout(() => {
+            navigation.navigate('A6Results', {activityId, runId});
+        }, 600);
     }
 
     if (!user) return null;
 
     if (!draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading tracing challenge..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Tracing Challenge</Text>
-                <Text style={styles.sub}>
-                    Follow the dotted guide path continuously with your finger. We record your touch path and compute
-                    deviation from the reference path to produce an accuracy score.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 6" tone="primary"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Participant</Text>
-                    <Text style={styles.help}>
-                        Rotate through team members. Each participant should complete at least one trace.
-                    </Text>
+                    <AppText variant="title" style={styles.title}>
+                        Tracing Challenge
+                    </AppText>
 
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Follow the dotted guide path continuously. Your accuracy is based on
+                        average deviation from the reference path.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="Tracing guidance"
+                    message="Move smoothly and continuously along the guide path. Avoid lifting your finger during recording."
+                    tone="info"
+                />
+
+                <AppSectionHeader
+                    title="Participant"
+                    subtitle="Select who is completing this tracing attempt."
+                />
+
+                <AppCard>
                     <View style={styles.chipWrap}>
                         {participants.map((p) => {
                             const selected = p.id === selectedParticipantId;
+
                             return (
                                 <Pressable
                                     key={p.id}
                                     style={[styles.chip, selected && styles.chipSelected]}
                                     onPress={() => setSelectedParticipantId(p.id)}
-                                    disabled={mode === "recording"}
+                                    disabled={mode === 'recording'}
                                 >
-                                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                                    <AppText
+                                        variant="bodyStrong"
+                                        color={selected ? 'inverseText' : 'text'}
+                                        align="center"
+                                    >
                                         {p.name}
-                                    </Text>
+                                    </AppText>
                                 </Pressable>
                             );
                         })}
                     </View>
 
-                    <Text style={styles.note}>Selected: {selectedName}</Text>
-                </View>
+                    <View style={styles.selectionBox}>
+                        <View>
+                            <AppText variant="caption" color="textMuted">
+                                Selected participant
+                            </AppText>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Path</Text>
-                    <Text style={styles.help}>
-                        Path type is configured in Session Setup. Current:{" "}
-                        <Text style={{fontWeight: "900"}}>{pathType}</Text>
-                    </Text>
+                            <AppText variant="bodyStrong" style={styles.smallGap}>
+                                {selectedName}
+                            </AppText>
+                        </View>
 
-                    <Text style={[styles.note, {marginTop: 10}]}>
-                        Max allowed deviation:{" "}
-                        <Text style={{fontWeight: "900"}}>{maxAllowedDeviationPx}px</Text>
-                    </Text>
-                </View>
+                        <AppBadge
+                            label={mode === 'recording' ? 'Recording' : mode === 'saved' ? 'Saved' : 'Ready'}
+                            tone={mode === 'recording' ? 'warning' : mode === 'saved' ? 'success' : 'info'}
+                        />
+                    </View>
+                </AppCard>
 
-                <View style={styles.arenaCard}>
-                    <Text style={styles.cardTitle}>Tracing Arena</Text>
+                <AppSectionHeader
+                    title="Path Configuration"
+                    subtitle="Configured from Activity 6 session setup."
+                />
 
-                    {mode === "saved" && savedSummary ? (
-                        <View style={styles.bannerLight}>
-                            <Text style={styles.bannerTitleDark}>Saved ✅</Text>
-                            <Text style={styles.bannerTextDark}>
-                                {savedSummary.participantName} • Duration {Math.round(savedSummary.durationMs / 1000)}s
-                            </Text>
-                            <Text style={[styles.bannerTextDark, {marginTop: 6, fontWeight: "900"}]}>
-                                Accuracy {formatPct(savedSummary.accuracyScorePct)} • Avg deviation{" "}
-                                {formatPx(savedSummary.avgDeviationPx)}
-                            </Text>
+                <AppCard>
+                    <MetricRow label="Path type" value={pathType} capitalizeValue/>
+                    <MetricRow label="Max allowed deviation" value={`${maxAllowedDeviationPx}px`}/>
+                    <MetricRow label="Reference density" value={`${referencePath.length} points`}/>
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Tracing Arena"
+                    subtitle="Press Start, then trace directly on the arena."
+                />
+
+                <AppCard>
+                    {mode === 'saved' && savedSummary ? (
+                        <View style={styles.savedBox}>
+                            <View style={styles.savedText}>
+                                <AppText variant="bodyStrong">Result saved</AppText>
+
+                                <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                    {savedSummary.participantName} • Duration{' '}
+                                    {Math.round(savedSummary.durationMs / 1000)}s
+                                </AppText>
+                            </View>
+
+                            <AppBadge
+                                label={formatPct(savedSummary.accuracyScorePct)}
+                                tone="success"
+                            />
                         </View>
                     ) : null}
 
-                    {mode === "recording" ? (
-                        <View style={styles.bannerDark}>
-                            <Text style={styles.bannerTitle}>Recording…</Text>
-                            <Text style={styles.bannerText}>
-                                Touch and drag continuously along the dotted reference path, then tap Finish.
-                            </Text>
+                    {mode === 'recording' ? (
+                        <View style={styles.recordingBox}>
+                            <View style={styles.recordingText}>
+                                <AppText variant="bodyStrong" color="inverseText">
+                                    Recording
+                                </AppText>
+
+                                <AppText variant="caption" color="inverseText" style={styles.recordingHint}>
+                                    Touch and drag continuously along the dotted reference path,
+                                    then tap Finish.
+                                </AppText>
+                            </View>
+
+                            <AppBadge label={`${userPath.length} pts`} tone="info"/>
                         </View>
                     ) : null}
 
@@ -413,10 +537,17 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
                         onLayout={(e) => {
                             const {width, height} = e.nativeEvent.layout;
                             setArena({width, height});
-                            setReferencePath(buildReferencePath({type: pathType, pointCount: 320, durationMs: 10_000}));
+
+                            setReferencePath(
+                                buildReferencePath({
+                                    type: pathType,
+                                    pointCount: 320,
+                                    durationMs: 10_000,
+                                }),
+                            );
                         }}
-                        onStartShouldSetResponder={() => mode === "recording"}
-                        onMoveShouldSetResponder={() => mode === "recording"}
+                        onStartShouldSetResponder={() => mode === 'recording'}
+                        onMoveShouldSetResponder={() => mode === 'recording'}
                         onResponderGrant={handleTouch}
                         onResponderMove={handleTouch}
                         onResponderRelease={handleTouch}
@@ -451,188 +582,257 @@ export default function A6TracingChallengeScreen({route, navigation}: Props) {
                             ))
                             : null}
 
-                        {mode !== "recording" ? (
+                        {mode !== 'recording' ? (
                             <View style={styles.overlayCenter}>
-                                <Text style={styles.overlayText}>
+                                <AppText variant="bodyStrong" align="center" color="textMuted">
                                     {arena
-                                        ? "Press Start, then follow the dotted guide path continuously"
-                                        : "Loading arena…"}
-                                </Text>
+                                        ? 'Press Start, then follow the dotted guide path continuously'
+                                        : 'Loading arena...'}
+                                </AppText>
                             </View>
                         ) : null}
                     </View>
 
-                    <View style={{marginTop: 12, flexDirection: "row", gap: 10}}>
-                        <Pressable
-                            style={[styles.primaryBtn, (!canStart || mode === "recording") && styles.btnDisabled]}
-                            disabled={!canStart || mode === "recording"}
+                    <View style={styles.actionRow}>
+                        <AppButton
+                            title="Start"
                             onPress={startTracing}
-                        >
-                            <Text style={styles.primaryBtnText}>Start</Text>
-                        </Pressable>
+                            disabled={!canStart || mode === 'recording'}
+                            style={styles.actionButton}
+                        />
 
-                        <Pressable
-                            style={[styles.secondaryBtn, mode !== "recording" && styles.btnDisabled]}
-                            disabled={mode !== "recording"}
+                        <AppButton
+                            title="Finish"
+                            variant="outline"
                             onPress={finishTracing}
-                        >
-                            <Text style={styles.secondaryBtnText}>Finish</Text>
-                        </Pressable>
+                            disabled={mode !== 'recording'}
+                            style={styles.actionButton}
+                        />
 
-                        <Pressable
-                            style={[styles.ghostBtn, mode === "recording" && styles.btnDisabled]}
-                            disabled={mode === "recording"}
+                        <AppButton
+                            title="Reset"
+                            variant="ghost"
                             onPress={reset}
-                        >
-                            <Text style={styles.ghostBtnText}>Reset</Text>
-                        </Pressable>
+                            disabled={mode === 'recording'}
+                            style={styles.actionButton}
+                        />
                     </View>
 
-                    <Text style={[styles.note, {marginTop: 10}]}>
-                        Tip: keep your finger moving smoothly along the guide path for better accuracy.
-                    </Text>
-                </View>
+                    <AppText variant="caption" color="textMuted" style={styles.note}>
+                        Tip: keep your finger moving smoothly along the guide path for better
+                        accuracy.
+                    </AppText>
+                </AppCard>
 
-                <Pressable
-                    style={[styles.primaryBtnWide, mode === "recording" && styles.btnDisabled]}
-                    disabled={mode === "recording"}
+                <AppButton
+                    title="Continue to Results"
                     onPress={goToResults}
-                >
-                    <Text style={styles.primaryBtnText}>Continue to Results</Text>
-                </Pressable>
+                    disabled={mode === 'recording'}
+                />
 
-                <View style={{height: 40}}/>
-            </ScrollView>
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type MetricRowProps = {
+    label: string;
+    value: string;
+    capitalizeValue?: boolean;
+};
+
+function MetricRow({label, value, capitalizeValue = false}: MetricRowProps) {
+    return (
+        <View style={styles.metricRow}>
+            <AppText variant="bodyStrong" style={styles.metricLabel}>
+                {label}
+            </AppText>
+
+            <AppText
+                variant="bodyStrong"
+                align="right"
+                style={[styles.metricValue, capitalizeValue && styles.capitalize]}
+            >
+                {value}
+            </AppText>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    arenaCard: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "white",
-        borderRadius: 14,
-        padding: 14,
+    keyboard: {
+        flex: 1,
     },
 
-    cardTitle: {fontSize: 16, fontWeight: "900", marginBottom: 8},
-    help: {opacity: 0.75, lineHeight: 18},
-    note: {marginTop: 10, opacity: 0.7},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    chipWrap: {marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 10},
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    chipWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+    },
+
     chip: {
         borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "white",
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 999,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
     },
-    chipSelected: {borderColor: "#111", backgroundColor: "#111"},
-    chipText: {fontWeight: "900", opacity: 0.85},
-    chipTextSelected: {color: "white", opacity: 1},
+
+    chipSelected: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primary,
+    },
+
+    selectionBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+
+    metricLabel: {
+        flex: 1,
+    },
+
+    metricValue: {
+        flex: 1,
+    },
+
+    capitalize: {
+        textTransform: 'capitalize',
+    },
+
+    savedBox: {
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    savedText: {
+        flex: 1,
+    },
+
+    recordingBox: {
+        borderRadius: radius.lg,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.md,
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    recordingText: {
+        flex: 1,
+    },
+
+    recordingHint: {
+        marginTop: spacing.xs,
+        opacity: 0.85,
+    },
 
     arena: {
-        marginTop: 10,
         height: 380,
-        borderRadius: 14,
+        borderRadius: radius.xl,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        overflow: "hidden",
-        position: "relative",
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceMuted,
+        overflow: 'hidden',
+        position: 'relative',
     },
 
     overlayCenter: {
-        position: "absolute",
+        position: 'absolute',
         left: 0,
         top: 0,
         right: 0,
         bottom: 0,
-        alignItems: "center",
-        justifyContent: "center",
-        paddingHorizontal: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.lg,
     },
-    overlayText: {opacity: 0.7, fontWeight: "800", textAlign: "center"},
 
     refDot: {
-        position: "absolute",
+        position: 'absolute',
         width: 10,
         height: 10,
-        borderRadius: 999,
-        backgroundColor: "#111",
+        borderRadius: radius.pill,
+        backgroundColor: colors.primaryDark,
         opacity: 0.22,
     },
+
     userDot: {
-        position: "absolute",
+        position: 'absolute',
         width: 8,
         height: 8,
-        borderRadius: 999,
-        backgroundColor: "#111",
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
         opacity: 0.82,
     },
 
-    bannerDark: {marginTop: 10, padding: 14, borderRadius: 14, backgroundColor: "#111"},
-    bannerTitle: {color: "white", fontWeight: "900", fontSize: 16},
-    bannerText: {color: "white", marginTop: 6, opacity: 0.9},
+    actionRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
 
-    bannerLight: {marginTop: 10, padding: 14, borderRadius: 14, backgroundColor: "#f3f4f6"},
-    bannerTitleDark: {color: "#111", fontWeight: "900", fontSize: 16},
-    bannerTextDark: {color: "#111", marginTop: 6, opacity: 0.85},
-
-    btnDisabled: {opacity: 0.5},
-
-    primaryBtn: {
+    actionButton: {
         flex: 1,
-        backgroundColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
     },
-    primaryBtnWide: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {color: "white", fontWeight: "900"},
 
-    secondaryBtn: {
-        width: 110,
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-        backgroundColor: "white",
+    note: {
+        marginTop: spacing.md,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    ghostBtn: {
-        width: 90,
-        borderWidth: 1,
-        borderColor: "#ddd",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-        backgroundColor: "white",
+    bottomSpace: {
+        height: spacing.xxl,
     },
-    ghostBtnText: {fontWeight: "900", opacity: 0.8},
 });

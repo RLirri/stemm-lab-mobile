@@ -1,29 +1,37 @@
-import React, {useEffect, useMemo, useState} from "react";
+// src/screens/Activities/Activity1/A1ReflectionSubmitScreen.tsx
+
+import React, {useEffect, useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {doc, getDoc} from 'firebase/firestore';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth, db} from '../../../services/firebase';
+import {getRunDraft, type ActivityRunDraft} from '../../../store/activityRunDraftStore';
+import {submitActivity1} from '../../../services/activitySubmissionService';
+import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
+import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQualityCard';
+import {checkReflectionQuality} from '../../../services/reflectionQualityService';
+
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {doc, getDoc} from "firebase/firestore";
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth, db} from "../../../services/firebase";
-import {getRunDraft, type ActivityRunDraft} from "../../../store/activityRunDraftStore";
-import {submitActivity1} from "../../../services/activitySubmissionService";
-import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
-import {checkReflectionQuality} from "../../../services/reflectionQualityService";
+import {colors, radius, spacing} from '../../../theme';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A1ReflectionSubmit">;
+type Props = NativeStackScreenProps<AppStackParamList, 'A1ReflectionSubmit'>;
 
 function attemptLabel(index: number) {
-    return index === 0 ? "Baseline" : `Prototype ${index}`;
+    return index === 0 ? 'Baseline' : `Prototype ${index}`;
 }
 
 function hasAttemptData(run: ActivityRunDraft, i: number) {
@@ -33,7 +41,7 @@ function hasAttemptData(run: ActivityRunDraft, i: number) {
 
 function hasAttemptVideo(run: ActivityRunDraft, i: number) {
     const uri = run.attempts?.[i]?.video?.uri;
-    return typeof uri === "string" && uri.length > 0;
+    return typeof uri === 'string' && uri.length > 0;
 }
 
 function clampInt(n: number, min: number, max: number) {
@@ -42,8 +50,15 @@ function clampInt(n: number, min: number, max: number) {
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
-    return "Submission failed.";
+    return 'Submission failed.';
 }
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: 'success' | 'info' | 'warning' | 'danger';
+};
 
 export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -51,23 +66,38 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
 
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
     const [bestIndex, setBestIndex] = useState<number | null>(null);
-    const [reflection, setReflection] = useState<string>("");
+    const [reflection, setReflection] = useState<string>('');
     const [rating, setRating] = useState<number>(4);
     const [submitting, setSubmitting] = useState(false);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
     const reflectionQuality = useMemo(
         () => checkReflectionQuality(reflection),
-        [reflection]
+        [reflection],
     );
 
     useEffect(() => {
         if (!user) return;
 
         const d = getRunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {text: "OK", onPress: () => navigation.replace("A1SessionSetup", {activityId})},
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A1SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
 
@@ -93,15 +123,16 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
             const inZone = a?.measurements?.inTargetZone;
 
             const metaParts: string[] = [];
-            if (typeof tHit === "number") metaParts.push(`t_hit ${tHit.toFixed(2)}s`);
-            if (typeof inZone === "boolean") metaParts.push(inZone ? "in-zone" : "out-of-zone");
-            metaParts.push(hasVid ? "video ✅" : "video ❌");
+
+            if (typeof tHit === 'number') metaParts.push(`t_hit ${tHit.toFixed(2)}s`);
+            if (typeof inZone === 'boolean') metaParts.push(inZone ? 'in-zone' : 'out-of-zone');
+            metaParts.push(hasVid ? 'video attached' : 'video missing');
 
             return {
                 index: i,
-                label: `${attemptLabel(i)}${i === 0 ? " (No parachute)" : ""}`,
+                label: `${attemptLabel(i)}${i === 0 ? ' (No parachute)' : ''}`,
                 enabled,
-                meta: metaParts.length ? metaParts.join(" • ") : enabled ? "Completed" : "Not completed",
+                meta: metaParts.length ? metaParts.join(' • ') : enabled ? 'Completed' : 'Not completed',
                 hasVid,
             };
         });
@@ -109,7 +140,7 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
 
     const selectedAttemptSummary = useMemo(() => {
         if (!draft || bestIndex == null) {
-            return "Select your best attempt first, then explain why that design performed better.";
+            return 'Select your best attempt first, then explain why that design performed better.';
         }
 
         const attempt = draft.attempts?.[bestIndex];
@@ -117,38 +148,51 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
         const inZone = attempt?.measurements?.inTargetZone;
 
         const resultText =
-            typeof tHit === "number"
+            typeof tHit === 'number'
                 ? `${attemptLabel(bestIndex)} recorded a t_hit of ${tHit.toFixed(2)} seconds`
                 : `${attemptLabel(bestIndex)} was selected`;
 
         const zoneText =
-            typeof inZone === "boolean"
+            typeof inZone === 'boolean'
                 ? inZone
-                    ? "and it was inside the target zone."
-                    : "but it was outside the target zone."
-                : ".";
+                    ? 'and it was inside the target zone.'
+                    : 'but it was outside the target zone.'
+                : '.';
 
         return `${resultText} ${zoneText}`;
     }, [bestIndex, draft]);
 
+    function showToast(
+        title: string,
+        tone: ToastState['tone'] = 'success',
+        message?: string,
+    ) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     function validate(): string | null {
-        if (!draft) return "Draft not loaded.";
+        if (!draft) return 'Draft not loaded.';
 
         const anyAttempt = [0, 1, 2, 3].some((i) => hasAttemptData(draft, i));
-        if (!anyAttempt) return "No attempts found. Please complete at least the baseline attempt.";
+        if (!anyAttempt) return 'No attempts found. Please complete at least the baseline attempt.';
 
-        if (bestIndex == null) return "Please select the best design.";
-        if (!hasAttemptData(draft, bestIndex)) return "Selected best design has no recorded t_hit.";
+        if (bestIndex == null) return 'Please select the best design.';
+        if (!hasAttemptData(draft, bestIndex)) return 'Selected best design has no recorded t_hit.';
 
         if (!hasAttemptVideo(draft, bestIndex)) {
-            return "Best attempt must have a video attached. Go back to Measurements and attach a video.";
+            return 'Best attempt must have a video attached. Go back to Measurements and attach a video.';
         }
 
         if (reflectionQuality.isSubmissionBlocked) {
-            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+            return 'Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.';
         }
 
-        if (rating < 1 || rating > 5) return "Rating must be between 1 and 5.";
+        if (rating < 1 || rating > 5) return 'Rating must be between 1 and 5.';
 
         return null;
     }
@@ -159,19 +203,20 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
         if (bestIndex == null) return;
 
         const err = validate();
+
         if (err) {
-            Alert.alert("Cannot submit", err, [
-                err.includes("video attached")
+            Alert.alert('Cannot submit', err, [
+                err.includes('video attached')
                     ? {
-                        text: "Go attach video",
+                        text: 'Go attach video',
                         onPress: () =>
-                            navigation.navigate("A1Measurements", {
+                            navigation.navigate('A1Measurements', {
                                 activityId,
                                 runId,
                                 attemptIndex: bestIndex,
                             }),
                     }
-                    : {text: "OK"},
+                    : {text: 'OK'},
             ]);
             return;
         }
@@ -179,11 +224,11 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
         try {
             setSubmitting(true);
 
-            const userSnap = await getDoc(doc(db, "users", user.uid));
+            const userSnap = await getDoc(doc(db, 'users', user.uid));
             const teamId = userSnap.data()?.teamId;
 
             if (!teamId) {
-                Alert.alert("Join a team", "You must join a team before submitting.");
+                Alert.alert('Join a team', 'You must join a team before submitting.');
                 return;
             }
 
@@ -196,35 +241,28 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                 rating,
             });
 
-            Alert.alert("Submitted ✅", `Your score for this submission: ${res.score}`, [
-                {
-                    text: "View Leaderboard",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 1,
-                            routes: [
-                                {name: "Home" as never},
-                                {name: "Leaderboard" as never},
-                            ],
-                        }),
-                },
-                {
-                    text: "Back to Home",
-                    style: "cancel",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 0,
-                            routes: [{name: "Home" as never}],
-                        }),
-                },
-            ]);
+            showToast(
+                'Submission successful',
+                'success',
+                `Score: ${res.score}`,
+            );
+
+            setTimeout(() => {
+                navigation.reset({
+                    index: 1,
+                    routes: [
+                        {name: 'Home' as never},
+                        {name: 'Leaderboard' as never},
+                    ],
+                });
+            }, 1400);
         } catch (error: unknown) {
             try {
-                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const userSnap = await getDoc(doc(db, 'users', user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!teamId) {
-                    Alert.alert("Error", getErrorMessage(error));
+                    Alert.alert('Error', getErrorMessage(error));
                     return;
                 }
 
@@ -246,12 +284,20 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                     },
                 });
 
-                Alert.alert(
-                    "Saved offline",
-                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                showToast(
+                    'Submission saved offline',
+                    'info',
+                    'It will sync automatically when connection is available.',
                 );
+
+                setTimeout(() => {
+                    navigation.reset({
+                        index: 0,
+                        routes: [{name: 'Home' as never}],
+                    });
+                }, 1600);
             } catch (queueError: unknown) {
-                Alert.alert("Error", getErrorMessage(queueError));
+                Alert.alert('Error', getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -262,25 +308,40 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
 
     if (!draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading reflection draft..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-            <Text style={styles.title}>Reflection & Submit</Text>
-            <Text style={styles.sub}>
-                Choose your best attempt, attach evidence, write a meaningful reflection, and submit.
-            </Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 1" tone="primary"/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Select Best Design</Text>
-                <Text style={styles.help}>Attempts require t_hit. Best attempt must also have video evidence.</Text>
+                <AppText variant="title" style={styles.title}>
+                    Reflection & Submit
+                </AppText>
 
-                <View style={{marginTop: 10, gap: 10}}>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Choose your best attempt, confirm evidence, write a meaningful reflection,
+                    and submit your work.
+                </AppText>
+            </View>
+
+            <InfoBanner
+                title="Final submission check"
+                message="Your best attempt must include recorded measurements and attached video evidence before submission."
+                tone="info"
+            />
+
+            <AppSectionHeader
+                title="Select Best Design"
+                subtitle="Attempts require t_hit. The selected best attempt must also have video evidence."
+            />
+
+            <AppCard>
+                <View style={styles.choiceList}>
                     {options.map((o) => {
                         const selected = bestIndex === o.index;
                         const disabled = !o.enabled;
@@ -288,173 +349,287 @@ export default function A1ReflectionSubmitScreen({route, navigation}: Props) {
                         return (
                             <Pressable
                                 key={o.index}
-                                onPress={() => (!disabled ? setBestIndex(o.index) : undefined)}
-                                style={[styles.choiceCard, selected && styles.choiceCardOn, disabled && {opacity: 0.45}]}
+                                onPress={() => {
+                                    if (!disabled) setBestIndex(o.index);
+                                }}
                                 disabled={disabled}
+                                style={[
+                                    styles.choiceCard,
+                                    selected && styles.choiceCardOn,
+                                    disabled && styles.choiceCardDisabled,
+                                ]}
                             >
-                                <Text style={[styles.choiceTitle, selected && styles.choiceTitleOn]}>{o.label}</Text>
-                                <Text style={[styles.choiceMeta, selected && styles.choiceMetaOn]}>{o.meta}</Text>
+                                <View style={styles.choiceTop}>
+                                    <AppText
+                                        variant="bodyStrong"
+                                        color={selected ? 'inverseText' : 'text'}
+                                        style={styles.choiceTitle}
+                                    >
+                                        {o.label}
+                                    </AppText>
+
+                                    <AppBadge
+                                        label={o.hasVid ? 'Video' : 'No video'}
+                                        tone={o.hasVid ? 'success' : 'warning'}
+                                    />
+                                </View>
+
+                                <AppText
+                                    variant="caption"
+                                    color={selected ? 'inverseText' : 'textMuted'}
+                                    style={styles.choiceMeta}
+                                >
+                                    {o.meta}
+                                </AppText>
                             </Pressable>
                         );
                     })}
                 </View>
 
                 {completedWithin20 != null ? (
-                    <View style={styles.badgeRow}>
-                        <Text style={styles.badgeLabel}>Completed within 20 minutes?</Text>
-                        <View style={[styles.badge, completedWithin20 ? styles.badgeYes : styles.badgeNo]}>
-                            <Text style={styles.badgeText}>{completedWithin20 ? "Yes" : "No"}</Text>
-                        </View>
+                    <View style={styles.timerBox}>
+                        <AppText variant="bodyStrong">Completed within 20 minutes?</AppText>
+
+                        <AppBadge
+                            label={completedWithin20 ? 'Yes' : 'No'}
+                            tone={completedWithin20 ? 'success' : 'warning'}
+                        />
                     </View>
                 ) : (
-                    <Text style={styles.note}>Timer wasn’t started, so “within 20 minutes” isn’t recorded.</Text>
+                    <AppText variant="caption" color="textMuted" style={styles.note}>
+                        Timer was not started, so “within 20 minutes” is not recorded.
+                    </AppText>
                 )}
-            </View>
+            </AppCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Reflection</Text>
+            <AppSectionHeader
+                title="Reflection"
+                subtitle="Explain what happened and what you learned."
+            />
 
+            <AppCard>
                 <View style={styles.smartBox}>
-                    <Text style={styles.smartTitle}>Smart reflection guide</Text>
-                    <Text style={styles.smartText}>{selectedAttemptSummary}</Text>
-                    <Text style={styles.smartText}>Try to include:</Text>
-                    <Text style={styles.promptText}>• Which parachute design worked best and why.</Text>
-                    <Text style={styles.promptText}>• Whether your prediction matched the result.</Text>
-                    <Text style={styles.promptText}>• What the t_hit result suggests about air resistance.</Text>
-                    <Text style={styles.promptText}>• One improvement you would test next.</Text>
+                    <AppText variant="bodyStrong" color="primary">
+                        Smart reflection guide
+                    </AppText>
+
+                    <AppText variant="body" style={styles.smartText}>
+                        {selectedAttemptSummary}
+                    </AppText>
+
+                    <AppText variant="bodyStrong" style={styles.promptIntro}>
+                        Try to include:
+                    </AppText>
+
+                    <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                        • Which parachute design worked best and why.
+                    </AppText>
+                    <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                        • Whether your prediction matched the result.
+                    </AppText>
+                    <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                        • What the t_hit result suggests about air resistance.
+                    </AppText>
+                    <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                        • One improvement you would test next.
+                    </AppText>
                 </View>
 
-                <Text style={styles.label}>Outcome comment</Text>
-                <TextInput
+                <AppInput
+                    label="Outcome comment"
                     value={reflection}
                     onChangeText={setReflection}
                     placeholder="Example: Prototype 2 worked best because it stayed in the air longer. My prediction was partly correct because..."
-                    style={[styles.input, {height: 140, textAlignVertical: "top"}]}
                     multiline
+                    style={styles.reflectionInput}
                 />
 
                 <ReflectionQualityCard result={reflectionQuality}/>
-            </View>
+            </AppCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Rating</Text>
-                <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
+            <AppSectionHeader
+                title="Rating"
+                subtitle="How did this activity feel overall?"
+            />
 
+            <AppCard>
                 <View style={styles.ratingRow}>
                     {[1, 2, 3, 4, 5].map((n) => {
                         const on = rating === n;
+
                         return (
                             <Pressable
                                 key={n}
                                 onPress={() => setRating(clampInt(n, 1, 5))}
-                                style={[styles.rateBtn, on && styles.rateBtnOn]}
+                                style={[styles.rateButton, on && styles.rateButtonOn]}
                             >
-                                <Text style={[styles.rateText, on && styles.rateTextOn]}>{n}</Text>
+                                <AppText
+                                    variant="bodyStrong"
+                                    color={on ? 'inverseText' : 'text'}
+                                    align="center"
+                                >
+                                    {n}
+                                </AppText>
                             </Pressable>
                         );
                     })}
                 </View>
-            </View>
+            </AppCard>
 
-            <Pressable style={[styles.primaryBtn, submitting && {opacity: 0.7}]} onPress={onSubmit}
-                       disabled={submitting}>
-                {submitting ? (
-                    <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                        <ActivityIndicator color="white"/>
-                        <Text style={styles.primaryBtnText}>Submitting…</Text>
-                    </View>
-                ) : (
-                    <Text style={styles.primaryBtnText}>Submit</Text>
-                )}
-            </Pressable>
+            <AppButton
+                title={submitting ? 'Submitting...' : 'Submit'}
+                onPress={onSubmit}
+                disabled={submitting}
+                loading={submitting}
+            />
 
-            <View style={{height: 30}}/>
-        </ScrollView>
+            {submitting ? (
+                <View style={styles.submittingHint}>
+                    <ActivityIndicator color={colors.primary}/>
+                    <AppText variant="caption" color="textMuted">
+                        Preparing final submission...
+                    </AppText>
+                </View>
+            ) : null}
+
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    header: {
+        marginBottom: spacing.lg,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-    note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    choiceList: {
+        gap: spacing.md,
+    },
 
     choiceCard: {
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
     },
-    choiceCardOn: {backgroundColor: "#111", borderColor: "#111"},
-    choiceTitle: {fontWeight: "900", fontSize: 14, opacity: 0.9},
-    choiceTitleOn: {color: "white", opacity: 1},
-    choiceMeta: {marginTop: 6, opacity: 0.75},
-    choiceMetaOn: {color: "white", opacity: 0.85},
 
-    badgeRow: {marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
-    badgeLabel: {fontWeight: "800", opacity: 0.9},
-    badge: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10},
-    badgeYes: {backgroundColor: "#111"},
-    badgeNo: {backgroundColor: "#777"},
-    badgeText: {color: "white", fontWeight: "900"},
+    choiceCardOn: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+
+    choiceCardDisabled: {
+        opacity: 0.45,
+    },
+
+    choiceTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+    },
+
+    choiceTitle: {
+        flex: 1,
+    },
+
+    choiceMeta: {
+        marginTop: spacing.sm,
+    },
+
+    timerBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: spacing.md,
+    },
+
+    note: {
+        marginTop: spacing.md,
+    },
 
     smartBox: {
-        marginTop: 10,
         borderWidth: 1,
-        borderColor: "#dbeafe",
-        backgroundColor: "#eff6ff",
-        borderRadius: 12,
-        padding: 12,
-    },
-    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
-    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
-    promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
+        borderColor: colors.primarySoft,
+        backgroundColor: colors.accentSoft,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        marginBottom: spacing.lg,
     },
 
-    ratingRow: {marginTop: 10, flexDirection: "row", gap: 10},
-    rateBtn: {
+    smartText: {
+        marginTop: spacing.sm,
+    },
+
+    promptIntro: {
+        marginTop: spacing.md,
+    },
+
+    promptText: {
+        marginTop: spacing.xs,
+    },
+
+    reflectionInput: {
+        minHeight: 140,
+        textAlignVertical: 'top',
+    },
+
+    ratingRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+
+    rateButton: {
         flex: 1,
+        minHeight: 48,
+        borderRadius: radius.lg,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    rateBtnOn: {backgroundColor: "#111", borderColor: "#111"},
-    rateText: {fontWeight: "900", opacity: 0.85},
-    rateTextOn: {color: "white", opacity: 1},
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    rateButtonOn: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
+
+    submittingHint: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

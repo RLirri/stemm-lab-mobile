@@ -1,51 +1,23 @@
-// src/screens/Activities/Activity7/A7OverviewScreen.tsx
+import React, {useMemo} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import React, {useMemo} from "react";
-import {Pressable, ScrollView, StyleSheet, Text, View} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import activity07_breathingPaceTrainer from '../../../features/activities/definitions/activity07_breathingPaceTrainer';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import activity07_breathingPaceTrainer from "../../../features/activities/definitions/activity07_breathingPaceTrainer";
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppExpandableCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppText,
+} from '../../../components/ui';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A7Overview">;
+import {colors, radius, spacing} from '../../../theme';
 
-type PhaseCardProps = {
-    title: string;
-    subtitle?: string;
-    steps: string[];
-    highlight?: string;
-};
-
-function PhaseCard({title, subtitle, steps, highlight}: PhaseCardProps) {
-    return (
-        <View style={styles.card}>
-            <Text style={styles.cardTitle}>{title}</Text>
-            {subtitle ? <Text style={styles.cardSub}>{subtitle}</Text> : null}
-
-            <View style={{marginTop: 10, gap: 8}}>
-                {steps.map((s, idx) => (
-                    <View key={`${title}_${idx}`} style={styles.stepRow}>
-                        <View style={styles.stepBadge}>
-                            <Text style={styles.stepBadgeText}>{idx + 1}</Text>
-                        </View>
-                        <Text style={styles.stepText}>{s}</Text>
-                    </View>
-                ))}
-            </View>
-
-            {highlight ? <Text style={styles.cardHighlight}>{highlight}</Text> : null}
-        </View>
-    );
-}
-
-function InfoRow(props: { left: string; right: string }) {
-    return (
-        <View style={styles.infoRow}>
-            <Text style={styles.infoLeft}>{props.left}</Text>
-            <Text style={styles.infoRight}>{props.right}</Text>
-        </View>
-    );
-}
+type Props = NativeStackScreenProps<AppStackParamList, 'A7Overview'>;
 
 export default function A7OverviewScreen({route, navigation}: Props) {
     const activity = activity07_breathingPaceTrainer;
@@ -56,454 +28,363 @@ export default function A7OverviewScreen({route, navigation}: Props) {
     const tableRows = useMemo(
         () => [
             {
-                stage: "Breathing at Rest",
-                prediction: "e.g. 12 breaths/min",
-                outcome: "Measured BPM + duration",
-                right: "Yes / No",
+                stage: 'Breathing at Rest',
+                prediction: 'e.g. 12 breaths/min',
+                outcome: 'Measured BPM',
+                right: 'Yes / No',
             },
             {
-                stage: "After Exercise 1 (1-min jog)",
-                prediction: "e.g. 20 breaths/min",
-                outcome: "Measured BPM + duration",
-                right: "Yes / No",
+                stage: 'After 1-min Jog',
+                prediction: 'e.g. 20 breaths/min',
+                outcome: 'Measured BPM',
+                right: 'Yes / No',
             },
             {
-                stage: "After Exercise 2 (100 star jumps)",
-                prediction: "e.g. 24 breaths/min",
-                outcome: "Measured BPM + duration",
-                right: "Any surprises?",
+                stage: 'After Star Jumps',
+                prediction: 'e.g. 24 breaths/min',
+                outcome: 'Measured BPM',
+                right: 'Surprises?',
             },
         ],
-        []
+        [],
     );
 
     function onStart() {
-        navigation.navigate("A7SessionSetup", {activityId});
+        navigation.navigate('A7SessionSetup', {activityId});
+    }
+
+    function onBack() {
+        navigation.goBack();
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>{activity.title}</Text>
-            <Text style={styles.subtitle}>Medical Science</Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 7" tone="primary"/>
 
-            <View style={styles.hero}>
-                <Text style={styles.heroText}>
-                    Analyse breathing patterns at rest and after exercise by placing the phone gently
-                    on the chest and recording accelerometer motion. The app estimates breaths per
-                    minute, compares phase changes, and calculates recovery consistency across team
-                    participants.
-                </Text>
+                <AppText variant="title" style={styles.title}>
+                    {activity.title}
+                </AppText>
 
-                <View style={styles.heroTagRow}>
-                    <View style={styles.tag}>
-                        <Text style={styles.tagText}>Chest motion</Text>
-                    </View>
-                    <View style={styles.tag}>
-                        <Text style={styles.tagText}>Accelerometer</Text>
-                    </View>
-                    <View style={styles.tag}>
-                        <Text style={styles.tagText}>Breaths / min</Text>
-                    </View>
-                    <View style={styles.tag}>
-                        <Text style={styles.tagText}>Recovery comparison</Text>
-                    </View>
-                </View>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Medical Science
+                </AppText>
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Objective</Text>
-                <Text style={styles.body}>
-                    Investigate how breathing changes from <Text style={styles.bold}>rest</Text> to{" "}
-                    <Text style={styles.bold}>exercise</Text>, then compare how consistently breathing
+            <AppCard>
+                <AppText variant="sectionTitle">Ready to begin?</AppText>
+
+                <AppText variant="caption" color="textMuted" style={styles.cardText}>
+                    Analyse breathing at rest and after exercise using accelerometer-based chest motion data.
+                </AppText>
+
+                <View style={styles.tagRow}>
+                    <Tag label="Chest motion"/>
+                    <Tag label="Breaths/min"/>
+                    <Tag label="Recovery"/>
+                </View>
+
+                <AppButton title="Start Activity" onPress={onStart} style={styles.startButton}/>
+
+                <AppButton
+                    title="Back"
+                    onPress={() =>
+                        Alert.alert('Back', 'Return to the previous screen?', [
+                            {text: 'Cancel', style: 'cancel'},
+                            {text: 'OK', onPress: onBack},
+                        ])
+                    }
+                    variant="ghost"
+                    style={styles.backButton}
+                />
+            </AppCard>
+
+            <AppSectionHeader
+                title="Activity Guide"
+                subtitle="Review phases, measurement rules, write-up guidance, leaderboard criteria, and safety."
+            />
+
+            <AppExpandableCard title="Objective" defaultExpanded>
+                <AppText variant="body" color="textMuted">
+                    Investigate how breathing changes from rest to exercise, then compare how consistently breathing
                     begins to recover across the required post-exercise phases.
-                </Text>
-            </View>
+                </AppText>
+            </AppExpandableCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Equipment</Text>
-                <View style={{marginTop: 10, gap: 8}}>
-                    {equipment.length > 0 ? (
-                        equipment.map((e, i) => (
-                            <View key={`eq_${i}`} style={styles.bulletRow}>
-                                <Text style={styles.bulletDot}>•</Text>
-                                <Text style={styles.bulletText}>{e}</Text>
-                            </View>
-                        ))
-                    ) : (
-                        <>
-                            <View style={styles.bulletRow}>
-                                <Text style={styles.bulletDot}>•</Text>
-                                <Text style={styles.bulletText}>Mobile phone with STEMM Lab app</Text>
-                            </View>
-                            <View style={styles.bulletRow}>
-                                <Text style={styles.bulletDot}>•</Text>
-                                <Text style={styles.bulletText}>Flat surface or mat</Text>
-                            </View>
-                        </>
-                    )}
-                </View>
-            </View>
+            <AppExpandableCard title="Equipment">
+                {equipment.length > 0 ? (
+                    equipment.map((item) => <Bullet key={item} text={item}/>)
+                ) : (
+                    <>
+                        <Bullet text="Mobile phone with STEMM Lab app"/>
+                        <Bullet text="Flat surface or mat"/>
+                    </>
+                )}
+            </AppExpandableCard>
 
-            <PhaseCard
-                title="Phase 0 — Prediction"
-                subtitle="Prediction must be completed before any measurement begins."
-                steps={[
-                    "Enter predicted breathing rate at rest.",
-                    "Enter predicted breathing rate after exercise.",
-                    "Think about which phase may show the highest breathing rate.",
-                ]}
-                highlight="Prediction is required before recording starts."
-            />
+            <AppExpandableCard title="Phase 0 — Prediction">
+                <StepItem index={1} text="Enter predicted breathing rate at rest."/>
+                <StepItem index={2} text="Enter predicted breathing rate after exercise."/>
+                <StepItem index={3} text="Predict which phase may show the highest breathing rate."/>
+                <Highlight text="Prediction is required before recording starts."/>
+            </AppExpandableCard>
 
-            <PhaseCard
-                title="Phase 1 — Rest Measurement"
-                subtitle="Record breathing when the participant is calm and still."
-                steps={[
-                    "Select the participant.",
-                    "Place the phone gently on the chest.",
-                    "Keep the participant as still as possible during recording.",
-                    "Save the measured breathing rate for the rest phase.",
-                ]}
-                highlight="Use consistent phone placement for all phases to improve fairness."
-            />
+            <AppExpandableCard title="Phase 1 — Rest Measurement">
+                <StepItem index={1} text="Select the participant."/>
+                <StepItem index={2} text="Place the phone gently on the chest."/>
+                <StepItem index={3} text="Keep the participant as still as possible."/>
+                <StepItem index={4} text="Save the measured breathing rate for the rest phase."/>
+                <Highlight text="Use consistent phone placement for all phases to improve fairness."/>
+            </AppExpandableCard>
 
-            <PhaseCard
-                title="Phase 2 — Post-Exercise Measurement 1"
-                subtitle="Measure breathing after one minute of jogging on the spot."
-                steps={[
-                    "Ask the participant to jog on the spot for one minute.",
-                    "Place the phone gently on the chest again.",
-                    "Record breathing using the same measurement duration.",
-                    "Save the post-jog breathing result.",
-                ]}
-                highlight="Breathing rate is expected to rise because exercise increases oxygen demand."
-            />
+            <AppExpandableCard title="Phase 2 — Post-Exercise 1">
+                <StepItem index={1} text="Ask the participant to jog on the spot for one minute."/>
+                <StepItem index={2} text="Place the phone gently on the chest again."/>
+                <StepItem index={3} text="Record breathing using the same duration."/>
+                <StepItem index={4} text="Save the post-jog breathing result."/>
+            </AppExpandableCard>
 
-            <PhaseCard
-                title="Phase 3 — Post-Exercise Measurement 2"
-                subtitle="Measure breathing after 100 star jumps."
-                steps={[
-                    "Ask the participant to complete 100 star jumps.",
-                    "Place the phone gently on the chest again.",
-                    "Record breathing with the same setup as the previous phases.",
-                    "Save the post-star-jumps breathing result and rotate to the next participant.",
-                ]}
-                highlight="Each participant must complete all three required phases."
-            />
+            <AppExpandableCard title="Phase 3 — Post-Exercise 2">
+                <StepItem index={1} text="Ask the participant to complete 100 star jumps."/>
+                <StepItem index={2} text="Place the phone gently on the chest again."/>
+                <StepItem index={3} text="Record breathing with the same setup."/>
+                <StepItem index={4} text="Save the result and rotate to the next participant."/>
+            </AppExpandableCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>What the app records</Text>
+            <AppExpandableCard title="What the App Records">
+                <InfoRow title="Sensor dataset"
+                         description="Accelerometer x/y/z values, timestamps, and sampling metadata."/>
+                <InfoRow title="Breathing outputs"
+                         description="Estimated breaths per minute, detected cycles, and duration."/>
+                <InfoRow title="Comparison metrics"
+                         description="Rest → jog, rest → star jumps, jog → star jumps, and recovery consistency."/>
+                <InfoRow title="Submission items"
+                         description="All phase datasets, reflection, rating, GPS, and optional session video."/>
+            </AppExpandableCard>
 
-                <View style={{marginTop: 10, gap: 10}}>
-                    <InfoRow
-                        left="Sensor dataset"
-                        right="accelerometer x/y/z values, timestamps, and sampling metadata"
-                    />
-                    <InfoRow
-                        left="Breathing outputs"
-                        right="estimated breaths per minute, detected cycles, and duration"
-                    />
-                    <InfoRow
-                        left="Comparison metrics"
-                        right="rest → jog, rest → star jumps, jog → star jumps, and recovery consistency"
-                    />
-                    <InfoRow
-                        left="Submission items"
-                        right="all phase datasets, reflection, rating, GPS, optional session video"
-                    />
-                </View>
-            </View>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Write-up (Plain language)</Text>
-                <Text style={styles.cardSub}>
-                    Breathing rate usually increases during exercise because the body needs more
-                    oxygen. By recording chest motion, the app helps students visualise breathing
-                    changes and compare how breathing behaves across rest and post-exercise stages.
-                </Text>
+            <AppExpandableCard title="Write-up Table">
+                <AppText variant="body" color="textMuted" style={styles.cardText}>
+                    Breathing rate usually increases during exercise because the body needs more oxygen.
+                </AppText>
 
                 <View style={styles.table}>
                     <View style={[styles.tableRow, styles.tableHeader]}>
-                        <Text style={[styles.th, {flex: 1.2}]}>Stage</Text>
-                        <Text style={[styles.th, {flex: 1.1}]}>Prediction</Text>
-                        <Text style={[styles.th, {flex: 1.2}]}>Outcome</Text>
-                        <Text style={[styles.th, {flex: 0.9}]}>Were you right?</Text>
+                        <AppText variant="caption" color="inverseText" style={styles.cellStage}>Stage</AppText>
+                        <AppText variant="caption" color="inverseText" style={styles.cell}>Prediction</AppText>
+                        <AppText variant="caption" color="inverseText" style={styles.cell}>Outcome</AppText>
+                        <AppText variant="caption" color="inverseText" style={styles.cellSmall}>Right?</AppText>
                     </View>
 
-                    {tableRows.map((r, idx) => (
-                        <View key={`row_${idx}`} style={styles.tableRow}>
-                            <Text style={[styles.td, {flex: 1.2}]}>{r.stage}</Text>
-                            <Text style={[styles.td, {flex: 1.1}]}>{r.prediction}</Text>
-                            <Text style={[styles.td, {flex: 1.2}]}>{r.outcome}</Text>
-                            <Text style={[styles.td, {flex: 0.9}]}>{r.right}</Text>
+                    {tableRows.map((row, index) => (
+                        <View key={`row_${index}`} style={styles.tableRow}>
+                            <AppText variant="caption" style={styles.cellStage}>{row.stage}</AppText>
+                            <AppText variant="caption" style={styles.cell}>{row.prediction}</AppText>
+                            <AppText variant="caption" style={styles.cell}>{row.outcome}</AppText>
+                            <AppText variant="caption" style={styles.cellSmall}>{row.right}</AppText>
                         </View>
                     ))}
                 </View>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Leaderboard Rule">
+                <AppText variant="body" color="textMuted">
+                    Ranking prioritises the best recovery consistency result. Lower recovery variability indicates a
+                    more stable breathing recovery pattern.
+                </AppText>
+
+                <Bullet text="Primary: lowest recovery consistency score"/>
+                <Bullet text="All required breathing phases must be completed"/>
+                <Bullet text="Best participant result is stored with the team submission"/>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Safety and Fairness">
+                <Bullet text="Place the phone gently on the chest and avoid pressing too hard."/>
+                <Bullet text="Use the same phone placement style for all phases."/>
+                <Bullet text="Keep the participant still during each recording window."/>
+                <Bullet text="Allow enough space for jogging and star jumps."/>
+                <Bullet text="Stop immediately if discomfort, dizziness, or pain occurs."/>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Submission Requirements">
+                <Bullet text="Sensor readings for all required phases"/>
+                <Bullet text="Reflection text completed"/>
+                <Bullet text="Rating submitted (1–5)"/>
+                <Bullet text="GPS coordinates captured"/>
+                <Bullet text="Optional session video evidence"/>
+            </AppExpandableCard>
+
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
+    );
+}
+
+function Tag({label}: { label: string }) {
+    return (
+        <View style={styles.tag}>
+            <AppText variant="caption" color="primary">
+                {label}
+            </AppText>
+        </View>
+    );
+}
+
+function Bullet({text}: { text: string }) {
+    return (
+        <View style={styles.bulletRow}>
+            <View style={styles.bulletDot}/>
+            <AppText variant="bodyStrong" style={styles.bulletText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
+
+function StepItem({index, text}: { index: number; text: string }) {
+    return (
+        <View style={styles.stepRow}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Leaderboard rule</Text>
-                <Text style={styles.cardSub}>
-                    Ranking prioritises the best recovery consistency result. Lower recovery
-                    variability indicates a more stable breathing recovery pattern relative to the
-                    resting phase.
-                </Text>
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
 
-                <View style={{marginTop: 10, gap: 8}}>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>
-                            Primary: lowest recovery consistency score
-                        </Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>
-                            All required breathing phases must be completed to be eligible
-                        </Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>
-                            Best participant result is stored with the team submission
-                        </Text>
-                    </View>
-                </View>
-            </View>
+function Highlight({text}: { text: string }) {
+    return (
+        <View style={styles.highlight}>
+            <AppText variant="caption" color="textMuted">
+                {text}
+            </AppText>
+        </View>
+    );
+}
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Safety & fairness</Text>
-                <View style={{marginTop: 10, gap: 8}}>
-                    {[
-                        "Place the phone gently on the chest and avoid pressing too hard.",
-                        "Use the same phone placement style for all phases.",
-                        "Keep the participant still during each recording window.",
-                        "Allow enough space for jogging and star jumps before measurement.",
-                        "Stop immediately if the participant feels discomfort, dizziness, or pain.",
-                    ].map((s, i) => (
-                        <View key={`safe_${i}`} style={styles.bulletRow}>
-                            <Text style={styles.bulletDot}>•</Text>
-                            <Text style={styles.bulletText}>{s}</Text>
-                        </View>
-                    ))}
-                </View>
-            </View>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Submission Requirements</Text>
-                <View style={{marginTop: 10, gap: 8}}>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>
-                            Sensor readings for all required measurement phases
-                        </Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>Reflection text</Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>Rating (1–5)</Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>GPS coordinates</Text>
-                    </View>
-                    <View style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
-                        <Text style={styles.bulletText}>Optional session video evidence</Text>
-                    </View>
-                </View>
-            </View>
-
-            <Pressable style={styles.primaryBtn} onPress={onStart}>
-                <Text style={styles.primaryBtnText}>Start Activity</Text>
-            </Pressable>
-
-            <View style={{height: 36}}/>
-        </ScrollView>
+function InfoRow({title, description}: { title: string; description: string }) {
+    return (
+        <View style={styles.infoRow}>
+            <AppText variant="bodyStrong">{title}</AppText>
+            <AppText variant="caption" color="textMuted" style={styles.infoText}>
+                {description}
+            </AppText>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#fff",
+    header: {
+        marginBottom: spacing.lg,
     },
     title: {
-        fontSize: 26,
-        fontWeight: "900",
-        marginTop: 6,
+        marginTop: spacing.md,
     },
     subtitle: {
-        marginTop: 6,
-        opacity: 0.75,
-        fontWeight: "800",
+        marginTop: spacing.sm,
     },
-    bold: {
-        fontWeight: "900",
+    cardText: {
+        marginTop: spacing.sm,
     },
-
-    hero: {
-        marginTop: 14,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        padding: 14,
+    startButton: {
+        marginTop: spacing.lg,
     },
-    heroText: {
-        opacity: 0.85,
-        lineHeight: 20,
-        fontWeight: "600",
+    backButton: {
+        marginTop: spacing.md,
     },
-    heroTagRow: {
-        marginTop: 12,
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: 8,
+    tagRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.md,
     },
     tag: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 999,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primarySoft,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
     },
-    tagText: {
-        fontWeight: "900",
-        opacity: 0.85,
-    },
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 16,
-        padding: 14,
-    },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: "900",
-    },
-    cardSub: {
-        marginTop: 8,
-        opacity: 0.75,
-        lineHeight: 18,
-    },
-    body: {
-        marginTop: 8,
-        opacity: 0.85,
-        lineHeight: 20,
-        fontWeight: "600",
-    },
-
     bulletRow: {
-        flexDirection: "row",
-        alignItems: "flex-start",
-        gap: 10,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+        marginTop: spacing.md,
     },
     bulletDot: {
-        marginTop: 1,
-        fontWeight: "900",
+        width: 8,
+        height: 8,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        marginTop: 7,
     },
     bulletText: {
         flex: 1,
-        opacity: 0.85,
-        lineHeight: 18,
-        fontWeight: "600",
     },
-
     stepRow: {
-        flexDirection: "row",
-        alignItems: "flex-start",
-        gap: 10,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+        marginTop: spacing.md,
     },
-    stepBadge: {
-        width: 24,
-        height: 24,
-        borderRadius: 999,
-        backgroundColor: "#111",
-        alignItems: "center",
-        justifyContent: "center",
-        marginTop: 1,
-    },
-    stepBadgeText: {
-        color: "white",
-        fontWeight: "900",
-        fontSize: 12,
+    stepNumber: {
+        width: 26,
+        height: 26,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     stepText: {
         flex: 1,
-        opacity: 0.88,
-        lineHeight: 18,
-        fontWeight: "600",
+        paddingTop: 2,
     },
-    cardHighlight: {
-        marginTop: 12,
-        opacity: 0.8,
-        fontStyle: "italic",
-        lineHeight: 18,
+    highlight: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
     },
-
     infoRow: {
-        borderWidth: 1,
-        borderColor: "#e9e9e9",
-        backgroundColor: "#fff",
-        borderRadius: 12,
-        padding: 12,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        marginTop: spacing.md,
     },
-    infoLeft: {
-        fontWeight: "900",
+    infoText: {
+        marginTop: spacing.xs,
     },
-    infoRight: {
-        marginTop: 6,
-        opacity: 0.75,
-        lineHeight: 18,
-        fontWeight: "600",
-    },
-
     table: {
-        marginTop: 12,
+        marginTop: spacing.md,
         borderWidth: 1,
-        borderColor: "#e9e9e9",
-        borderRadius: 12,
-        overflow: "hidden",
-        backgroundColor: "#fff",
+        borderColor: colors.border,
+        borderRadius: radius.lg,
+        overflow: 'hidden',
+        backgroundColor: colors.surface,
     },
     tableRow: {
-        flexDirection: "row",
-        paddingVertical: 10,
-        paddingHorizontal: 10,
+        flexDirection: 'row',
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.sm,
+        borderTopWidth: 1,
+        borderTopColor: colors.divider,
     },
     tableHeader: {
-        backgroundColor: "#111",
+        borderTopWidth: 0,
+        backgroundColor: colors.primaryDark,
     },
-    th: {
-        color: "white",
-        fontWeight: "900",
-        fontSize: 12,
+    cellStage: {
+        flex: 1.2,
     },
-    td: {
-        fontWeight: "700",
-        opacity: 0.85,
-        fontSize: 12,
+    cell: {
+        flex: 1.1,
     },
-
-    primaryBtn: {
-        marginTop: 16,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    cellSmall: {
+        flex: 0.9,
     },
-    primaryBtnText: {
-        color: "white",
-        fontWeight: "900",
-        fontSize: 16,
+    bottomSpace: {
+        height: spacing.xxl,
     },
 });

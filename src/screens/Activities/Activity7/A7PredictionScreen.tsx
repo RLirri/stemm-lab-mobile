@@ -1,102 +1,89 @@
 // src/screens/Activities/Activity7/A7PredictionScreen.tsx
 
-import React, {useCallback, useEffect, useMemo, useState} from "react";
-import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {useFocusEffect} from "@react-navigation/native";
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {useFocusEffect} from '@react-navigation/native';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-
+import type {AppStackParamList} from '../../../navigation/AppStack';
 import {
     getActivity7RunDraft,
     setActivity7Prediction,
     validateA7Prediction,
     type Activity7RunDraft,
     type A7MeasurementPhase,
-} from "../../../store/activity7RunDraftStore";
+} from '../../../store/activity7RunDraftStore';
 
-/* =========================================================
-   Helpers
-========================================================= */
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A7Prediction'>;
+type HighestPhasePick = A7MeasurementPhase;
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
 function digitsOnly(s: string) {
-    return s.replace(/[^\d]/g, "");
+    return s.replace(/[^\d]/g, '');
 }
 
 function parseBpm(input: string): number | null {
     const cleaned = digitsOnly(input);
     if (!cleaned) return null;
+
     const n = Number(cleaned);
-    if (!Number.isFinite(n)) return null;
-    return n;
+    return Number.isFinite(n) ? n : null;
 }
-
-type HighestPhasePick = A7MeasurementPhase;
-
-type Props = NativeStackScreenProps<AppStackParamList, "A7Prediction">;
-
-/* =========================================================
-   Small components
-========================================================= */
-
-function ChoiceButton(props: {
-    label: string;
-    selected: boolean;
-    onPress: () => void;
-}) {
-    return (
-        <Pressable
-            onPress={props.onPress}
-            style={[styles.choiceBtn, props.selected && styles.choiceBtnOn]}
-        >
-            <Text style={[styles.choiceText, props.selected && styles.choiceTextOn]}>
-                {props.label}
-            </Text>
-        </Pressable>
-    );
-}
-
-function ChecklistRow(props: { label: string; ok: boolean }) {
-    return (
-        <View style={styles.checkRow}>
-            <Text style={styles.checkLabel}>{props.label}</Text>
-            <View style={[styles.tickPill, props.ok ? styles.tickYes : styles.tickNo]}>
-                <Text style={styles.tickText}>{props.ok ? "OK" : "Missing"}</Text>
-            </View>
-        </View>
-    );
-}
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A7PredictionScreen({route, navigation}: Props) {
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity7RunDraft | null>(null);
 
-    const [restBpmText, setRestBpmText] = useState<string>("");
-    const [afterExerciseBpmText, setAfterExerciseBpmText] = useState<string>("");
+    const [restBpmText, setRestBpmText] = useState('');
+    const [afterExerciseBpmText, setAfterExerciseBpmText] = useState('');
     const [highestPhasePick, setHighestPhasePick] = useState<HighestPhasePick | null>(null);
+
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
 
     const refresh = useCallback(() => {
         const d = getActivity7RunDraft(runId);
@@ -106,19 +93,25 @@ export default function A7PredictionScreen({route, navigation}: Props) {
             const rest = d.prediction.predictedRestBpm;
             const after = d.prediction.predictedAfterExerciseBpm;
 
-            setRestBpmText(isFiniteNumber(rest) ? String(Math.round(rest)) : "");
-            setAfterExerciseBpmText(isFiniteNumber(after) ? String(Math.round(after)) : "");
+            setRestBpmText(isFiniteNumber(rest) ? String(Math.round(rest)) : '');
+            setAfterExerciseBpmText(isFiniteNumber(after) ? String(Math.round(after)) : '');
             setHighestPhasePick(d.prediction.expectedHighestPhase ?? null);
         }
     }, [runId]);
 
     useEffect(() => {
         const d = getActivity7RunDraft(runId);
+
         if (!d) {
             Alert.alert(
-                "Session expired",
-                "Your Activity 7 session draft was not found. Please start again.",
-                [{text: "OK", onPress: () => navigation.replace("A7SessionSetup", {activityId})}]
+                'Session expired',
+                'Your Activity 7 session draft was not found. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A7SessionSetup', {activityId}),
+                    },
+                ],
             );
             return;
         }
@@ -128,15 +121,15 @@ export default function A7PredictionScreen({route, navigation}: Props) {
         const rest = d.prediction?.predictedRestBpm;
         const after = d.prediction?.predictedAfterExerciseBpm;
 
-        setRestBpmText(isFiniteNumber(rest) ? String(Math.round(rest)) : "");
-        setAfterExerciseBpmText(isFiniteNumber(after) ? String(Math.round(after)) : "");
+        setRestBpmText(isFiniteNumber(rest) ? String(Math.round(rest)) : '');
+        setAfterExerciseBpmText(isFiniteNumber(after) ? String(Math.round(after)) : '');
         setHighestPhasePick(d.prediction?.expectedHighestPhase ?? null);
     }, [activityId, navigation, runId]);
 
     useFocusEffect(
         useCallback(() => {
             refresh();
-        }, [refresh])
+        }, [refresh]),
     );
 
     const view = useMemo(() => {
@@ -147,11 +140,14 @@ export default function A7PredictionScreen({route, navigation}: Props) {
 
         const restOk = restParsed != null && restParsed >= 1 && restParsed <= 80;
         const afterOk = afterParsed != null && afterParsed >= 1 && afterParsed <= 120;
-        const highestPhaseOptional = true;
 
         return {
             participantCount: draft.session.participantCount ?? 1,
-            measurementDurationSec: clampInt(draft.session.measurementDurationSec ?? 30, 10, 120),
+            measurementDurationSec: clampInt(
+                draft.session.measurementDurationSec ?? 30,
+                10,
+                120,
+            ),
             targetSamplingHz: draft.session.targetSamplingHz ?? 25,
 
             restParsed,
@@ -159,7 +155,7 @@ export default function A7PredictionScreen({route, navigation}: Props) {
 
             restOk,
             afterOk,
-            highestPhaseOptional,
+            highestPhaseOptional: true,
 
             ready: restOk && afterOk,
         };
@@ -187,16 +183,16 @@ export default function A7PredictionScreen({route, navigation}: Props) {
 
         if (!view.restOk) {
             Alert.alert(
-                "Missing prediction",
-                "Please enter your predicted breathing rate at rest (1–80 breaths/min)."
+                'Missing prediction',
+                'Please enter your predicted breathing rate at rest between 1 and 80 breaths/min.',
             );
             return;
         }
 
         if (!view.afterOk) {
             Alert.alert(
-                "Missing prediction",
-                "Please enter your predicted breathing rate after exercise (1–120 breaths/min)."
+                'Missing prediction',
+                'Please enter your predicted breathing rate after exercise between 1 and 120 breaths/min.',
             );
             return;
         }
@@ -205,12 +201,17 @@ export default function A7PredictionScreen({route, navigation}: Props) {
         if (!next) return;
 
         const err = validateA7Prediction(next);
+
         if (err) {
-            Alert.alert("Prediction required", err);
+            Alert.alert('Prediction required', err);
             return;
         }
 
-        Alert.alert("Saved ✅", "Prediction saved. You can start the breathing measurements now.");
+        showToast(
+            'Prediction saved',
+            'success',
+            'You can start the breathing measurements now.',
+        );
     }
 
     function onContinue() {
@@ -218,8 +219,8 @@ export default function A7PredictionScreen({route, navigation}: Props) {
 
         if (!view.restOk || !view.afterOk) {
             Alert.alert(
-                "Complete prediction first",
-                "Please enter predicted breathing rate at rest and after exercise before continuing."
+                'Complete prediction first',
+                'Please enter predicted breathing rate at rest and after exercise before continuing.',
             );
             return;
         }
@@ -228,250 +229,448 @@ export default function A7PredictionScreen({route, navigation}: Props) {
         if (!next) return;
 
         const err = validateA7Prediction(next);
+
         if (err) {
-            Alert.alert("Prediction required", err);
+            Alert.alert('Prediction required', err);
             return;
         }
 
-        navigation.navigate("A7Measurements", {activityId, runId});
+        showToast(
+            'Prediction saved',
+            'success',
+            'Opening breathing measurements.',
+        );
+
+        setTimeout(() => {
+            navigation.navigate('A7Measurements', {activityId, runId});
+        }, 700);
     }
 
     if (!draft || !view) {
         return (
-            <View style={styles.center}>
-                <Text style={{opacity: 0.7}}>Loading…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading prediction draft..."/>
+            </AppGradientScreen>
         );
     }
 
     const participants = draft.session.participants ?? [];
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Prediction</Text>
-                <Text style={styles.sub}>
-                    Before starting the breathing measurements, predict breathing rate at rest and
-                    after exercise.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 7" tone="primary"/>
 
-                {/* Session info */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Session Settings</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Prediction
+                    </AppText>
 
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>Participants</Text>
-                        <Text style={styles.rowValue}>{view.participantCount}</Text>
-                    </View>
-
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>Measurement duration</Text>
-                        <Text style={styles.rowValue}>{view.measurementDurationSec}s</Text>
-                    </View>
-
-                    <View style={styles.row}>
-                        <Text style={styles.rowLabel}>Target sampling rate</Text>
-                        <Text style={styles.rowValue}>{Math.round(view.targetSamplingHz)} Hz</Text>
-                    </View>
-
-                    <Text style={styles.help}>
-                        Each participant must complete all three phases: Rest, Post-Exercise Measurement 1,
-                        and Post-Exercise Measurement 2.
-                    </Text>
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Predict breathing rate at rest and after exercise before starting
+                        measurements.
+                    </AppText>
                 </View>
 
-                {/* Participants reminder */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Participants</Text>
-                    <Text style={styles.help}>
-                        Rotate through each participant during the measurement flow. You can rename
-                        participants in Session Setup.
-                    </Text>
+                <InfoBanner
+                    title="Prediction task"
+                    message="Make a hypothesis before measuring. The result screen will compare your predicted breathing rate with measured breathing phases."
+                    tone="info"
+                />
 
-                    <View style={{marginTop: 10, gap: 8}}>
-                        {participants.map((p, idx) => (
-                            <View key={p.id} style={styles.pill}>
-                                <Text style={{fontWeight: "900"}}>{p.name ?? `Participant ${idx + 1}`}</Text>
-                                <Text style={{opacity: 0.7}}>Required phases: 3</Text>
+                <AppSectionHeader
+                    title="Session Settings"
+                    subtitle="Review the breathing measurement requirements."
+                />
+
+                <AppCard>
+                    <MetricRow label="Participants" value={String(view.participantCount)}/>
+                    <MetricRow label="Measurement duration" value={`${view.measurementDurationSec}s`}/>
+                    <MetricRow label="Target sampling rate" value={`${Math.round(view.targetSamplingHz)} Hz`}/>
+
+                    <InfoBanner
+                        title="Completion requirement"
+                        message="Each participant should complete three phases: Rest, Post-Jog, and Post-Star-Jumps."
+                        tone="info"
+                    />
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Participants"
+                    subtitle="Rotate through each participant during the measurement flow."
+                />
+
+                <AppCard>
+                    <View style={styles.participantList}>
+                        {participants.map((p, index) => (
+                            <View key={p.id} style={styles.participantCard}>
+                                <View style={styles.participantText}>
+                                    <AppText variant="bodyStrong">
+                                        {p.name ?? `Participant ${index + 1}`}
+                                    </AppText>
+
+                                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                        Required phases: 3
+                                    </AppText>
+                                </View>
+
+                                <AppBadge label={`P${index + 1}`} tone="info"/>
                             </View>
                         ))}
                     </View>
-                </View>
+                </AppCard>
 
-                {/* Prediction inputs */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Your Predictions</Text>
+                <AppSectionHeader
+                    title="Your Predictions"
+                    subtitle="Enter breathing-rate estimates in breaths per minute."
+                />
 
-                    <Text style={styles.label}>Predicted breathing rate at rest (breaths/min)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Predicted breathing rate at rest"
                         value={restBpmText}
-                        onChangeText={setRestBpmText}
+                        onChangeText={(text) => setRestBpmText(digitsOnly(text))}
                         placeholder="e.g. 12"
                         keyboardType="number-pad"
-                        style={styles.input}
                         maxLength={3}
                     />
-                    <Text style={styles.tiny}>
-                        Enter a number between 1 and 80. Example resting breathing rate: around 10–20 BPM.
-                    </Text>
 
-                    <Text style={[styles.label, {marginTop: 14}]}>
-                        Predicted breathing rate after exercise (breaths/min)
-                    </Text>
-                    <TextInput
+                    <AppText variant="caption" color="textMuted" style={styles.helpText}>
+                        Enter 1–80 breaths/min. A typical resting breathing rate is often
+                        around 10–20 breaths/min.
+                    </AppText>
+
+                    <AppInput
+                        label="Predicted breathing rate after exercise"
                         value={afterExerciseBpmText}
-                        onChangeText={setAfterExerciseBpmText}
+                        onChangeText={(text) => setAfterExerciseBpmText(digitsOnly(text))}
                         placeholder="e.g. 24"
                         keyboardType="number-pad"
-                        style={styles.input}
                         maxLength={3}
                     />
-                    <Text style={styles.tiny}>
-                        Enter a number between 1 and 120. This prediction will be compared against both
-                        post-exercise phases.
-                    </Text>
 
-                    <Text style={[styles.label, {marginTop: 14}]}>
-                        Which phase do you think will have the highest breathing rate? (optional)
-                    </Text>
-                    <View style={styles.choiceRow}>
+                    <AppText variant="caption" color="textMuted" style={styles.helpText}>
+                        Enter 1–120 breaths/min. This prediction will be compared against
+                        post-exercise phases.
+                    </AppText>
+
+                    <View style={styles.previewBox}>
+                        <AppText variant="bodyStrong" color="primary">
+                            Prediction preview
+                        </AppText>
+
+                        <AppText variant="body" style={styles.smallGap}>
+                            Rest: {view.restParsed != null ? `${clampInt(view.restParsed, 1, 80)} BPM` : '—'} ·
+                            After exercise:{' '}
+                            {view.afterParsed != null
+                                ? `${clampInt(view.afterParsed, 1, 120)} BPM`
+                                : '—'}
+                        </AppText>
+                    </View>
+
+                    <AppText variant="bodyStrong" style={styles.choiceTitle}>
+                        Which phase will have the highest breathing rate? Optional
+                    </AppText>
+
+                    <View style={styles.choiceColumn}>
                         <ChoiceButton
                             label="Rest"
-                            selected={highestPhasePick === "rest"}
-                            onPress={() => setHighestPhasePick("rest")}
+                            selected={highestPhasePick === 'rest'}
+                            onPress={() => setHighestPhasePick('rest')}
                         />
+
                         <ChoiceButton
                             label="Post-Jog"
-                            selected={highestPhasePick === "post_jog_1min"}
-                            onPress={() => setHighestPhasePick("post_jog_1min")}
+                            selected={highestPhasePick === 'post_jog_1min'}
+                            onPress={() => setHighestPhasePick('post_jog_1min')}
                         />
+
                         <ChoiceButton
                             label="Post-Star-Jumps"
-                            selected={highestPhasePick === "post_star_jumps_100"}
-                            onPress={() => setHighestPhasePick("post_star_jumps_100")}
+                            selected={highestPhasePick === 'post_star_jumps_100'}
+                            onPress={() => setHighestPhasePick('post_star_jumps_100')}
                         />
                     </View>
 
-                    <View style={{marginTop: 12, gap: 8}}>
-                        <ChecklistRow label="Rest breathing prediction entered (1–80 BPM)" ok={view.restOk}/>
-                        <ChecklistRow
-                            label="After-exercise prediction entered (1–120 BPM)"
-                            ok={view.afterOk}
-                        />
-                        <ChecklistRow
-                            label="Highest-phase prediction selected (optional)"
-                            ok={view.highestPhaseOptional}
-                        />
+                    <View style={styles.checkList}>
+                        <ChecklistRow label="Rest prediction entered" ok={view.restOk}/>
+                        <ChecklistRow label="After-exercise prediction entered" ok={view.afterOk}/>
+                        <ChecklistRow label="Highest-phase prediction optional" ok/>
                     </View>
 
-                    <Pressable style={[styles.secondaryBtn, {marginTop: 14}]} onPress={onSave}>
-                        <Text style={styles.secondaryBtnText}>Save Prediction</Text>
-                    </Pressable>
-                </View>
+                    <AppButton
+                        title="Save Prediction"
+                        variant="outline"
+                        onPress={onSave}
+                        style={styles.saveButton}
+                    />
+                </AppCard>
 
-                {/* Continue */}
-                <Pressable style={[styles.primaryBtn, !view.ready && {opacity: 0.6}]} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue to Measurements</Text>
-                </Pressable>
+                <AppSectionHeader title="What Happens Next"/>
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                <AppCard>
+                    <View style={styles.stepList}>
+                        <StepItem index={1} title="Measure breathing at rest"/>
+                        <StepItem index={2} title="Measure breathing after jogging"/>
+                        <StepItem index={3} title="Measure breathing after star jumps"/>
+                        <StepItem index={4} title="Review results, reflect, and submit"/>
+                    </View>
+                </AppCard>
+
+                {!view.ready ? (
+                    <InfoBanner
+                        title="Prediction incomplete"
+                        message="Enter valid rest and after-exercise breathing predictions before continuing."
+                        tone="warning"
+                    />
+                ) : null}
+
+                <AppButton
+                    title="Continue to Measurements"
+                    onPress={onContinue}
+                    disabled={!view.ready}
+                />
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
-/* =========================================================
-   Styles
-========================================================= */
+type ChoiceButtonProps = {
+    label: string;
+    selected: boolean;
+    onPress: () => void;
+};
+
+function ChoiceButton({label, selected, onPress}: ChoiceButtonProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.choiceButton, selected && styles.choiceButtonOn]}
+        >
+            <AppText
+                variant="bodyStrong"
+                color={selected ? 'inverseText' : 'text'}
+                align="center"
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
+type ChecklistRowProps = {
+    label: string;
+    ok: boolean;
+};
+
+function ChecklistRow({label, ok}: ChecklistRowProps) {
+    return (
+        <View style={styles.checkRow}>
+            <AppText variant="bodyStrong" style={styles.checkText}>
+                {label}
+            </AppText>
+
+            <AppBadge label={ok ? 'OK' : 'Missing'} tone={ok ? 'success' : 'warning'}/>
+        </View>
+    );
+}
+
+type MetricRowProps = {
+    label: string;
+    value: string;
+};
+
+function MetricRow({label, value}: MetricRowProps) {
+    return (
+        <View style={styles.metricRow}>
+            <AppText variant="bodyStrong" style={styles.metricLabel}>
+                {label}
+            </AppText>
+
+            <AppText variant="bodyStrong" align="right" style={styles.metricValue}>
+                {value}
+            </AppText>
+        </View>
+    );
+}
+
+type StepItemProps = {
+    index: number;
+    title: string;
+};
+
+function StepItem({index, title}: StepItemProps) {
+    return (
+        <View style={styles.stepItem}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
+            </View>
+
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {title}
+            </AppText>
+        </View>
+    );
+}
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
+    keyboard: {
+        flex: 1,
+    },
 
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    card: {
-        marginTop: 14,
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+
+    metricLabel: {
+        flex: 1,
+    },
+
+    metricValue: {
+        flex: 1,
+    },
+
+    participantList: {
+        gap: spacing.md,
+    },
+
+    participantCard: {
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    help: {marginTop: 10, opacity: 0.7, lineHeight: 18},
-    tiny: {marginTop: 8, opacity: 0.65, lineHeight: 18, fontSize: 12},
 
-    row: {
-        marginTop: 10,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+    participantText: {
+        flex: 1,
     },
-    rowLabel: {opacity: 0.75, fontWeight: "700"},
-    rowValue: {fontWeight: "900"},
 
-    pill: {
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    helpText: {
+        marginTop: spacing.sm,
+        marginBottom: spacing.md,
+    },
+
+    previewBox: {
+        marginTop: spacing.lg,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.primarySoft,
+        backgroundColor: colors.accentSoft,
+        borderRadius: radius.lg,
+        padding: spacing.md,
     },
 
-    label: {marginTop: 12, fontWeight: "800"},
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
+    choiceTitle: {
+        marginTop: spacing.lg,
     },
 
-    choiceRow: {marginTop: 10, gap: 10},
-    choiceBtn: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+    choiceColumn: {
+        marginTop: spacing.md,
+        gap: spacing.sm,
     },
-    choiceBtnOn: {backgroundColor: "#111", borderColor: "#111"},
-    choiceText: {fontWeight: "900", opacity: 0.85},
-    choiceTextOn: {color: "white", opacity: 1},
+
+    choiceButton: {
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        paddingVertical: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    choiceButtonOn: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primary,
+    },
+
+    checkList: {
+        marginTop: spacing.lg,
+        gap: spacing.md,
+    },
 
     checkRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    checkLabel: {fontWeight: "800", flex: 1, paddingRight: 10},
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    checkText: {
+        flex: 1,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
+    saveButton: {
+        marginTop: spacing.lg,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    tickPill: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10},
-    tickYes: {backgroundColor: "#111"},
-    tickNo: {backgroundColor: "#777"},
-    tickText: {color: "white", fontWeight: "900"},
+    stepList: {
+        gap: spacing.md,
+    },
+
+    stepItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+    },
+
+    stepNumber: {
+        width: 28,
+        height: 28,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    stepText: {
+        flex: 1,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

@@ -1,20 +1,18 @@
 // src/screens/Activities/Activity1/A1AttemptPlanScreen.tsx
-import React, {useEffect, useMemo, useState} from "react";
+
+import React, {useEffect, useMemo, useState} from 'react';
 import {
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getRunDraft,
     updateAttempt,
@@ -22,9 +20,23 @@ import {
     type AttemptDraft,
     type AttemptPlanDraft,
     type SessionDraft,
-} from "../../../store/activityRunDraftStore";
+} from '../../../store/activityRunDraftStore';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A1AttemptPlan">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A1AttemptPlan'>;
 
 function toNumberOrUndefined(raw: string): number | undefined {
     const v = raw.trim();
@@ -44,12 +56,12 @@ function pctDiff(a: number, b: number) {
 }
 
 type ConfirmGate = {
-    key: "height" | "mass";
+    key: 'height' | 'mass';
     message: string;
 };
 
 function attemptLabel(index: number) {
-    if (index === 0) return "Baseline (No parachute)";
+    if (index === 0) return 'Baseline';
     return `Prototype ${index}`;
 }
 
@@ -60,24 +72,19 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
     const [attempt, setAttempt] = useState<AttemptDraft | null>(null);
 
-    // Form fields
-    const [predictionRaw, setPredictionRaw] = useState<string>("");
+    const [predictionRaw, setPredictionRaw] = useState<string>('');
 
-    const [canopyMaterial, setCanopyMaterial] =
-        useState<AttemptPlanDraft["designTags"] extends infer T ? (T extends object ? any : any) : any>(
-            undefined
-        );
+    const [canopyMaterial, setCanopyMaterial] = useState<any>(undefined);
     const [canopyShape, setCanopyShape] = useState<any>(undefined);
-    const [stringsCountRaw, setStringsCountRaw] = useState<string>("");
-    const [canopySizeRaw, setCanopySizeRaw] = useState<string>("");
-    const [stringLengthRaw, setStringLengthRaw] = useState<string>("");
-    const [designNotes, setDesignNotes] = useState<string>("");
+    const [stringsCountRaw, setStringsCountRaw] = useState<string>('');
+    const [canopySizeRaw, setCanopySizeRaw] = useState<string>('');
+    const [stringLengthRaw, setStringLengthRaw] = useState<string>('');
+    const [designNotes, setDesignNotes] = useState<string>('');
 
-    const [dropHeightRaw, setDropHeightRaw] = useState<string>("");
+    const [dropHeightRaw, setDropHeightRaw] = useState<string>('');
     const [massUnknown, setMassUnknown] = useState<boolean>(false);
-    const [payloadMassRaw, setPayloadMassRaw] = useState<string>("");
+    const [payloadMassRaw, setPayloadMassRaw] = useState<string>('');
 
-    // “warning confirmations” gating when height/mass differs from baseline.
     const [pendingConfirm, setPendingConfirm] = useState<ConfirmGate | null>(null);
     const [confirmed, setConfirmed] = useState<{ height: boolean; mass: boolean }>({
         height: false,
@@ -88,21 +95,26 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         if (!user) return;
 
         const d = getRunDraft(runId);
+
         if (!d) {
-            // If the store got reset, send them back to setup where we recreate.
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {
-                    text: "OK",
-                    onPress: () => navigation.replace("A1SessionSetup", {activityId}),
-                },
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A1SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
 
         const a = d.attempts?.[attemptIndex];
+
         if (!a) {
-            Alert.alert("Attempt missing", "This attempt slot does not exist.", [
-                {text: "OK", onPress: () => navigation.goBack()},
+            Alert.alert('Attempt missing', 'This attempt slot does not exist.', [
+                {text: 'OK', onPress: () => navigation.goBack()},
             ]);
             return;
         }
@@ -115,38 +127,37 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         if (!draft || !attempt) return;
 
         const s = draft.session;
-
-        // Prefill per-attempt parameters from attempt.plan if exists, else from session.
         const plan = attempt.plan;
 
-        setPredictionRaw(plan.predictionSec != null ? String(plan.predictionSec) : "");
+        setPredictionRaw(plan.predictionSec != null ? String(plan.predictionSec) : '');
 
         const tags = plan.designTags ?? {};
         setCanopyMaterial(tags.canopyMaterial);
         setCanopyShape(tags.canopyShape);
-        setStringsCountRaw(tags.stringsCount != null ? String(tags.stringsCount) : "");
-        setCanopySizeRaw(tags.canopySizeCm != null ? String(tags.canopySizeCm) : "");
-        setStringLengthRaw(tags.stringLengthCm != null ? String(tags.stringLengthCm) : "");
-        setDesignNotes(tags.notes ?? "");
+        setStringsCountRaw(tags.stringsCount != null ? String(tags.stringsCount) : '');
+        setCanopySizeRaw(tags.canopySizeCm != null ? String(tags.canopySizeCm) : '');
+        setStringLengthRaw(tags.stringLengthCm != null ? String(tags.stringLengthCm) : '');
+        setDesignNotes(tags.notes ?? '');
 
         const dropH = plan.dropHeightM ?? s.dropHeightM;
-        setDropHeightRaw(dropH != null ? String(dropH) : "");
+        setDropHeightRaw(dropH != null ? String(dropH) : '');
 
         const massU = plan.payloadMassUnknown ?? s.payloadMassUnknown ?? false;
         setMassUnknown(Boolean(massU));
 
         const m = plan.payloadMassG ?? s.payloadMassG;
-        setPayloadMassRaw(m != null ? String(m) : "");
+        setPayloadMassRaw(m != null ? String(m) : '');
     }, [attempt, draft]);
 
     const baselineRefs = useMemo(() => {
         if (!draft) return null;
+
         const base = draft.attempts?.[0];
         const session = draft.session;
 
-        // baseline reference: prefer baseline plan values, fallback to session values.
         const baseHeight = base?.plan?.dropHeightM ?? session.dropHeightM;
-        const baseMassUnknown = base?.plan?.payloadMassUnknown ?? session.payloadMassUnknown ?? false;
+        const baseMassUnknown =
+            base?.plan?.payloadMassUnknown ?? session.payloadMassUnknown ?? false;
         const baseMassG = base?.plan?.payloadMassG ?? session.payloadMassG;
 
         return {
@@ -162,21 +173,24 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         const next = updateAttempt(runId, attemptIndex, {
             plan: nextPlan,
         });
+
         setDraft(next);
         setAttempt(next.attempts[attemptIndex]);
     }
 
-    function buildPlanFromForm(session: SessionDraft, existingPlan: AttemptPlanDraft): AttemptPlanDraft {
+    function buildPlanFromForm(
+        session: SessionDraft,
+        existingPlan: AttemptPlanDraft,
+    ): AttemptPlanDraft {
         const predictionSec = toNumberOrUndefined(predictionRaw);
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
-
         const payloadMassG = massUnknown ? undefined : toNumberOrUndefined(payloadMassRaw);
 
         const designTags = isBaseline
             ? undefined
             : {
-                canopyMaterial: canopyMaterial,
-                canopyShape: canopyShape,
+                canopyMaterial,
+                canopyShape,
                 stringsCount:
                     toNumberOrUndefined(stringsCountRaw) != null
                         ? clampInt(toNumberOrUndefined(stringsCountRaw)!, 1, 16)
@@ -188,7 +202,7 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
 
         return {
             ...existingPlan,
-            attemptType: isBaseline ? "baseline" : "prototype",
+            attemptType: isBaseline ? 'baseline' : 'prototype',
             predictionSec: predictionSec != null ? predictionSec : undefined,
             dropHeightM: dropHeightM != null ? dropHeightM : undefined,
             payloadMassUnknown: massUnknown,
@@ -199,21 +213,20 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
 
     function validateRequired(session: SessionDraft) {
         const dropHeightM = toNumberOrUndefined(dropHeightRaw);
+
         if (dropHeightM == null || dropHeightM <= 0) {
-            return "Drop Height (m) is required and must be > 0.";
+            return 'Drop Height (m) is required and must be > 0.';
         }
 
-        // session setup said you can "measure later" BUT must be filled before attempt saved.
-        // So here we enforce.
         if (!massUnknown) {
             const massG = toNumberOrUndefined(payloadMassRaw);
+
             if (massG == null || massG <= 0) {
-                return "Payload Mass (g) is required unless you set it as Unknown.";
+                return 'Payload Mass (g) is required unless you set it as Unknown.';
             }
         }
 
         if (!isBaseline) {
-            // For prototypes, encourage at least one design descriptor (material/shape/notes)
             const anyTag =
                 Boolean(canopyMaterial) ||
                 Boolean(canopyShape) ||
@@ -223,7 +236,7 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
                 Boolean(stringLengthRaw.trim());
 
             if (!anyTag) {
-                return "Please add at least one prototype design detail (material/shape/size/notes).";
+                return 'Please add at least one prototype design detail.';
             }
         }
 
@@ -239,11 +252,12 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
 
         if (!isBaseline && curHeight != null && baseHeight != null && baseHeight > 0) {
             const diff = pctDiff(curHeight, baseHeight);
+
             if (diff > 0.05 && !confirmed.height) {
                 gates.push({
-                    key: "height",
+                    key: 'height',
                     message:
-                        "Height changed; comparisons may be unfair. Please confirm you still want to continue.",
+                        'Height changed; comparisons may be unfair. Please confirm you still want to continue.',
                 });
             }
         }
@@ -253,14 +267,20 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         const baseMassG = baselineRefs.baseMassG;
 
         if (!isBaseline) {
-            // Only gate if both are known numeric masses
-            if (!massUnknown && !baseMassUnknown && curMassG != null && baseMassG != null && baseMassG > 0) {
+            if (
+                !massUnknown &&
+                !baseMassUnknown &&
+                curMassG != null &&
+                baseMassG != null &&
+                baseMassG > 0
+            ) {
                 const diff = pctDiff(curMassG, baseMassG);
+
                 if (diff > 0.1 && !confirmed.mass) {
                     gates.push({
-                        key: "mass",
+                        key: 'mass',
                         message:
-                            "Payload changed; speed/force comparison changes. Please confirm you still want to continue.",
+                            'Payload changed; speed/force comparison changes. Please confirm you still want to continue.',
                     });
                 }
             }
@@ -278,12 +298,11 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
 
     function onConfirmGateYes() {
         if (!pendingConfirm) return;
+
         const key = pendingConfirm.key;
         setConfirmed((prev) => ({...prev, [key]: true}));
         setPendingConfirm(null);
 
-        // After confirming, try continue again automatically.
-        // We call onRecordVideo via a microtask so state updates apply.
         queueMicrotask(() => onRecordVideo());
     }
 
@@ -292,352 +311,460 @@ export default function A1AttemptPlanScreen({route, navigation}: Props) {
         if (!draft || !attempt) return;
 
         const err = validateRequired(draft.session);
+
         if (err) {
-            Alert.alert("Check fields", err);
+            Alert.alert('Check fields', err);
             return;
         }
 
         const gates = computeConfirmGates();
         const opened = openNextConfirmIfNeeded(gates);
+
         if (opened) return;
 
-        // Persist plan
         const nextPlan = buildPlanFromForm(draft.session, attempt.plan);
         persistAttemptPlan(nextPlan);
 
-        // v1: we haven’t implemented camera screen yet, so route directly to Measurements.
-        // Next step: A1RecordVideo screen (you asked "metadata only for now"; we’ll add later if you want).
-        navigation.navigate("A1Measurements", {activityId, runId, attemptIndex});
+        navigation.navigate('A1Measurements', {activityId, runId, attemptIndex});
     }
 
     if (!user) return null;
 
     if (!draft || !attempt) {
         return (
-            <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading attempt draft..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>{attemptLabel(attemptIndex)}</Text>
-                <Text style={styles.sub}>
-                    Plan this attempt before recording. Keep height and payload consistent for fair comparison.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge
+                        label={isBaseline ? 'Baseline' : `Prototype ${attemptIndex}`}
+                        tone={isBaseline ? 'info' : 'primary'}
+                    />
 
-                {/* Confirm modal-like card (simple, no extra deps) */}
+                    <AppText variant="title" style={styles.title}>
+                        {attemptLabel(attemptIndex)}
+                    </AppText>
+
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Plan this attempt before recording. Keep height and payload consistent
+                        for fair comparison.
+                    </AppText>
+                </View>
+
                 {pendingConfirm ? (
-                    <View style={styles.confirmCard}>
-                        <Text style={styles.confirmTitle}>Confirmation needed</Text>
-                        <Text style={styles.confirmBody}>{pendingConfirm.message}</Text>
-                        <View style={{flexDirection: "row", gap: 10, marginTop: 12}}>
-                            <Pressable
-                                style={[styles.secondaryBtn, {flex: 1}]}
+                    <AppCard style={styles.confirmCard}>
+                        <AppText variant="sectionTitle">Confirmation needed</AppText>
+
+                        <AppText variant="body" color="textMuted" style={styles.confirmBody}>
+                            {pendingConfirm.message}
+                        </AppText>
+
+                        <View style={styles.confirmActions}>
+                            <AppButton
+                                title="Cancel"
+                                variant="outline"
                                 onPress={() => setPendingConfirm(null)}
-                            >
-                                <Text style={styles.secondaryBtnText}>Cancel</Text>
-                            </Pressable>
-                            <Pressable style={[styles.primaryBtn, {flex: 1}]} onPress={onConfirmGateYes}>
-                                <Text style={styles.primaryBtnText}>I Understand</Text>
-                            </Pressable>
+                                style={styles.confirmButton}
+                            />
+
+                            <AppButton
+                                title="I Understand"
+                                onPress={onConfirmGateYes}
+                                style={styles.confirmButton}
+                            />
                         </View>
-                    </View>
+                    </AppCard>
                 ) : null}
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Prediction</Text>
-                    <Text style={styles.help}>Estimate how many seconds until first ground contact.</Text>
+                <InfoBanner
+                    title="Attempt planning"
+                    message="Your prediction and setup details will be used later for comparison and feedback."
+                    tone="info"
+                />
 
-                    <Text style={styles.label}>Prediction (seconds)</Text>
-                    <TextInput
+                <AppSectionHeader
+                    title="Prediction"
+                    subtitle="Estimate how long the object will take to reach the ground."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Prediction (seconds)"
                         value={predictionRaw}
                         onChangeText={setPredictionRaw}
                         placeholder="e.g. 1.2"
                         keyboardType="decimal-pad"
-                        style={styles.input}
                     />
-                </View>
+                </AppCard>
 
                 {!isBaseline ? (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Prototype Design</Text>
-                        <Text style={styles.help}>
-                            Choose a few tags and/or write notes. This helps your comparison dashboard later.
-                        </Text>
-
-                        <Text style={styles.label}>Canopy material</Text>
-                        <View style={styles.segment}>
-                            {(["paper", "plastic", "fabric", "other"] as const).map((v) => (
-                                <Pressable
-                                    key={v}
-                                    style={[styles.segmentBtn, canopyMaterial === v && styles.segmentBtnActive]}
-                                    onPress={() => setCanopyMaterial(v)}
-                                >
-                                    <Text
-                                        style={[styles.segmentText, canopyMaterial === v && styles.segmentTextActive]}>
-                                        {v}
-                                    </Text>
-                                </Pressable>
-                            ))}
-                        </View>
-
-                        <Text style={[styles.label, {marginTop: 12}]}>Canopy shape</Text>
-                        <View style={styles.segment}>
-                            {(["circle", "square", "other"] as const).map((v) => (
-                                <Pressable
-                                    key={v}
-                                    style={[styles.segmentBtn, canopyShape === v && styles.segmentBtnActive]}
-                                    onPress={() => setCanopyShape(v)}
-                                >
-                                    <Text style={[styles.segmentText, canopyShape === v && styles.segmentTextActive]}>
-                                        {v}
-                                    </Text>
-                                </Pressable>
-                            ))}
-                        </View>
-
-                        <View style={{flexDirection: "row", gap: 10}}>
-                            <View style={{flex: 1}}>
-                                <Text style={styles.label}>Strings count</Text>
-                                <TextInput
-                                    value={stringsCountRaw}
-                                    onChangeText={setStringsCountRaw}
-                                    placeholder="e.g. 4"
-                                    keyboardType="number-pad"
-                                    style={styles.input}
-                                />
-                            </View>
-                            <View style={{flex: 1}}>
-                                <Text style={styles.label}>String length (cm)</Text>
-                                <TextInput
-                                    value={stringLengthRaw}
-                                    onChangeText={setStringLengthRaw}
-                                    placeholder="e.g. 20"
-                                    keyboardType="decimal-pad"
-                                    style={styles.input}
-                                />
-                            </View>
-                        </View>
-
-                        <Text style={styles.label}>Canopy diameter / side length (cm)</Text>
-                        <TextInput
-                            value={canopySizeRaw}
-                            onChangeText={setCanopySizeRaw}
-                            placeholder="e.g. 25"
-                            keyboardType="decimal-pad"
-                            style={styles.input}
+                    <>
+                        <AppSectionHeader
+                            title="Prototype Design"
+                            subtitle="Describe what changed in this parachute prototype."
                         />
 
-                        <Text style={styles.label}>Notes</Text>
-                        <TextInput
-                            value={designNotes}
-                            onChangeText={setDesignNotes}
-                            placeholder="What changed and why?"
-                            style={[styles.input, {height: 90, textAlignVertical: "top"}]}
-                            multiline
-                        />
+                        <AppCard>
+                            <AppText variant="bodyStrong">Canopy material</AppText>
 
-                        <View style={styles.sketchBox}>
-                            <Text style={{fontWeight: "900"}}>Sketch upload (photo)</Text>
-                            <Text style={{marginTop: 6, opacity: 0.75, lineHeight: 18}}>
-                                v1: we’ll add camera/gallery picker later. For now, keep your sketch photo ready.
-                            </Text>
-                        </View>
-                    </View>
+                            <View style={styles.segmentWrap}>
+                                {(['paper', 'plastic', 'fabric', 'other'] as const).map((v) => (
+                                    <SegmentChip
+                                        key={v}
+                                        label={v}
+                                        active={canopyMaterial === v}
+                                        onPress={() => setCanopyMaterial(v)}
+                                    />
+                                ))}
+                            </View>
+
+                            <AppText variant="bodyStrong" style={styles.blockGap}>
+                                Canopy shape
+                            </AppText>
+
+                            <View style={styles.segmentWrap}>
+                                {(['circle', 'square', 'other'] as const).map((v) => (
+                                    <SegmentChip
+                                        key={v}
+                                        label={v}
+                                        active={canopyShape === v}
+                                        onPress={() => setCanopyShape(v)}
+                                    />
+                                ))}
+                            </View>
+
+                            <View style={styles.twoColumn}>
+                                <View style={styles.column}>
+                                    <AppInput
+                                        label="Strings count"
+                                        value={stringsCountRaw}
+                                        onChangeText={setStringsCountRaw}
+                                        placeholder="e.g. 4"
+                                        keyboardType="number-pad"
+                                    />
+                                </View>
+
+                                <View style={styles.column}>
+                                    <AppInput
+                                        label="String length (cm)"
+                                        value={stringLengthRaw}
+                                        onChangeText={setStringLengthRaw}
+                                        placeholder="e.g. 20"
+                                        keyboardType="decimal-pad"
+                                    />
+                                </View>
+                            </View>
+
+                            <AppInput
+                                label="Canopy diameter / side length (cm)"
+                                value={canopySizeRaw}
+                                onChangeText={setCanopySizeRaw}
+                                placeholder="e.g. 25"
+                                keyboardType="decimal-pad"
+                            />
+
+                            <AppInput
+                                label="Notes"
+                                value={designNotes}
+                                onChangeText={setDesignNotes}
+                                placeholder="What changed and why?"
+                                multiline
+                                style={styles.notesInput}
+                            />
+
+                            <View style={styles.sketchBox}>
+                                <AppText variant="bodyStrong">Sketch upload</AppText>
+                                <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                    v1 placeholder: keep your sketch photo ready for later upload.
+                                </AppText>
+                            </View>
+                        </AppCard>
+                    </>
                 ) : (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Attempt Type</Text>
-                        <Text style={styles.help}>
-                            Baseline is always “No parachute”. You’ll build prototypes after this.
-                        </Text>
-                        <View style={styles.pill}>
-                            <Text style={styles.pillText}>Baseline (No parachute)</Text>
-                        </View>
-                    </View>
+                    <>
+                        <AppSectionHeader title="Attempt Type"/>
+
+                        <AppCard>
+                            <AppText variant="body" color="textMuted">
+                                Baseline is always completed without a parachute. You will build
+                                and compare prototypes after this attempt.
+                            </AppText>
+
+                            <View style={styles.baselinePill}>
+                                <AppText variant="caption" color="inverseText">
+                                    Baseline · No parachute
+                                </AppText>
+                            </View>
+                        </AppCard>
+                    </>
                 )}
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Comparison Parameters</Text>
+                <AppSectionHeader
+                    title="Comparison Parameters"
+                    subtitle="Keep these consistent across attempts for fair comparison."
+                />
 
-                    <Text style={styles.label}>Drop Height (m)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Drop Height (m)"
                         value={dropHeightRaw}
                         onChangeText={(t) => {
                             setDropHeightRaw(t);
-                            if (!isBaseline) setConfirmed((prev) => ({...prev, height: false}));
+                            if (!isBaseline) {
+                                setConfirmed((prev) => ({...prev, height: false}));
+                            }
                         }}
                         placeholder="e.g. 1.5"
                         keyboardType="decimal-pad"
-                        style={styles.input}
                     />
+
                     {!isBaseline && baselineRefs?.baseHeight != null ? (
-                        <Text style={styles.help}>Baseline reference height: {baselineRefs.baseHeight} m</Text>
+                        <AppText variant="caption" color="textMuted" style={styles.referenceText}>
+                            Baseline reference height: {baselineRefs.baseHeight} m
+                        </AppText>
                     ) : null}
 
-                    <Text style={[styles.label, {marginTop: 12}]}>Payload Mass (g)</Text>
-                    <Text style={styles.help}>If unknown, force/drag/g-force may not be computed.</Text>
-
-                    <View style={{flexDirection: "row", gap: 10}}>
-                        <View style={{flex: 1}}>
-                            <TextInput
-                                value={payloadMassRaw}
-                                onChangeText={(t) => {
-                                    setPayloadMassRaw(t);
-                                    if (!isBaseline) setConfirmed((prev) => ({...prev, mass: false}));
-                                }}
-                                placeholder="e.g. 20"
-                                keyboardType="number-pad"
-                                style={[styles.input, massUnknown && {opacity: 0.5}]}
-                                editable={!massUnknown}
-                            />
+                    <View style={styles.massHeader}>
+                        <View style={styles.massText}>
+                            <AppText variant="bodyStrong">Payload Mass (g)</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                If unknown, force/drag/g-force calculations may be limited.
+                            </AppText>
                         </View>
+
                         <Pressable
-                            style={[styles.toggleChip, massUnknown && styles.toggleChipOn]}
                             onPress={() => {
                                 setMassUnknown((v) => {
                                     const next = !v;
-                                    if (!isBaseline) setConfirmed((prev) => ({...prev, mass: false}));
+                                    if (!isBaseline) {
+                                        setConfirmed((prev) => ({...prev, mass: false}));
+                                    }
                                     return next;
                                 });
                             }}
+                            style={[styles.toggleChip, massUnknown && styles.toggleChipOn]}
                         >
-                            <Text style={[styles.toggleChipText, massUnknown && styles.toggleChipTextOn]}>
-                                {massUnknown ? "Unknown" : "Known"}
-                            </Text>
+                            <AppText
+                                variant="caption"
+                                color={massUnknown ? 'inverseText' : 'text'}
+                            >
+                                {massUnknown ? 'Unknown' : 'Known'}
+                            </AppText>
                         </Pressable>
                     </View>
 
-                    {!isBaseline && !massUnknown && baselineRefs?.baseMassG != null && !baselineRefs.baseMassUnknown ? (
-                        <Text style={styles.help}>Baseline reference mass: {baselineRefs.baseMassG} g</Text>
+                    <AppInput
+                        value={payloadMassRaw}
+                        onChangeText={(t) => {
+                            setPayloadMassRaw(t);
+                            if (!isBaseline) {
+                                setConfirmed((prev) => ({...prev, mass: false}));
+                            }
+                        }}
+                        placeholder="e.g. 20"
+                        keyboardType="number-pad"
+                        editable={!massUnknown}
+                        style={massUnknown ? styles.disabledInput : undefined}
+                    />
+
+                    {!isBaseline &&
+                    !massUnknown &&
+                    baselineRefs?.baseMassG != null &&
+                    !baselineRefs.baseMassUnknown ? (
+                        <AppText variant="caption" color="textMuted" style={styles.referenceText}>
+                            Baseline reference mass: {baselineRefs.baseMassG} g
+                        </AppText>
                     ) : null}
-                </View>
+                </AppCard>
 
-                <Pressable style={styles.primaryBtn} onPress={onRecordVideo}>
-                    <Text style={styles.primaryBtnText}>Record Drop Video</Text>
-                </Pressable>
+                <AppButton title="Record Drop Video" onPress={onRecordVideo}/>
 
-                <Text style={styles.footerHint}>
-                    Next: video capture (v1 placeholder) → measurements → results. You can add up to 3 prototypes.
-                </Text>
+                <AppText variant="caption" color="textMuted" style={styles.footerHint}>
+                    Next: video capture placeholder → measurements → results. You can add
+                    up to 3 prototypes.
+                </AppText>
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type SegmentChipProps = {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+};
+
+function SegmentChip({label, active, onPress}: SegmentChipProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.segmentChip, active && styles.segmentChipActive]}
+        >
+            <AppText
+                variant="caption"
+                color={active ? 'inverseText' : 'text'}
+                style={styles.capitalize}
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
+    keyboard: {
+        flex: 1,
+    },
 
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    card: {
-        marginTop: 14,
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    confirmCard: {
+        borderColor: colors.warning,
+        backgroundColor: colors.warningSoft,
+    },
+
+    confirmBody: {
+        marginTop: spacing.sm,
+    },
+
+    confirmActions: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.lg,
+    },
+
+    confirmButton: {
+        flex: 1,
+    },
+
+    segmentWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+
+    segmentChip: {
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: Platform.OS === "ios" ? 12 : 10,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
     },
 
-    segment: {
-        marginTop: 8,
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: 8,
+    segmentChipActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    segmentBtn: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 999,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-    },
-    segmentBtnActive: {backgroundColor: "#111", borderColor: "#111"},
-    segmentText: {fontWeight: "800", opacity: 0.85, textTransform: "capitalize"},
-    segmentTextActive: {color: "white", opacity: 1},
 
-    pill: {
-        marginTop: 10,
-        alignSelf: "flex-start",
-        backgroundColor: "#111",
-        borderRadius: 999,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
+    capitalize: {
+        textTransform: 'capitalize',
     },
-    pillText: {color: "white", fontWeight: "900"},
+
+    blockGap: {
+        marginTop: spacing.lg,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    twoColumn: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.lg,
+    },
+
+    column: {
+        flex: 1,
+    },
+
+    notesInput: {
+        minHeight: 90,
+        textAlignVertical: 'top',
+    },
 
     sketchBox: {
-        marginTop: 14,
+        marginTop: spacing.md,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+    },
+
+    baselinePill: {
+        marginTop: spacing.lg,
+        alignSelf: 'flex-start',
+        backgroundColor: colors.primary,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+    },
+
+    referenceText: {
+        marginTop: -spacing.sm,
+        marginBottom: spacing.md,
+    },
+
+    massHeader: {
+        marginTop: spacing.lg,
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    massText: {
+        flex: 1,
     },
 
     toggleChip: {
-        alignSelf: "stretch",
-        justifyContent: "center",
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        backgroundColor: "white",
+        borderColor: colors.border,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+        backgroundColor: colors.surface,
     },
-    toggleChipOn: {backgroundColor: "#111", borderColor: "#111"},
-    toggleChipText: {fontWeight: "900", opacity: 0.8},
-    toggleChipTextOn: {color: "white", opacity: 1},
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    toggleChipOn: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        marginTop: 14,
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    disabledInput: {
+        opacity: 0.5,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    confirmCard: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#111",
-        backgroundColor: "#fff",
-        borderRadius: 14,
-        padding: 14,
+    footerHint: {
+        marginTop: spacing.md,
     },
-    confirmTitle: {fontSize: 16, fontWeight: "900"},
-    confirmBody: {marginTop: 8, opacity: 0.85, lineHeight: 18},
 
-    footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

@@ -1,24 +1,14 @@
 // src/screens/Activities/Activity5/A5ReflectionSubmitScreen.tsx
-import React, {useCallback, useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {useFocusEffect} from "@react-navigation/native";
-import {doc, getDoc} from "firebase/firestore";
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth, db} from "../../../services/firebase";
-import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {useFocusEffect} from '@react-navigation/native';
+import {doc, getDoc} from 'firebase/firestore';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth, db} from '../../../services/firebase';
+import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {
     clearActivity5RunDraft,
     getActivity5RunDraft,
@@ -28,18 +18,42 @@ import {
     getA5BestImprovement,
     type Activity5RunDraft,
     type A5MovementType,
-} from "../../../store/activity5RunDraftStore";
-import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
-import {submitActivity5} from "../../../services/activitySubmissionService";
-import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
-import {checkReflectionQuality} from "../../../services/reflectionQualityService";
+} from '../../../store/activity5RunDraftStore';
+import {pickVideoFromLibrary, recordVideoWithCamera} from '../../../services/evidenceService';
+import {submitActivity5} from '../../../services/activitySubmissionService';
+import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQualityCard';
+import {checkReflectionQuality} from '../../../services/reflectionQualityService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A5ReflectionSubmit">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A5ReflectionSubmit'>;
 
 const A5_LEADERBOARD_SCORE_SCALE = 100;
 
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
+
 function scaleA5Score(raw: number) {
-    if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return 0;
     return Math.max(0, Math.round(raw * A5_LEADERBOARD_SCORE_SCALE));
 }
 
@@ -48,16 +62,16 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
 function isNonEmptyString(x: unknown): x is string {
-    return typeof x === "string" && x.trim().length > 0;
+    return typeof x === 'string' && x.trim().length > 0;
 }
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
-    return "Submission failed.";
+    return 'Submission failed.';
 }
 
 function getSessionVideoUri(run: Activity5RunDraft): string | null {
@@ -70,7 +84,7 @@ function hasSessionVideo(run: Activity5RunDraft) {
 }
 
 function hasGpsGranted(run: Activity5RunDraft) {
-    return run.session.gpsEnabled === true && run.session.gpsPermission === "granted";
+    return run.session.gpsEnabled === true && run.session.gpsPermission === 'granted';
 }
 
 function hasRealGeo(run: Activity5RunDraft) {
@@ -78,12 +92,14 @@ function hasRealGeo(run: Activity5RunDraft) {
     return !!g && isFiniteNumber(g.lat) && isFiniteNumber(g.lng);
 }
 
-function formatGeoText(geo: Activity5RunDraft["session"]["geo"] | undefined): string {
-    if (!geo) return "No coordinate saved yet";
-    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return "No coordinate saved yet";
+function formatGeoText(geo: Activity5RunDraft['session']['geo'] | undefined): string {
+    if (!geo) return 'No coordinate saved yet';
+    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return 'No coordinate saved yet';
 
-    const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
-    const timeText = isFiniteNumber(geo.capturedAt) ? ` • ${new Date(geo.capturedAt).toLocaleString()}` : "";
+    const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : '';
+    const timeText = isFiniteNumber(geo.capturedAt)
+        ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
+        : '';
 
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
@@ -94,18 +110,22 @@ function hasPrediction(run: Activity5RunDraft) {
 
 function hasAnyDataset(run: Activity5RunDraft) {
     return (run.trials ?? []).some(
-        (trial) => trial?.dataset && Array.isArray(trial.dataset.samples) && trial.dataset.samples.length > 0
+        (trial) =>
+            trial?.dataset &&
+            Array.isArray(trial.dataset.samples) &&
+            trial.dataset.samples.length > 0,
     );
 }
 
 function movementTitleForType(run: Activity5RunDraft, movementType?: A5MovementType) {
-    if (!movementType) return "—";
+    if (!movementType) return '—';
+
     const movement = run.session.movements.find((item) => item.type === movementType);
     return movement?.title ?? movementType;
 }
 
 function stripVideoFromMissing(missing: string[]): string[] {
-    return (missing ?? []).filter((item) => !String(item).toLowerCase().includes("video"));
+    return (missing ?? []).filter((item) => !String(item).toLowerCase().includes('video'));
 }
 
 export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
@@ -113,14 +133,30 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity5RunDraft | null>(null);
-    const [reflectionText, setReflectionText] = useState("");
+    const [reflectionText, setReflectionText] = useState('');
     const [rating, setRating] = useState<number>(4);
     const [submitting, setSubmitting] = useState(false);
     const [attaching, setAttaching] = useState(false);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     const reflectionQuality = useMemo(
         () => checkReflectionQuality(reflectionText),
-        [reflectionText]
+        [reflectionText],
     );
 
     const refreshDraft = useCallback(() => {
@@ -128,7 +164,7 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         setDraft(d ?? null);
 
         if (d) {
-            setReflectionText(d.reflection?.reflectionText ?? "");
+            setReflectionText(d.reflection?.reflectionText ?? '');
             setRating(d.reflection?.rating ?? 4);
         }
     }, [runId]);
@@ -137,15 +173,23 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         if (!user) return;
 
         const d = getActivity5RunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {text: "OK", onPress: () => navigation.replace("A5SessionSetup", {activityId})},
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A5SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
 
         setDraft(d);
-        setReflectionText(d.reflection?.reflectionText ?? "");
+        setReflectionText(d.reflection?.reflectionText ?? '');
         setRating(d.reflection?.rating ?? 4);
     }, [activityId, navigation, runId, user]);
 
@@ -153,7 +197,7 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         useCallback(() => {
             if (!user) return;
             refreshDraft();
-        }, [refreshDraft, user])
+        }, [refreshDraft, user]),
     );
 
     const viewModel = useMemo(() => {
@@ -180,36 +224,59 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         };
     }, [draft]);
 
+    const bestParticipantName = useMemo(() => {
+        if (!draft || !viewModel?.bestParticipantId) return '—';
+
+        return (
+            draft.session.participants.find(
+                (participant) => participant.id === viewModel.bestParticipantId,
+            )?.name ?? '—'
+        );
+    }, [draft, viewModel?.bestParticipantId]);
+
+    const attachedName = useMemo(() => {
+        if (!draft) return null;
+
+        const uri = getSessionVideoUri(draft);
+        if (!uri) return null;
+
+        const last = uri.split('/').slice(-1)[0];
+        return last || 'video';
+    }, [draft]);
+
     const smartReflectionSummary = useMemo(() => {
         if (!draft || !viewModel) {
-            return "Explain how your movement changed between baseline and feedback mode.";
+            return 'Explain how your movement changed between baseline and feedback mode.';
         }
 
         const participantName = viewModel.bestParticipantId
-            ? draft.session.participants.find((participant) => participant.id === viewModel.bestParticipantId)?.name ?? "the selected participant"
-            : "the selected participant";
+            ? draft.session.participants.find(
+            (participant) => participant.id === viewModel.bestParticipantId,
+        )?.name ?? 'the selected participant'
+            : 'the selected participant';
 
         const scoreText = Number.isFinite(viewModel.bestImprovementScaled)
             ? `${viewModel.bestImprovementScaled}`
-            : "—";
+            : '—';
 
         return `${participantName} showed the strongest improvement in ${viewModel.bestMovementTitle}, with a leaderboard improvement score of ${scoreText}. Compare the baseline and feedback trials, then explain what helped the movement become smoother or more controlled.`;
     }, [draft, viewModel]);
 
     function validateLocal(): string | null {
-        if (!draft) return "Draft not found.";
+        if (!draft) return 'Draft not found.';
 
         const missingNoVideo = stripVideoFromMissing(validateA5Submission(draft));
+
         if (missingNoVideo.length > 0) {
-            return `Missing:\n• ${missingNoVideo.join("\n• ")}`;
+            return `Missing:\n• ${missingNoVideo.join('\n• ')}`;
         }
 
         if (reflectionQuality.isSubmissionBlocked) {
-            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+            return 'Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.';
         }
 
         if (!isFiniteNumber(rating) || rating < 1 || rating > 5) {
-            return "Rating must be between 1 and 5.";
+            return 'Rating must be between 1 and 5.';
         }
 
         return null;
@@ -218,13 +285,24 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
     async function onAttachVideoPick() {
         try {
             setAttaching(true);
+
             const picked = await pickVideoFromLibrary();
             if (!picked) return;
 
-            setActivity5SessionVideo(runId, {uri: picked.uri, createdAt: Date.now()});
+            setActivity5SessionVideo(runId, {
+                uri: picked.uri,
+                createdAt: Date.now(),
+            });
+
             refreshDraft();
+
+            showToast(
+                'Session video attached',
+                'success',
+                'The video will be uploaded during submission.',
+            );
         } catch (error: unknown) {
-            Alert.alert("Attach failed", getErrorMessage(error));
+            Alert.alert('Attach failed', getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
@@ -233,46 +311,79 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
     async function onAttachVideoRecord() {
         try {
             setAttaching(true);
+
             const recorded = await recordVideoWithCamera();
             if (!recorded) return;
 
-            setActivity5SessionVideo(runId, {uri: recorded.uri, createdAt: Date.now()});
+            setActivity5SessionVideo(runId, {
+                uri: recorded.uri,
+                createdAt: Date.now(),
+            });
+
             refreshDraft();
+
+            showToast(
+                'Session video recorded',
+                'success',
+                'The video will be uploaded during submission.',
+            );
         } catch (error: unknown) {
-            Alert.alert("Attach failed", getErrorMessage(error));
+            Alert.alert('Attach failed', getErrorMessage(error));
         } finally {
             setAttaching(false);
         }
     }
 
     function onRemoveVideo() {
-        Alert.alert("Remove video?", "This will detach the session video evidence from this draft.", [
-            {text: "Cancel", style: "cancel"},
-            {
-                text: "Remove",
-                style: "destructive",
-                onPress: () => {
-                    setActivity5SessionVideo(runId, undefined);
-                    refreshDraft();
+        Alert.alert(
+            'Remove video?',
+            'This will detach the session video evidence from this draft.',
+            [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: () => {
+                        setActivity5SessionVideo(runId, undefined);
+                        refreshDraft();
+
+                        showToast(
+                            'Session video removed',
+                            'info',
+                            'You can attach another video anytime.',
+                        );
+                    },
                 },
-            },
-        ]);
+            ],
+        );
     }
 
     function onAttachVideoMenu() {
         const hasVid = !!draft && hasSessionVideo(draft);
 
-        const buttons: Array<{ text: string; onPress?: () => void; style?: "cancel" | "destructive" }> = [
-            {text: "Close", style: "cancel"},
-            {text: "Pick from library", onPress: () => void onAttachVideoPick()},
-            {text: "Record with camera", onPress: () => void onAttachVideoRecord()},
+        const buttons: Array<{
+            text: string;
+            onPress?: () => void;
+            style?: 'cancel' | 'destructive';
+        }> = [
+            {text: 'Close', style: 'cancel'},
+            {text: 'Pick from library', onPress: () => void onAttachVideoPick()},
+            {text: 'Record with camera', onPress: () => void onAttachVideoRecord()},
         ];
 
         if (hasVid) {
-            buttons.push({text: "Remove attached video", style: "destructive", onPress: onRemoveVideo});
+            buttons.push({
+                text: 'Remove attached video',
+                style: 'destructive',
+                onPress: onRemoveVideo,
+            });
         }
 
-        Alert.alert("Session video evidence", "Optional — attach if you have it.", buttons);
+        Alert.alert(
+            'Session video evidence',
+            'Optional evidence. Attach a short video if available.',
+            buttons,
+        );
     }
 
     async function onSubmit() {
@@ -286,26 +397,31 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         setDraft(updated);
 
         const err = validateLocal();
+
         if (err) {
             const low = err.toLowerCase();
 
-            Alert.alert("Cannot submit", err, [
-                low.includes("gps") || low.includes("coordinate")
+            Alert.alert('Cannot submit', err, [
+                low.includes('gps') || low.includes('coordinate')
                     ? {
-                        text: "Capture Location",
-                        onPress: () => navigation.navigate("A5SessionSetup", {activityId, runId}),
+                        text: 'Capture Location',
+                        onPress: () => navigation.navigate('A5SessionSetup', {activityId, runId}),
                     }
-                    : low.includes("prediction")
+                    : low.includes('prediction')
                         ? {
-                            text: "Go to Prediction",
-                            onPress: () => navigation.navigate("A5Prediction", {activityId, runId}),
+                            text: 'Go to Prediction',
+                            onPress: () => navigation.navigate('A5Prediction', {activityId, runId}),
                         }
-                        : low.includes("trial") || low.includes("dataset") || low.includes("baseline") || low.includes("feedback")
+                        : low.includes('trial') ||
+                        low.includes('dataset') ||
+                        low.includes('baseline') ||
+                        low.includes('feedback')
                             ? {
-                                text: "Go to Trials",
-                                onPress: () => navigation.navigate("A5GuidedTrials", {activityId, runId}),
+                                text: 'Go to Trials',
+                                onPress: () =>
+                                    navigation.navigate('A5GuidedTrials', {activityId, runId}),
                             }
-                            : {text: "OK"},
+                            : {text: 'OK'},
             ]);
 
             return;
@@ -314,11 +430,11 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
         try {
             setSubmitting(true);
 
-            const userSnap = await getDoc(doc(db, "users", user.uid));
+            const userSnap = await getDoc(doc(db, 'users', user.uid));
             const teamId = userSnap.data()?.teamId;
 
             if (!isNonEmptyString(teamId)) {
-                Alert.alert("Join a team", "You must join a team before submitting.");
+                Alert.alert('Join a team', 'You must join a team before submitting.');
                 return;
             }
 
@@ -338,36 +454,33 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
             clearActivity5RunDraft(runId);
 
-            const returnedScore = "score" in res && typeof res.score === "number" && Number.isFinite(res.score)
-                ? res.score
-                : bestImprovementScore;
+            const returnedScore =
+                'score' in res && typeof res.score === 'number' && Number.isFinite(res.score)
+                    ? res.score
+                    : bestImprovementScore;
 
-            Alert.alert("Submitted ✅", `Your best improvement: ${returnedScore}`, [
-                {
-                    text: "View Leaderboard",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 1,
-                            routes: [{name: "Home" as never}, {name: "Leaderboard" as never}],
-                        }),
-                },
-                {
-                    text: "Back to Home",
-                    style: "cancel",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 0,
-                            routes: [{name: "Home" as never}],
-                        }),
-                },
-            ]);
+            showToast(
+                'Submission successful',
+                'success',
+                `Best improvement: ${returnedScore}`,
+            );
+
+            setTimeout(() => {
+                navigation.reset({
+                    index: 1,
+                    routes: [
+                        {name: 'Home' as never},
+                        {name: 'Leaderboard' as never},
+                    ],
+                });
+            }, 1400);
         } catch (error: unknown) {
             try {
-                const userSnap = await getDoc(doc(db, "users", user.uid));
+                const userSnap = await getDoc(doc(db, 'users', user.uid));
                 const teamId = userSnap.data()?.teamId;
 
                 if (!isNonEmptyString(teamId)) {
-                    Alert.alert("Error", getErrorMessage(error));
+                    Alert.alert('Error', getErrorMessage(error));
                     return;
                 }
 
@@ -387,7 +500,7 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
                 await queueFinalSubmission({
                     runId: updated.runId,
-                    activityId: "activity05_humanPerformance",
+                    activityId: 'activity05_humanPerformance',
                     userId: user.uid,
                     teamId,
                     payload: {
@@ -396,12 +509,20 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
                     },
                 });
 
-                Alert.alert(
-                    "Saved offline",
-                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                showToast(
+                    'Submission saved offline',
+                    'info',
+                    'It will sync automatically when connection is available.',
                 );
+
+                setTimeout(() => {
+                    navigation.reset({
+                        index: 0,
+                        routes: [{name: 'Home' as never}],
+                    });
+                }, 1600);
             } catch (queueError: unknown) {
-                Alert.alert("Error", getErrorMessage(queueError));
+                Alert.alert('Error', getErrorMessage(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -412,294 +533,430 @@ export default function A5ReflectionSubmitScreen({route, navigation}: Props) {
 
     if (!draft || !viewModel) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading reflection draft..."/>
+            </AppGradientScreen>
         );
     }
 
-    const bestParticipantName = viewModel.bestParticipantId
-        ? draft.session.participants.find((participant) => participant.id === viewModel.bestParticipantId)?.name ?? "—"
-        : "—";
-
-    const attachedName = (() => {
-        const uri = getSessionVideoUri(draft);
-        if (!uri) return null;
-
-        const last = uri.split("/").slice(-1)[0];
-        return last || "video";
-    })();
-
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Reflection & Submit</Text>
-                <Text style={styles.sub}>
-                    Leaderboard score uses your best improvement, scaled ×{A5_LEADERBOARD_SCORE_SCALE}.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 5" tone="primary"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Best Improvement</Text>
-                    <Text style={styles.scoreText}>
-                        {Number.isFinite(viewModel.bestImprovementScaled) ? String(viewModel.bestImprovementScaled) : "—"}
-                    </Text>
-                    <Text style={styles.help}>
-                        {bestParticipantName} • {viewModel.bestMovementTitle}
-                    </Text>
+                    <AppText variant="title" style={styles.title}>
+                        Reflection & Submit
+                    </AppText>
+
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Review best improvement, confirm evidence, write a reflection, and
+                        submit.
+                    </AppText>
                 </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Submission Checklist</Text>
+                <InfoBanner
+                    title="Final submission check"
+                    message={`Leaderboard score uses best improvement scaled ×${A5_LEADERBOARD_SCORE_SCALE}.`}
+                    tone="info"
+                />
 
-                    <View style={{marginTop: 10, gap: 10}}>
-                        <ChecklistRow label="Prediction completed (required)" ok={viewModel.predictionOk}/>
-                        <ChecklistRow label="Recorded sensor dataset (required)" ok={viewModel.datasetOk}/>
+                <View style={styles.heroCard}>
+                    <AppText variant="bodyStrong" color="inverseText">
+                        Best Improvement
+                    </AppText>
+
+                    <AppText variant="title" color="inverseText" style={styles.heroScore}>
+                        {Number.isFinite(viewModel.bestImprovementScaled)
+                            ? String(viewModel.bestImprovementScaled)
+                            : '—'}
+                    </AppText>
+
+                    <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                        {bestParticipantName} • {viewModel.bestMovementTitle}
+                    </AppText>
+                </View>
+
+                <AppSectionHeader
+                    title="Submission Checklist"
+                    subtitle="Required items are checked before submission."
+                />
+
+                <AppCard>
+                    <View style={styles.checkList}>
+                        <ChecklistRow label="Prediction completed" ok={viewModel.predictionOk} required/>
+                        <ChecklistRow label="Recorded sensor dataset" ok={viewModel.datasetOk} required/>
 
                         <ChecklistRow
-                            label="Session video (optional)"
+                            label="Session video"
                             ok={viewModel.sessionVid}
-                            meta={viewModel.sessionVid ? "Attached ✅" : "Not attached (OK)"}
+                            meta={viewModel.sessionVid ? 'Attached' : 'Optional'}
                         />
 
                         {viewModel.gpsEnabled ? (
                             <>
                                 <ChecklistRow
-                                    label="GPS enabled + granted (required)"
+                                    label="GPS enabled and granted"
                                     ok={viewModel.gpsGranted}
-                                    meta={viewModel.gpsGranted ? "Granted ✅" : "Not granted"}
+                                    meta={viewModel.gpsGranted ? 'Granted' : 'Not granted'}
+                                    required
                                 />
+
                                 <ChecklistRow
-                                    label="GPS coordinate captured (required)"
+                                    label="GPS coordinate captured"
                                     ok={viewModel.geoCaptured}
-                                    meta={viewModel.geoCaptured ? "Captured ✅" : "Not captured yet"}
+                                    meta={viewModel.geoCaptured ? 'Captured' : 'Not captured yet'}
+                                    required
                                 />
                             </>
                         ) : (
-                            <ChecklistRow label="GPS disabled for this session" ok={true} meta="Not required"/>
+                            <ChecklistRow
+                                label="GPS disabled for this session"
+                                ok
+                                meta="Not required"
+                            />
                         )}
 
                         <ChecklistRow
                             label="Reflection quality"
                             ok={!reflectionQuality.isSubmissionBlocked}
-                            meta={`${reflectionQuality.wordCount} words • ${reflectionQuality.status.replace("_", " ")}`}
+                            meta={`${reflectionQuality.wordCount} words • ${reflectionQuality.status.replace('_', ' ')}`}
+                            required
                         />
                     </View>
 
                     {viewModel.missingListNoVideo.length > 0 ? (
-                        <Text style={styles.tiny}>Missing: {viewModel.missingListNoVideo.join(", ")}</Text>
+                        <InfoBanner
+                            title="Missing required items"
+                            message={viewModel.missingListNoVideo.join(' • ')}
+                            tone="warning"
+                        />
                     ) : (
-                        <Text style={styles.tiny}>All required items are present.</Text>
+                        <InfoBanner
+                            title="Required items present"
+                            message="All required non-video checks are currently satisfied."
+                            tone="success"
+                        />
                     )}
 
                     {viewModel.gpsEnabled ? (
-                        <View style={styles.badgeRow}>
-                            <Text style={styles.badgeLabel}>Saved coordinate</Text>
-                            <View style={[styles.badge, viewModel.geoCaptured ? styles.badgeYes : styles.badgeNo]}>
-                                <Text style={styles.badgeText}>{viewModel.geoText}</Text>
+                        <View style={styles.coordinateBox}>
+                            <View style={styles.coordinateText}>
+                                <AppText variant="bodyStrong">Saved coordinate</AppText>
+
+                                <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                    {viewModel.geoText}
+                                </AppText>
                             </View>
 
-                            {viewModel.gpsGranted && !viewModel.geoCaptured ? (
-                                <Pressable
-                                    style={[styles.secondaryBtn, {marginTop: 12}]}
-                                    onPress={() => navigation.navigate("A5SessionSetup", {activityId, runId})}
-                                >
-                                    <Text style={styles.secondaryBtnText}>Capture Location</Text>
-                                </Pressable>
-                            ) : null}
+                            <AppBadge
+                                label={viewModel.geoCaptured ? 'Available' : 'Missing'}
+                                tone={viewModel.geoCaptured ? 'success' : 'warning'}
+                            />
                         </View>
                     ) : null}
 
-                    <Pressable
-                        style={[styles.secondaryBtn, {marginTop: 12}, attaching && {opacity: 0.7}]}
+                    {viewModel.gpsEnabled && viewModel.gpsGranted && !viewModel.geoCaptured ? (
+                        <AppButton
+                            title="Capture Location"
+                            variant="outline"
+                            onPress={() => navigation.navigate('A5SessionSetup', {activityId, runId})}
+                            style={styles.checkAction}
+                        />
+                    ) : null}
+
+                    <AppButton
+                        title={viewModel.sessionVid ? 'Manage Session Video' : 'Attach Session Video'}
+                        variant="outline"
                         onPress={onAttachVideoMenu}
                         disabled={attaching}
-                    >
-                        {attaching ? (
-                            <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                                <ActivityIndicator/>
-                                <Text style={styles.secondaryBtnText}>Processing…</Text>
-                            </View>
-                        ) : (
-                            <Text style={styles.secondaryBtnText}>
-                                {viewModel.sessionVid ? "Manage Session Video" : "Attach Session Video"}
-                            </Text>
-                        )}
-                    </Pressable>
+                        loading={attaching}
+                        style={styles.checkAction}
+                    />
 
-                    {attachedName ? <Text style={styles.tiny}>Attached: {attachedName}</Text> : null}
-                </View>
+                    {attachedName ? (
+                        <AppText variant="caption" color="textMuted" style={styles.note}>
+                            Attached: {attachedName}
+                        </AppText>
+                    ) : null}
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Reflection</Text>
+                <AppSectionHeader
+                    title="Reflection"
+                    subtitle="Explain what happened and what improved."
+                />
 
+                <AppCard>
                     <View style={styles.smartBox}>
-                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
-                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
-                        <Text style={styles.smartText}>Try to include:</Text>
-                        <Text style={styles.promptText}>• Which movement was hardest to keep smooth or
-                            controlled.</Text>
-                        <Text style={styles.promptText}>• Whether your prediction matched the baseline and feedback
-                            results.</Text>
-                        <Text style={styles.promptText}>• What changed between baseline mode and feedback mode.</Text>
-                        <Text style={styles.promptText}>• One way to improve the test or participant performance next
-                            time.</Text>
+                        <AppText variant="bodyStrong" color="primary">
+                            Smart reflection guide
+                        </AppText>
+
+                        <AppText variant="body" style={styles.smartText}>
+                            {smartReflectionSummary}
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.promptIntro}>
+                            Try to include:
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • Which movement was hardest to keep smooth or controlled.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • Whether your prediction matched the baseline and feedback results.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • What changed between baseline mode and feedback mode.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • One way to improve the test or participant performance next time.
+                        </AppText>
                     </View>
 
-                    <Text style={styles.label}>Your reflection</Text>
-                    <TextInput
+                    <AppInput
+                        label="Your reflection"
                         value={reflectionText}
                         onChangeText={setReflectionText}
                         placeholder="Example: The feedback trial improved smoothness because the participant adjusted their movement speed..."
-                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
+                        style={styles.reflectionInput}
                     />
 
                     <ReflectionQualityCard result={reflectionQuality}/>
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Rating</Text>
-                    <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
+                <AppSectionHeader
+                    title="Rating"
+                    subtitle="How did this activity feel overall?"
+                />
 
+                <AppCard>
                     <View style={styles.ratingRow}>
                         {[1, 2, 3, 4, 5].map((n) => {
                             const on = rating === n;
+
                             return (
                                 <Pressable
                                     key={n}
                                     onPress={() => setRating(clampInt(n, 1, 5))}
-                                    style={[styles.rateBtn, on && styles.rateBtnOn]}
+                                    style={[styles.rateButton, on && styles.rateButtonOn]}
                                 >
-                                    <Text style={[styles.rateText, on && styles.rateTextOn]}>{n}</Text>
+                                    <AppText
+                                        variant="bodyStrong"
+                                        color={on ? 'inverseText' : 'text'}
+                                        align="center"
+                                    >
+                                        {n}
+                                    </AppText>
                                 </Pressable>
                             );
                         })}
                     </View>
-                </View>
+                </AppCard>
 
-                <Pressable
-                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                <AppButton
+                    title={submitting ? 'Submitting...' : 'Submit'}
                     onPress={onSubmit}
                     disabled={submitting}
-                >
-                    {submitting ? (
-                        <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                            <ActivityIndicator color="white"/>
-                            <Text style={styles.primaryBtnText}>Submitting…</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.primaryBtnText}>Submit</Text>
-                    )}
-                </Pressable>
+                    loading={submitting}
+                />
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                {submitting ? (
+                    <View style={styles.submittingHint}>
+                        <ActivityIndicator color={colors.primary}/>
+
+                        <AppText variant="caption" color="textMuted">
+                            Preparing final submission...
+                        </AppText>
+                    </View>
+                ) : null}
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
-function ChecklistRow(props: { label: string; ok: boolean; meta?: string }) {
+type ChecklistRowProps = {
+    label: string;
+    ok: boolean;
+    meta?: string;
+    required?: boolean;
+};
+
+function ChecklistRow({label, ok, meta, required = false}: ChecklistRowProps) {
     return (
-        <View style={{flexDirection: "row", alignItems: "center", justifyContent: "space-between"}}>
-            <View style={{flex: 1, paddingRight: 10}}>
-                <Text style={{fontWeight: "900"}}>{props.label}</Text>
-                {props.meta ? <Text style={{marginTop: 4, opacity: 0.7}}>{props.meta}</Text> : null}
+        <View style={styles.checkRow}>
+            <View style={styles.checkText}>
+                <AppText variant="bodyStrong">
+                    {label}
+                    {required ? ' required' : ''}
+                </AppText>
+
+                {meta ? (
+                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                        {meta}
+                    </AppText>
+                ) : null}
             </View>
 
-            <View style={[styles.tickPill, props.ok ? styles.tickYes : styles.tickNo]}>
-                <Text style={styles.tickText}>{props.ok ? "OK" : "Missing"}</Text>
-            </View>
+            <AppBadge label={ok ? 'OK' : 'Missing'} tone={ok ? 'success' : 'warning'}/>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    keyboard: {
+        flex: 1,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-    tiny: {marginTop: 10, opacity: 0.65, lineHeight: 18, fontSize: 12},
 
-    scoreText: {marginTop: 10, fontSize: 34, fontWeight: "900"},
+    header: {
+        marginBottom: spacing.lg,
+    },
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
+    },
+
+    heroScore: {
+        marginTop: spacing.md,
+    },
+
+    heroHint: {
+        marginTop: spacing.md,
+        opacity: 0.75,
+    },
+
+    checkList: {
+        gap: spacing.md,
+        marginBottom: spacing.md,
+    },
+
+    checkRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    checkText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    coordinateText: {
+        flex: 1,
+    },
+
+    checkAction: {
+        marginTop: spacing.md,
+    },
+
+    note: {
+        marginTop: spacing.md,
+    },
 
     smartBox: {
-        marginTop: 10,
         borderWidth: 1,
-        borderColor: "#dbeafe",
-        backgroundColor: "#eff6ff",
-        borderRadius: 12,
-        padding: 12,
-    },
-    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
-    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
-    promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
+        borderColor: colors.primarySoft,
+        backgroundColor: colors.accentSoft,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        marginBottom: spacing.lg,
     },
 
-    ratingRow: {marginTop: 10, flexDirection: "row", gap: 10},
-    rateBtn: {
+    smartText: {
+        marginTop: spacing.sm,
+    },
+
+    promptIntro: {
+        marginTop: spacing.md,
+    },
+
+    promptText: {
+        marginTop: spacing.xs,
+    },
+
+    reflectionInput: {
+        minHeight: 150,
+        textAlignVertical: 'top',
+    },
+
+    ratingRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+
+    rateButton: {
         flex: 1,
+        minHeight: 48,
+        borderRadius: radius.lg,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    rateBtnOn: {backgroundColor: "#111", borderColor: "#111"},
-    rateText: {fontWeight: "900", opacity: 0.85},
-    rateTextOn: {color: "white", opacity: 1},
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    rateButtonOn: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
+    submittingHint: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    tickPill: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10},
-    tickYes: {backgroundColor: "#111"},
-    tickNo: {backgroundColor: "#777"},
-    tickText: {color: "white", fontWeight: "900"},
-
-    badgeRow: {marginTop: 12, gap: 8},
-    badgeLabel: {fontWeight: "800", opacity: 0.9},
-    badge: {borderRadius: 12, paddingVertical: 10, paddingHorizontal: 10},
-    badgeYes: {backgroundColor: "#111"},
-    badgeNo: {backgroundColor: "#777"},
-    badgeText: {color: "white", fontWeight: "900"},
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

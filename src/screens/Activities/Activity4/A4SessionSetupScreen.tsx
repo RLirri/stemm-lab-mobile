@@ -1,21 +1,18 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     createActivity4RunDraft,
@@ -28,10 +25,27 @@ import {
     validateA4Session,
     type Activity4RunDraft,
     type A4MaterialContext,
-} from "../../../store/activity4RunDraftStore";
-import {confirmBatteryBeforeActivity} from "../../../services/battery";
+} from '../../../store/activity4RunDraftStore';
+import {confirmBatteryBeforeActivity} from '../../../services/battery';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A4SessionSetup">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A4SessionSetup'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
 
 function clampInt(n: number, min: number, max: number) {
     if (!Number.isFinite(n)) return min;
@@ -39,46 +53,53 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 function digitsOnly(s: string) {
-    return s.replace(/[^\d]/g, "");
+    return s.replace(/[^\d]/g, '');
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
-function formatGeoText(geo: Activity4RunDraft["session"]["geo"] | undefined): string {
-    if (!geo) return "No coordinate saved yet";
-    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return "No coordinate saved yet";
+function formatGeoText(geo: Activity4RunDraft['session']['geo'] | undefined): string {
+    if (!geo) return 'No coordinate saved yet';
+    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) {
+        return 'No coordinate saved yet';
+    }
 
-    const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
+    const accText = isFiniteNumber(geo.accuracyM)
+        ? ` (±${Math.round(geo.accuracyM)}m)`
+        : '';
+
     const timeText = isFiniteNumber(geo.capturedAt)
         ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
-        : "";
+        : '';
 
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
+async function requestGpsPermissionSafe(): Promise<'granted' | 'denied'> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
         const res = await Location.requestForegroundPermissionsAsync();
-        return res.status === "granted" ? "granted" : "denied";
+        return res.status === 'granted' ? 'granted' : 'denied';
     } catch {
-        return "denied";
+        return 'denied';
     }
 }
 
 async function getCurrentGeoSafe(): Promise<
-    | { lat: number; lng: number; accuracyM?: number }
+    | {
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+}
     | null
 > {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
 
         const servicesEnabled = await Location.hasServicesEnabledAsync();
-        if (!servicesEnabled) {
-            return null;
-        }
+        if (!servicesEnabled) return null;
 
         const pos = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
@@ -86,9 +107,10 @@ async function getCurrentGeoSafe(): Promise<
 
         const lat = pos?.coords?.latitude;
         const lng = pos?.coords?.longitude;
-
         const acc = pos?.coords?.accuracy ?? undefined;
-        const accuracyM = typeof acc === "number" && Number.isFinite(acc) ? acc : undefined;
+
+        const accuracyM =
+            typeof acc === 'number' && Number.isFinite(acc) ? acc : undefined;
 
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
@@ -112,26 +134,61 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
     const hasBootstrappedRef = useRef(false);
 
-    // session fields
     const [surface, setSurface] = useState<A4MaterialContext | undefined>(undefined);
-    const [designCountRaw, setDesignCountRaw] = useState<string>("3");
+    const [designCountRaw, setDesignCountRaw] = useState<string>('3');
 
     const [gpsEnabled, setGpsEnabled] = useState<boolean>(true);
-    const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
+    const [gpsPermission, setGpsPermission] = useState<
+        'unknown' | 'granted' | 'denied'
+    >('unknown');
     const [askingGps, setAskingGps] = useState(false);
 
+    const [toast, setToast] = useState<{
+        visible: boolean;
+        title: string;
+        message?: string;
+        tone?: ToastTone;
+    }>({
+        visible: false,
+        title: '',
+    });
+
     const geo = draft?.session.geo;
-    const geoCaptured =
-        !!geo && isFiniteNumber(geo.lat) && isFiniteNumber(geo.lng);
+    const geoCaptured = !!geo && isFiniteNumber(geo.lat) && isFiniteNumber(geo.lng);
 
     const [expanded, setExpanded] = useState<Record<number, boolean>>({0: true});
+
+    function showToast(
+        title: string,
+        message?: string,
+        tone: ToastTone = 'info',
+    ) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
+    useEffect(() => {
+        if (!toast.visible) return;
+
+        const timer = setTimeout(() => {
+            setToast((prev) => ({
+                ...prev,
+                visible: false,
+            }));
+        }, 2500);
+
+        return () => clearTimeout(timer);
+    }, [toast.visible]);
 
     useEffect(() => {
         if (!user) return;
         if (hasBootstrappedRef.current) return;
 
         hasBootstrappedRef.current = true;
-
         const userId = user.uid;
 
         async function bootstrap() {
@@ -170,17 +227,20 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
                 if (recoverable) {
                     Alert.alert(
-                        "Resume previous draft?",
-                        "We found an unfinished Activity 4 draft. Would you like to continue it or start a new session?",
+                        'Resume previous draft?',
+                        'We found an unfinished Activity 4 draft. Would you like to continue it or start a new session?',
                         [
                             {
-                                text: "Start New",
-                                style: "destructive",
+                                text: 'Start New',
+                                style: 'destructive',
                                 onPress: async () => {
                                     try {
                                         await discardActivity4RunDraft(recoverable.runId);
                                     } catch (error) {
-                                        console.error("[A4SessionSetup] Failed to discard old draft", error);
+                                        console.error(
+                                            '[A4SessionSetup] Failed to discard old draft',
+                                            error,
+                                        );
                                     }
 
                                     const created = createActivity4RunDraft({
@@ -194,13 +254,13 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                                 },
                             },
                             {
-                                text: "Resume",
+                                text: 'Resume',
                                 onPress: () => {
                                     setDraft(recoverable);
                                     navigation.setParams({runId: recoverable.runId});
                                 },
                             },
-                        ]
+                        ],
                     );
                     return;
                 }
@@ -214,7 +274,7 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
                 setDraft(created);
                 navigation.setParams({runId: created.runId});
             } catch (error) {
-                console.error("[A4SessionSetup] Failed to bootstrap draft", error);
+                console.error('[A4SessionSetup] Failed to bootstrap draft', error);
 
                 const fallback = createActivity4RunDraft({
                     activityId,
@@ -242,7 +302,9 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         setGpsPermission(draft.session.gpsPermission);
 
         const nextExp: Record<number, boolean> = {};
-        for (let i = 0; i < Math.min(3, draft.session.designCount); i++) nextExp[i] = true;
+        for (let i = 0; i < Math.min(3, draft.session.designCount); i++) {
+            nextExp[i] = true;
+        }
         setExpanded((prev) => ({...nextExp, ...prev}));
     }, [draft]);
 
@@ -267,7 +329,7 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
     const sessionError = useMemo(() => {
         if (!draft) return null;
 
-        const designCount = clampInt(Number(designCountRaw || "3"), 3, 8);
+        const designCount = clampInt(Number(designCountRaw || '3'), 3, 8);
 
         const shadow: Activity4RunDraft = {
             ...draft,
@@ -286,7 +348,7 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
     function persistSession(): Activity4RunDraft | null {
         if (!draft) return null;
 
-        const designCount = clampInt(Number(designCountRaw || "3"), 3, 8);
+        const designCount = clampInt(Number(designCountRaw || '3'), 3, 8);
 
         const next = updateActivity4Session(draft.runId, {
             surfaceContext: surface,
@@ -303,7 +365,11 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         if (!draft) return;
 
         if (!gpsEnabled) {
-            Alert.alert("GPS is off", "Enable GPS first if you want to request permission.");
+            showToast(
+                'GPS is off',
+                'Enable GPS first if you want to request permission.',
+                'warning',
+            );
             return;
         }
 
@@ -318,10 +384,17 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
             setDraft(next);
             setGpsPermission(next.session.gpsPermission);
 
-            if (status !== "granted") {
-                Alert.alert(
-                    "GPS not granted",
-                    "You can still run the activity, but submission will be blocked unless GPS is enabled, granted, and a coordinate is captured."
+            if (status !== 'granted') {
+                showToast(
+                    'GPS not granted',
+                    'You can still run the activity, but submission requires GPS permission and a saved coordinate.',
+                    'warning',
+                );
+            } else {
+                showToast(
+                    'GPS permission granted',
+                    'You can now capture your location coordinate.',
+                    'success',
                 );
             }
         } finally {
@@ -333,7 +406,11 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         if (!draft) return;
 
         if (!gpsEnabled) {
-            Alert.alert("GPS is off", "Enable GPS first, then capture location.");
+            showToast(
+                'GPS is off',
+                'Enable GPS first, then capture location.',
+                'warning',
+            );
             return;
         }
 
@@ -341,17 +418,19 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
             setAskingGps(true);
 
             let status = gpsPermission;
-            if (status === "unknown" || status === "denied") {
+            if (status === 'unknown' || status === 'denied') {
                 status = await requestGpsPermissionSafe();
-                const nextPermission = updateActivity4Session(draft.runId, {gpsPermission: status});
+                const nextPermission = updateActivity4Session(draft.runId, {
+                    gpsPermission: status,
+                });
                 setDraft(nextPermission);
                 setGpsPermission(status);
             }
 
-            if (status !== "granted") {
+            if (status !== 'granted') {
                 Alert.alert(
-                    "Permission denied",
-                    "Location permission is required to capture coordinates. Please enable it in your device settings."
+                    'Permission denied',
+                    'Location permission is required to capture coordinates. Please enable it in your device settings.',
                 );
                 return;
             }
@@ -359,15 +438,15 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
-                    "Location unavailable",
-                    "Could not capture your location. Please ensure Location Services are ON and try again."
+                    'Location unavailable',
+                    'Could not capture your location. Please ensure Location Services are ON and try again.',
                 );
                 return;
             }
 
             const next = updateActivity4Session(draft.runId, {
                 gpsEnabled: true,
-                gpsPermission: "granted",
+                gpsPermission: 'granted',
                 geo: {
                     lat: g.lat,
                     lng: g.lng,
@@ -378,7 +457,11 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
             setDraft(next);
 
-            Alert.alert("Location captured ✅", "GPS coordinate has been saved for submission.");
+            showToast(
+                'Location captured',
+                'GPS coordinate has been saved for submission.',
+                'success',
+            );
         } finally {
             setAskingGps(false);
         }
@@ -388,14 +471,14 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         if (!user || !draft) return;
 
         if (sessionError) {
-            Alert.alert("Check setup", sessionError);
+            Alert.alert('Check setup', sessionError);
             return;
         }
 
         const canContinue = await confirmBatteryBeforeActivity({
             activityId,
-            activityTitle: "Activity 4: Earthquake Resistant Structure",
-            intensity: gpsEnabled || geoCaptured ? "HIGH" : "MEDIUM",
+            activityTitle: 'Activity 4: Earthquake Resistant Structure',
+            intensity: gpsEnabled || geoCaptured ? 'HIGH' : 'MEDIUM',
         });
 
         if (!canContinue) return;
@@ -403,7 +486,7 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
         const next = persistSession();
         if (!next) return;
 
-        navigation.navigate("A4Prediction", {activityId, runId: next.runId});
+        navigation.navigate('A4Prediction', {activityId, runId: next.runId});
     }
 
     function toggleExpanded(i: number) {
@@ -412,7 +495,13 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
     function onDesignFieldChange(
         designIndex: number,
-        patch: { name?: string; foldCount?: number; pillarCount?: number; layers?: number; notes?: string }
+        patch: {
+            name?: string;
+            foldCount?: number;
+            pillarCount?: number;
+            layers?: number;
+            notes?: string;
+        },
     ) {
         if (!draft) return;
 
@@ -424,367 +513,504 @@ export default function A4SessionSetupScreen({route, navigation}: Props) {
 
     if (bootstrapping || !draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
-                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Checking for unfinished Activity 4 session..."/>
+            </AppGradientScreen>
         );
     }
 
     const designs = draft.session.designs ?? [];
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Session Setup</Text>
-                <Text style={styles.sub}>
-                    Configure your earthquake test session. Build ≥3 designs, predict first, then measure vibration
-                    movement.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 4" tone="warning"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Material Context</Text>
-                    <Text style={styles.help}>Material designs affect vibration transfer (paper vs plastic).</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Earthquake Setup
+                    </AppText>
 
-                    <Text style={styles.label}>Test material</Text>
-                    <View style={styles.segmentWrap}>
-                        {(["paper", "plastic"] as const).map((v) => {
-                            const on = surface === v;
-                            return (
-                                <Pressable
-                                    key={v}
-                                    onPress={() => setSurface(v)}
-                                    style={[styles.segmentBtn, on && styles.segmentBtnActive]}
-                                >
-                                    <Text style={[styles.segmentText, on && styles.segmentTextActive]}>{v}</Text>
-                                </Pressable>
-                            );
-                        })}
-
-                        <Pressable
-                            onPress={() => setSurface(undefined)}
-                            style={[styles.segmentBtn, !surface && styles.segmentBtnActive]}
-                        >
-                            <Text style={[styles.segmentText, !surface && styles.segmentTextActive]}>Not sure</Text>
-                        </Pressable>
-                    </View>
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Configure your structure designs, material context, and GPS evidence before prediction.
+                    </AppText>
                 </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Designs</Text>
-                    <Text style={styles.help}>Minimum 3 designs required for comparison.</Text>
+                <InfoBanner
+                    title="Design comparison activity"
+                    message="Build at least 3 structure designs, predict stability, then run vibration measurements for comparison."
+                    tone="info"
+                />
 
-                    <Text style={styles.label}>Number of designs (3–8)</Text>
-                    <TextInput
+                <AppSectionHeader
+                    title="Material Context"
+                    subtitle="Material choice affects vibration transfer and structural movement."
+                />
+
+                <AppCard>
+                    <AppText variant="bodyStrong">Test material</AppText>
+
+                    <View style={styles.segmentWrap}>
+                        {(['paper', 'plastic'] as const).map((v) => (
+                            <SegmentButton
+                                key={v}
+                                label={v}
+                                active={surface === v}
+                                onPress={() => setSurface(v)}
+                            />
+                        ))}
+
+                        <SegmentButton
+                            label="Not sure"
+                            active={!surface}
+                            onPress={() => setSurface(undefined)}
+                        />
+                    </View>
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Design Count"
+                    subtitle="Minimum 3 designs are required for a meaningful comparison."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Number of designs (3–8)"
                         value={designCountRaw}
                         onChangeText={(t) => setDesignCountRaw(digitsOnly(t))}
                         placeholder="3"
                         keyboardType="number-pad"
-                        style={styles.input}
                         maxLength={1}
                     />
 
-                    <Text style={styles.note}>
-                        Tip: Keep it realistic — you’ll run a 10-second vibration test for each design.
-                    </Text>
-                </View>
+                    <AppText variant="caption" color="textMuted">
+                        Tip: Keep it realistic — you will run a 10-second vibration test for each design.
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Design Builder</Text>
-                    <Text style={styles.help}>
-                        Record your structure parameters so your results and reflection are meaningful.
-                    </Text>
+                <AppSectionHeader
+                    title="Design Builder"
+                    subtitle="Record structure parameters so your results and reflection are meaningful."
+                />
 
-                    {designs.map((d, i) => {
-                        const isOpen = Boolean(expanded[i]);
+                {designs.map((d, i) => {
+                    const isOpen = Boolean(expanded[i]);
 
-                        return (
-                            <View key={i} style={styles.designCard}>
-                                <Pressable onPress={() => toggleExpanded(i)} style={styles.designHeader}>
-                                    <View style={{flex: 1}}>
-                                        <Text style={styles.designTitle}>
-                                            {d.name?.trim() ? d.name : `Design ${i + 1}`}
-                                        </Text>
-                                        <Text style={styles.designMeta}>
-                                            Folds: {d.foldCount ?? "—"} • Pillars: {d.pillarCount ?? "—"} •
-                                            Layers: {d.layers ?? "—"}
-                                        </Text>
-                                    </View>
-                                    <Text style={styles.chev}>{isOpen ? "▾" : "▸"}</Text>
-                                </Pressable>
+                    return (
+                        <AppCard key={i}>
+                            <Pressable onPress={() => toggleExpanded(i)} style={styles.designHeader}>
+                                <View style={styles.designHeaderText}>
+                                    <AppBadge label={`Design ${i + 1}`} tone="info"/>
 
-                                {isOpen ? (
-                                    <View style={{marginTop: 10}}>
-                                        <Text style={styles.label}>Design name</Text>
-                                        <TextInput
-                                            value={d.name ?? ""}
-                                            onChangeText={(t) => onDesignFieldChange(i, {name: t})}
-                                            placeholder={`Design ${i + 1}`}
-                                            style={styles.input}
-                                        />
+                                    <AppText variant="sectionTitle" style={styles.designTitle}>
+                                        {d.name?.trim() ? d.name : `Design ${i + 1}`}
+                                    </AppText>
 
-                                        <View style={styles.grid}>
-                                            <View style={styles.gridCol}>
-                                                <Text style={styles.label}>Fold count</Text>
-                                                <TextInput
-                                                    value={d.foldCount == null ? "" : String(d.foldCount)}
-                                                    onChangeText={(t) =>
-                                                        onDesignFieldChange(i, {
-                                                            foldCount: clampInt(Number(digitsOnly(t) || "0"), 0, 60),
-                                                        })
-                                                    }
-                                                    placeholder="e.g. 10"
-                                                    keyboardType="number-pad"
-                                                    style={styles.input}
-                                                />
-                                                <Text style={styles.noteSmall}>0–60 (paper/cardboard folds)</Text>
-                                            </View>
+                                    <AppText variant="caption" color="textMuted" style={styles.designMeta}>
+                                        Folds: {d.foldCount ?? '—'} • Pillars: {d.pillarCount ?? '—'} • Layers:{' '}
+                                        {d.layers ?? '—'}
+                                    </AppText>
+                                </View>
 
-                                            <View style={styles.gridCol}>
-                                                <Text style={styles.label}>Pillar count</Text>
-                                                <TextInput
-                                                    value={d.pillarCount == null ? "" : String(d.pillarCount)}
-                                                    onChangeText={(t) =>
-                                                        onDesignFieldChange(i, {
-                                                            pillarCount: clampInt(Number(digitsOnly(t) || "0"), 0, 30),
-                                                        })
-                                                    }
-                                                    placeholder="e.g. 4"
-                                                    keyboardType="number-pad"
-                                                    style={styles.input}
-                                                />
-                                                <Text style={styles.noteSmall}>0–30 (cups/paper pillars)</Text>
-                                            </View>
+                                <AppText variant="subtitle" color="textMuted">
+                                    {isOpen ? '▾' : '▸'}
+                                </AppText>
+                            </Pressable>
+
+                            {isOpen ? (
+                                <View style={styles.designBody}>
+                                    <AppInput
+                                        label="Design name"
+                                        value={d.name ?? ''}
+                                        onChangeText={(t) => onDesignFieldChange(i, {name: t})}
+                                        placeholder={`Design ${i + 1}`}
+                                    />
+
+                                    <View style={styles.grid}>
+                                        <View style={styles.gridCol}>
+                                            <AppInput
+                                                label="Fold count"
+                                                value={d.foldCount == null ? '' : String(d.foldCount)}
+                                                onChangeText={(t) =>
+                                                    onDesignFieldChange(i, {
+                                                        foldCount: clampInt(Number(digitsOnly(t) || '0'), 0, 60),
+                                                    })
+                                                }
+                                                placeholder="e.g. 10"
+                                                keyboardType="number-pad"
+                                            />
+
+                                            <AppText variant="caption" color="textMuted">
+                                                0–60 folds
+                                            </AppText>
                                         </View>
 
-                                        <Text style={styles.label}>Layers (optional)</Text>
-                                        <TextInput
-                                            value={d.layers == null ? "" : String(d.layers)}
-                                            onChangeText={(t) =>
-                                                onDesignFieldChange(i, {
-                                                    layers: clampInt(Number(digitsOnly(t) || "1"), 1, 10),
-                                                })
-                                            }
-                                            placeholder="e.g. 2"
-                                            keyboardType="number-pad"
-                                            style={styles.input}
-                                        />
+                                        <View style={styles.gridCol}>
+                                            <AppInput
+                                                label="Pillar count"
+                                                value={d.pillarCount == null ? '' : String(d.pillarCount)}
+                                                onChangeText={(t) =>
+                                                    onDesignFieldChange(i, {
+                                                        pillarCount: clampInt(Number(digitsOnly(t) || '0'), 0, 30),
+                                                    })
+                                                }
+                                                placeholder="e.g. 4"
+                                                keyboardType="number-pad"
+                                            />
 
-                                        <Text style={styles.label}>Notes (optional)</Text>
-                                        <TextInput
-                                            value={d.notes ?? ""}
-                                            onChangeText={(t) => onDesignFieldChange(i, {notes: t})}
-                                            placeholder="e.g. thicker base, wider pillars, extra tape..."
-                                            style={[styles.input, {height: 90, textAlignVertical: "top"}]}
-                                            multiline
-                                        />
+                                            <AppText variant="caption" color="textMuted">
+                                                0–30 pillars
+                                            </AppText>
+                                        </View>
                                     </View>
-                                ) : null}
-                            </View>
-                        );
-                    })}
-                </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>GPS (Required for submission)</Text>
-                    <Text style={styles.help}>
-                        You can run without GPS, but submission will be blocked unless GPS is enabled, granted, and a
-                        coordinate is captured.
-                    </Text>
+                                    <AppInput
+                                        label="Layers"
+                                        value={d.layers == null ? '' : String(d.layers)}
+                                        onChangeText={(t) =>
+                                            onDesignFieldChange(i, {
+                                                layers: clampInt(Number(digitsOnly(t) || '1'), 1, 10),
+                                            })
+                                        }
+                                        placeholder="e.g. 2"
+                                        keyboardType="number-pad"
+                                    />
 
-                    <View style={styles.rowBetween}>
-                        <Text style={styles.label}>Enable GPS</Text>
+                                    <AppInput
+                                        label="Notes"
+                                        value={d.notes ?? ''}
+                                        onChangeText={(t) => onDesignFieldChange(i, {notes: t})}
+                                        placeholder="e.g. thicker base, wider pillars, extra tape..."
+                                        multiline
+                                        style={styles.notesInput}
+                                    />
+                                </View>
+                            ) : null}
+                        </AppCard>
+                    );
+                })}
+
+                <AppSectionHeader
+                    title="GPS Evidence"
+                    subtitle="Required before final submission."
+                />
+
+                <AppCard>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Enable GPS</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Turn on GPS before requesting permission or capturing a coordinate.
+                            </AppText>
+                        </View>
+
                         <Switch value={gpsEnabled} onValueChange={setGpsEnabled}/>
                     </View>
 
-                    <View style={styles.gpsRow}>
-                        <Text style={{fontWeight: "900"}}>Permission:</Text>
-                        <Text style={{opacity: 0.75}}>
-                            {gpsPermission === "unknown"
-                                ? "Not requested"
-                                : gpsPermission === "granted"
-                                    ? "Granted ✅"
-                                    : "Denied ❌"}
-                        </Text>
+                    <StatusRow
+                        label="Permission"
+                        value={
+                            gpsPermission === 'unknown'
+                                ? 'Not requested'
+                                : gpsPermission === 'granted'
+                                    ? 'Granted'
+                                    : 'Denied'
+                        }
+                        good={gpsPermission === 'granted'}
+                    />
+
+                    <StatusRow
+                        label="Coordinate"
+                        value={!gpsEnabled ? 'GPS off' : geoCaptured ? 'Captured' : 'Not captured'}
+                        good={geoCaptured}
+                    />
+
+                    <View style={styles.coordinateBox}>
+                        <AppText variant="caption" color="textMuted">
+                            Saved coordinate
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.coordinateText}>
+                            {formatGeoText(draft.session.geo)}
+                        </AppText>
                     </View>
 
-                    <View style={styles.gpsRow}>
-                        <Text style={{fontWeight: "900"}}>Coordinate:</Text>
-                        <Text style={{opacity: 0.75}}>
-                            {!gpsEnabled ? "GPS off" : geoCaptured ? "Captured ✅" : "Not captured yet"}
-                        </Text>
-                    </View>
-
-                    <View style={styles.badgeRow}>
-                        <Text style={styles.badgeLabel}>Saved coordinate</Text>
-                        <View style={[styles.badge, geoCaptured ? styles.badgeYes : styles.badgeNo]}>
-                            <Text style={styles.badgeText}>{formatGeoText(draft.session.geo)}</Text>
-                        </View>
-                    </View>
-
-                    <Pressable
-                        style={[styles.secondaryBtn, askingGps && {opacity: 0.7}]}
+                    <AppButton
+                        title={askingGps ? 'Processing...' : 'Request GPS Permission'}
                         onPress={onRequestGpsPermissionOnly}
                         disabled={askingGps}
-                    >
-                        {askingGps ? (
-                            <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                                <ActivityIndicator/>
-                                <Text style={styles.secondaryBtnText}>Processing…</Text>
-                            </View>
-                        ) : (
-                            <Text style={styles.secondaryBtnText}>Request GPS Permission</Text>
-                        )}
-                    </Pressable>
+                        variant="outline"
+                        style={styles.blockGap}
+                    />
 
-                    <Pressable
-                        style={[styles.secondaryBtn, askingGps && {opacity: 0.7}]}
+                    <AppButton
+                        title={
+                            askingGps
+                                ? 'Capturing...'
+                                : geoCaptured
+                                    ? 'Refresh Location'
+                                    : 'Capture Location'
+                        }
                         onPress={onCaptureLocation}
                         disabled={askingGps || !gpsEnabled}
-                    >
-                        {askingGps ? (
-                            <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                                <ActivityIndicator/>
-                                <Text style={styles.secondaryBtnText}>Capturing…</Text>
-                            </View>
-                        ) : (
-                            <Text style={styles.secondaryBtnText}>
-                                {geoCaptured ? "Refresh Location" : "Capture Location"}
-                            </Text>
-                        )}
-                    </Pressable>
+                        variant="outline"
+                        style={styles.smallButtonGap}
+                    />
 
-                    {gpsPermission === "denied" ? (
-                        <Text style={styles.note}>
-                            Enable location permissions in device settings, then try again.
-                        </Text>
+                    {askingGps ? (
+                        <View style={styles.loadingInline}>
+                            <ActivityIndicator color={colors.primary}/>
+                            <AppText variant="caption" color="textMuted">
+                                Waiting for GPS response...
+                            </AppText>
+                        </View>
+                    ) : null}
+
+                    {gpsPermission === 'denied' ? (
+                        <InfoBanner
+                            title="GPS denied"
+                            message="Enable location permissions in device settings, then try again."
+                            tone="warning"
+                        />
                     ) : null}
 
                     {!gpsEnabled ? (
-                        <Text style={styles.note}>
-                            GPS is off. Turn it on if you want to capture coordinates for submission.
-                        </Text>
+                        <InfoBanner
+                            title="GPS is off"
+                            message="Turn GPS on if you want to capture coordinates for submission."
+                            tone="warning"
+                        />
                     ) : null}
-                </View>
+                </AppCard>
 
                 {sessionError ? (
-                    <View style={styles.errorCard}>
-                        <Text style={{fontWeight: "900"}}>Fix before continuing</Text>
-                        <Text style={{marginTop: 6, opacity: 0.8}}>{sessionError}</Text>
-                    </View>
+                    <InfoBanner title="Fix before continuing" message={sessionError} tone="danger"/>
                 ) : null}
 
-                <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
-                </Pressable>
+                <AppButton title="Continue to Prediction" onPress={onContinue}/>
 
-                <Text style={styles.footerHint}>Next: Prediction → Measurements → Results → Reflection & Submit.</Text>
+                <AppText variant="caption" color="textMuted" style={styles.footerHint}>
+                    Next: Prediction → Measurements → Results → Reflection & Submit.
+                </AppText>
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                <View style={styles.bottomSpace}/>
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type SegmentButtonProps = {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+};
+
+function SegmentButton({label, active, onPress}: SegmentButtonProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.segmentButton, active && styles.segmentButtonActive]}
+        >
+            <AppText
+                variant="caption"
+                color={active ? 'inverseText' : 'text'}
+                align="center"
+                style={styles.segmentText}
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
+type StatusRowProps = {
+    label: string;
+    value: string;
+    good?: boolean;
+};
+
+function StatusRow({label, value, good = false}: StatusRowProps) {
+    return (
+        <View style={styles.statusRow}>
+            <AppText variant="bodyStrong">{label}</AppText>
+
+            <View
+                style={[
+                    styles.statusPill,
+                    good ? styles.statusPillGood : styles.statusPillBad,
+                ]}
+            >
+                <AppText variant="caption" color={good ? 'success' : 'danger'}>
+                    {value} {good ? '✓' : '!'}
+                </AppText>
+            </View>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
+    keyboard: {
+        flex: 1,
+    },
 
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    card: {
-        marginTop: 14,
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    segmentWrap: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+    },
+
+    segmentButton: {
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-    note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
-    noteSmall: {marginTop: 6, opacity: 0.7, fontSize: 12, lineHeight: 16},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: Platform.OS === "ios" ? 12 : 10,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
     },
 
-    segmentWrap: {marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 8},
-    segmentBtn: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 999,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-    },
-    segmentBtnActive: {backgroundColor: "#111", borderColor: "#111"},
-    segmentText: {fontWeight: "900", opacity: 0.85, textTransform: "capitalize"},
-    segmentTextActive: {color: "white", opacity: 1},
-
-    designCard: {
-        marginTop: 12,
-        borderWidth: 1,
-        borderColor: "#e8e8e8",
-        borderRadius: 14,
-        backgroundColor: "white",
-        padding: 12,
-    },
-    designHeader: {flexDirection: "row", alignItems: "center"},
-    designTitle: {fontWeight: "900", fontSize: 14},
-    designMeta: {marginTop: 4, opacity: 0.7, fontSize: 12},
-    chev: {fontSize: 18, fontWeight: "900", opacity: 0.7, paddingLeft: 10},
-
-    grid: {flexDirection: "row", gap: 12},
-    gridCol: {flex: 1},
-
-    rowBetween: {flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
-    gpsRow: {marginTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center"},
-
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
-
-    secondaryBtn: {
-        marginTop: 12,
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-    },
-    secondaryBtnText: {fontWeight: "900", opacity: 0.9},
-
-    errorCard: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#b00020",
-        backgroundColor: "#fff5f5",
-        borderRadius: 14,
-        padding: 14,
+    segmentButtonActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
 
-    footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
+    segmentText: {
+        textTransform: 'capitalize',
+    },
 
-    badgeRow: {marginTop: 12, gap: 8},
-    badgeLabel: {fontWeight: "800", opacity: 0.9},
-    badge: {borderRadius: 12, paddingVertical: 10, paddingHorizontal: 10},
-    badgeYes: {backgroundColor: "#111"},
-    badgeNo: {backgroundColor: "#777"},
-    badgeText: {color: "white", fontWeight: "900"},
+    designHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+
+    designHeaderText: {
+        flex: 1,
+        paddingRight: spacing.md,
+    },
+
+    designTitle: {
+        marginTop: spacing.sm,
+    },
+
+    designMeta: {
+        marginTop: spacing.xs,
+    },
+
+    designBody: {
+        marginTop: spacing.lg,
+    },
+
+    grid: {
+        flexDirection: 'row',
+        gap: spacing.md,
+    },
+
+    gridCol: {
+        flex: 1,
+    },
+
+    notesInput: {
+        minHeight: 90,
+        textAlignVertical: 'top',
+    },
+
+    settingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        marginBottom: spacing.md,
+    },
+
+    settingText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    blockGap: {
+        marginTop: spacing.lg,
+    },
+
+    smallButtonGap: {
+        marginTop: spacing.md,
+    },
+
+    statusRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: spacing.md,
+        marginTop: spacing.md,
+    },
+
+    statusPill: {
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+    },
+
+    statusPillGood: {
+        backgroundColor: colors.successSoft,
+    },
+
+    statusPillBad: {
+        backgroundColor: colors.dangerSoft,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    coordinateText: {
+        marginTop: spacing.xs,
+    },
+
+    loadingInline: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+
+    footerHint: {
+        marginTop: spacing.md,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

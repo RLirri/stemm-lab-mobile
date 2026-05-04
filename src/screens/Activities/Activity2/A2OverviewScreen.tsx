@@ -1,32 +1,37 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {getActivityById} from '../../../services/activityService';
+import {SOUND_RISK_BANDS} from '../../../services/scoringService';
+import type {Activity} from '../../../types/activity';
+import {auth} from '../../../services/firebase';
+
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppExpandableCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppText,
+    EmptyState,
+    LoadingState,
+} from '../../../components/ui';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {getActivityById} from "../../../services/activityService";
-import {SOUND_RISK_BANDS} from "../../../services/scoringService";
-import type {Activity} from "../../../types/activity";
+import {colors, radius, spacing} from '../../../theme';
 
-import {auth} from "../../../services/firebase";
-
-type Props = NativeStackScreenProps<AppStackParamList, "A2Overview">;
+type Props = NativeStackScreenProps<AppStackParamList, 'A2Overview'>;
 
 function normalizeText(x: unknown): string | undefined {
-    const s = typeof x === "string" ? x.trim() : "";
+    const s = typeof x === 'string' ? x.trim() : '';
     return s.length ? s : undefined;
 }
 
 function splitLines(x: string): string[] {
     return x
-        .split("\n")
+        .split('\n')
         .map((t) => t.trim())
         .filter(Boolean);
 }
@@ -34,13 +39,17 @@ function splitLines(x: string): string[] {
 function safeStringArray(x: unknown): string[] {
     if (!Array.isArray(x)) return [];
     return x
-        .filter((v) => typeof v === "string" && v.trim().length)
+        .filter((v) => typeof v === 'string' && v.trim().length)
         .map((v) => (v as string).trim());
 }
 
 function formatDbRange(minDb: number, maxDb: number | null): string {
     if (maxDb == null) return `${minDb}+ dB`;
     return `${minDb}–${maxDb} dB`;
+}
+
+function removeLeadingNumber(text: string) {
+    return text.replace(/^\d+\)\s*/, '');
 }
 
 export default function A2OverviewScreen({route, navigation}: Props) {
@@ -63,7 +72,7 @@ export default function A2OverviewScreen({route, navigation}: Props) {
             } catch (e: any) {
                 if (!mounted) return;
                 setActivity(null);
-                Alert.alert("Load error", e?.message ?? "Failed to load activity.");
+                Alert.alert('Load error', e?.message ?? 'Failed to load activity.');
             } finally {
                 if (!mounted) return;
                 setLoading(false);
@@ -77,15 +86,15 @@ export default function A2OverviewScreen({route, navigation}: Props) {
     }, [activityId]);
 
     const title = useMemo(
-        () => normalizeText(activity?.title) ?? "Sound Pollution Hunter",
-        [activity?.title]
+        () => normalizeText(activity?.title) ?? 'Sound Pollution Hunter',
+        [activity?.title],
     );
 
     const shortDesc = useMemo(() => {
         const a = activity as any;
         return (
             normalizeText(a?.shortDescription) ??
-            "Measure and compare classroom sound levels (dB), record locations, and map loud vs quiet zones."
+            'Measure and compare classroom sound levels (dB), record locations, and map loud vs quiet zones.'
         );
     }, [activity]);
 
@@ -93,43 +102,42 @@ export default function A2OverviewScreen({route, navigation}: Props) {
         const a = activity as any;
         return (
             normalizeText(a?.description) ??
-            "Students measure noise from different actions (dropping objects, talking, walking, stamping), record sound levels with GPS, then map loud and quiet zones. They predict the loudest action and reflect on whether earmuffs are needed."
+            'Students measure noise from different actions, record sound levels with GPS, then map loud and quiet zones. They predict the loudest action and reflect on whether earmuffs are needed.'
         );
     }, [activity]);
 
-    const equipment: string[] = useMemo(() => {
+    const equipment = useMemo(() => {
         const a = activity as any;
         const list = safeStringArray(a?.equipment);
         if (list.length) return list;
-
-        return ["Mobile phone with STEMM Lab app", "Everyday objects (pens/books)"];
+        return ['Mobile phone with STEMM Lab app', 'Everyday objects such as pens or books'];
     }, [activity]);
 
-    const instructionLines: string[] = useMemo(() => {
+    const instructionLines = useMemo(() => {
         const a = activity as any;
         const inst = normalizeText(a?.instructions);
         if (inst) return splitLines(inst);
 
         return [
-            "Measure noise from different actions (drop pens/books, talking, walking, stamping).",
-            "Record sound levels (dB) and locations (GPS if enabled).",
-            "Map loud and quiet zones.",
-            "Predict the loudest action, then check if you were correct.",
-            "Submit: at least 3 valid measurements + session video evidence + reflection.",
+            'Measure noise from different actions.',
+            'Record sound levels and locations.',
+            'Map loud and quiet zones.',
+            'Predict the loudest action, then check if you were correct.',
+            'Submit at least 3 valid measurements, video evidence, and reflection.',
         ];
     }, [activity]);
 
     async function onStart() {
         if (!user) {
-            Alert.alert("Sign in required", "Please sign in to start this activity.");
+            Alert.alert('Sign in required', 'Please sign in to start this activity.');
             return;
         }
 
         try {
             setStarting(true);
-            navigation.navigate("A2SessionSetup", {activityId});
+            navigation.navigate('A2SessionSetup', {activityId});
         } catch (e: any) {
-            Alert.alert("Start failed", e?.message ?? "Unable to start Activity 2.");
+            Alert.alert('Start failed', e?.message ?? 'Unable to start Activity 2.');
         } finally {
             setStarting(false);
         }
@@ -141,194 +149,265 @@ export default function A2OverviewScreen({route, navigation}: Props) {
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={styles.loadingText}>Loading activity…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading activity overview..."/>
+            </AppGradientScreen>
         );
     }
 
     if (!activity) {
         return (
-            <View style={styles.center}>
-                <Text style={styles.errorTitle}>Activity not found</Text>
-                <Text style={styles.errorSub}>
-                    This activity may be missing from Firestore or the provided activityId is invalid.
-                </Text>
-
-                <Pressable style={styles.primaryBtn} onPress={onBack}>
-                    <Text style={styles.primaryBtnText}>Back</Text>
-                </Pressable>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <EmptyState
+                    title="Activity not found"
+                    message="This activity may be missing from Firestore or the provided activityId is invalid."
+                    actionLabel="Back"
+                    onAction={onBack}
+                />
+            </AppGradientScreen>
         );
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.sub}>{shortDesc}</Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 2" tone="primary"/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Overview</Text>
-                <Text style={styles.help}>{overview}</Text>
+                <AppText variant="title" style={styles.title}>
+                    {title}
+                </AppText>
+
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    {shortDesc}
+                </AppText>
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Equipment</Text>
-                {(equipment ?? []).map((it, idx) => (
-                    <Bullet key={`${it}-${idx}`} text={it}/>
+            <AppCard>
+                <AppText variant="sectionTitle">Ready to begin?</AppText>
+
+                <AppText variant="caption" color="textMuted" style={styles.cardText}>
+                    Start the setup flow when your team is ready. You can review the activity details below before
+                    continuing.
+                </AppText>
+
+                <AppButton
+                    title={starting ? 'Starting...' : 'Start Activity'}
+                    onPress={onStart}
+                    disabled={starting}
+                    loading={starting}
+                    style={styles.startButton}
+                />
+
+                <AppButton
+                    title="Back"
+                    onPress={() =>
+                        Alert.alert('Back', 'Return to the previous screen?', [
+                            {text: 'Cancel', style: 'cancel'},
+                            {text: 'OK', onPress: onBack},
+                        ])
+                    }
+                    variant="ghost"
+                    style={styles.backButton}
+                />
+            </AppCard>
+
+            <AppSectionHeader
+                title="Activity Guide"
+                subtitle="Review the purpose, equipment, steps, and submission expectations."
+            />
+
+            <AppExpandableCard title="Overview" defaultExpanded>
+                <AppText variant="body" color="textMuted">
+                    {overview}
+                </AppText>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Equipment">
+                {equipment.map((item, index) => (
+                    <Bullet key={`${item}-${index}`} text={item}/>
                 ))}
-            </View>
+            </AppExpandableCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Instructions</Text>
-                {(instructionLines ?? []).map((line, idx) => (
-                    <Bullet key={`${line}-${idx}`} text={line}/>
+            <AppExpandableCard title="Instructions">
+                {instructionLines.map((line, index) => (
+                    <StepItem
+                        key={`${line}-${index}`}
+                        index={index + 1}
+                        text={removeLeadingNumber(line)}
+                    />
                 ))}
-            </View>
+            </AppExpandableCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Hearing Damage Risk (dB)</Text>
-                <Text style={styles.help}>
-                    Use this table to assign a risk category for each measurement. Then answer: “Should we
-                    wear earmuffs in your classroom?”
-                </Text>
+            <AppExpandableCard title="Hearing Damage Risk Table">
+                <AppText variant="body" color="textMuted" style={styles.cardText}>
+                    Use this table to assign a risk category for each measurement. Then answer whether earmuffs are
+                    needed.
+                </AppText>
 
                 <View style={styles.table}>
                     <View style={[styles.tableRow, styles.tableHeader]}>
-                        <Text style={[styles.cell, styles.cellHeader]}>Sound Level</Text>
-                        <Text style={[styles.cell, styles.cellHeader]}>Risk</Text>
+                        <AppText variant="caption" style={styles.cell}>
+                            Sound Level
+                        </AppText>
+                        <AppText variant="caption" style={styles.cell}>
+                            Risk
+                        </AppText>
                     </View>
 
-                    {SOUND_RISK_BANDS.map((b) => (
-                        <View key={`${b.minDb}-${String(b.maxDb)}`} style={styles.tableRow}>
-                            <Text style={styles.cell}>{formatDbRange(b.minDb, b.maxDb)}</Text>
-                            <Text style={styles.cell}>{b.label}</Text>
+                    {SOUND_RISK_BANDS.map((band) => (
+                        <View key={`${band.minDb}-${String(band.maxDb)}`} style={styles.tableRow}>
+                            <AppText variant="caption" style={styles.cell}>
+                                {formatDbRange(band.minDb, band.maxDb)}
+                            </AppText>
+                            <AppText variant="caption" style={styles.cell}>
+                                {band.label}
+                            </AppText>
                         </View>
                     ))}
                 </View>
 
-                <Text style={styles.note}>
-                    Submission policy: minimum <Text style={styles.bold}>3 valid measurements</Text> +{" "}
-                    <Text style={styles.bold}>1 session video evidence</Text>.
-                </Text>
-            </View>
+                <AppText variant="caption" color="textMuted" style={styles.note}>
+                    Submission policy: minimum 3 valid measurements + 1 session video evidence.
+                </AppText>
+            </AppExpandableCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Write-up Prompts</Text>
+            <AppExpandableCard title="Write-up Prompts">
                 <Bullet text="Predict which action created the loudest sound."/>
-                <Bullet text="Record results (dB) for at least 3 actions."/>
+                <Bullet text="Record results for at least 3 actions."/>
                 <Bullet text="Were you right? Why or why not?"/>
-                <Bullet text="Any surprises? Explain using surface/material/energy."/>
-                <Bullet text="Should we wear earmuffs in your classroom? Use the risk table as evidence."/>
-            </View>
+                <Bullet text="Any surprises? Explain using surface, material, or energy."/>
+                <Bullet text="Should we wear earmuffs? Use the risk table as evidence."/>
+            </AppExpandableCard>
 
-            <Pressable
-                style={[styles.primaryBtn, starting && {opacity: 0.7}]}
-                onPress={onStart}
-                disabled={starting}
-            >
-                <Text style={styles.primaryBtnText}>{starting ? "Starting…" : "Start Activity"}</Text>
-            </Pressable>
-
-            <Pressable
-                style={styles.secondaryBtn}
-                onPress={() =>
-                    Alert.alert("Back", "Return to the previous screen?", [
-                        {text: "Cancel", style: "cancel"},
-                        {text: "OK", onPress: onBack},
-                    ])
-                }
-            >
-                <Text style={styles.secondaryBtnText}>Back</Text>
-            </Pressable>
-
-            <View style={{height: 30}}/>
-        </ScrollView>
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
     );
 }
 
 function Bullet({text}: { text: string }) {
     return (
         <View style={styles.bulletRow}>
-            <Text style={styles.bulletDot}>•</Text>
-            <Text style={styles.bulletText}>{text}</Text>
+            <View style={styles.bulletDot}/>
+            <AppText variant="bodyStrong" style={styles.bulletText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
+
+function StepItem({index, text}: { index: number; text: string }) {
+    return (
+        <View style={styles.stepRow}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
+            </View>
+
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {text}
+            </AppText>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    center: {
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    cardText: {
+        marginTop: spacing.sm,
+        lineHeight: 20,
+    },
+
+    startButton: {
+        marginTop: spacing.lg,
+    },
+
+    backButton: {
+        marginTop: spacing.sm,
+    },
+
+    bulletRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
+
+    bulletDot: {
+        width: 8,
+        height: 8,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        marginTop: 7,
+    },
+
+    bulletText: {
         flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        backgroundColor: "white",
     },
-    loadingText: {marginTop: 10, opacity: 0.7},
 
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    stepRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: spacing.md,
+        gap: spacing.md,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    help: {marginTop: 8, opacity: 0.7, lineHeight: 18},
 
-    bulletRow: {flexDirection: "row", alignItems: "flex-start", marginTop: 8, gap: 8},
-    bulletDot: {fontWeight: "900", opacity: 0.85, marginTop: 1},
-    bulletText: {flex: 1, fontWeight: "700", opacity: 0.9, lineHeight: 18},
+    stepNumber: {
+        width: 26,
+        height: 26,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    stepText: {
+        flex: 1,
+        paddingTop: 2,
+    },
 
     table: {
-        marginTop: 12,
+        marginTop: spacing.md,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        borderRadius: 12,
-        overflow: "hidden",
-        backgroundColor: "white",
+        borderColor: colors.border,
+        borderRadius: radius.lg,
+        overflow: 'hidden',
+        backgroundColor: colors.surface,
     },
+
     tableRow: {
-        flexDirection: "row",
-        paddingVertical: 10,
-        paddingHorizontal: 12,
+        flexDirection: 'row',
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.md,
         borderTopWidth: 1,
-        borderTopColor: "#f0f0f0",
+        borderTopColor: colors.divider,
     },
-    tableHeader: {borderTopWidth: 0, backgroundColor: "#fafafa"},
-    cell: {flex: 1, fontWeight: "800", opacity: 0.9},
-    cellHeader: {fontWeight: "900", opacity: 0.85},
 
-    note: {marginTop: 10, opacity: 0.75, lineHeight: 18},
-    bold: {fontWeight: "900", opacity: 0.95},
-
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    tableHeader: {
+        borderTopWidth: 0,
+        backgroundColor: colors.surfaceMuted,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        marginTop: 10,
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    cell: {
+        flex: 1,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    errorTitle: {fontSize: 16, fontWeight: "900"},
-    errorSub: {marginTop: 8, opacity: 0.7, lineHeight: 18, textAlign: "center"},
+    note: {
+        marginTop: spacing.md,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

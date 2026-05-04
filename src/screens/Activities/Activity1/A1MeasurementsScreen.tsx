@@ -1,32 +1,58 @@
-import React, {useEffect, useMemo, useState} from "react";
+// src/screens/Activities/Activity1/A1MeasurementsScreen.tsx
+
+import React, {useEffect, useMemo, useState} from 'react';
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-    ActivityIndicator,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getRunDraft,
     updateAttempt,
     type ActivityRunDraft,
     type AttemptDraft,
     type AttemptMeasurementsDraft,
-} from "../../../store/activityRunDraftStore";
+} from '../../../store/activityRunDraftStore';
 
-import {pickVideoFromLibrary, recordVideoWithCamera} from "../../../services/evidenceService";
+import {
+    pickVideoFromLibrary,
+    recordVideoWithCamera,
+} from '../../../services/evidenceService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A1Measurements">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A1Measurements'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 function toNumberOrUndefined(raw: string): number | undefined {
     const v = raw.trim();
@@ -36,7 +62,7 @@ function toNumberOrUndefined(raw: string): number | undefined {
 }
 
 function attemptLabel(index: number) {
-    return index === 0 ? "Baseline (No parachute)" : `Prototype ${index}`;
+    return index === 0 ? 'Baseline' : `Prototype ${index}`;
 }
 
 export default function A1MeasurementsScreen({route, navigation}: Props) {
@@ -46,33 +72,57 @@ export default function A1MeasurementsScreen({route, navigation}: Props) {
     const [draft, setDraft] = useState<ActivityRunDraft | null>(null);
     const [attempt, setAttempt] = useState<AttemptDraft | null>(null);
 
-    // numeric inputs as strings
-    const [tHitRaw, setTHitRaw] = useState<string>("");
-    const [tStopRaw, setTStopRaw] = useState<string>("");
+    const [tHitRaw, setTHitRaw] = useState<string>('');
+    const [tStopRaw, setTStopRaw] = useState<string>('');
 
     const [inZone, setInZone] = useState<boolean | null>(null);
-    const [distanceRaw, setDistanceRaw] = useState<string>("");
+    const [distanceRaw, setDistanceRaw] = useState<string>('');
 
     const [bounceOccurred, setBounceOccurred] = useState<boolean>(false);
-    const [tUpRaw, setTUpRaw] = useState<string>("");
+    const [tUpRaw, setTUpRaw] = useState<string>('');
 
     const [savingVideo, setSavingVideo] = useState(false);
+
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
 
     useEffect(() => {
         if (!user) return;
 
         const d = getRunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {text: "OK", onPress: () => navigation.replace("A1SessionSetup", {activityId})},
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A1SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
 
         const a = d.attempts?.[attemptIndex];
+
         if (!a) {
-            Alert.alert("Attempt missing", "This attempt slot does not exist.", [
-                {text: "OK", onPress: () => navigation.goBack()},
+            Alert.alert('Attempt missing', 'This attempt slot does not exist.', [
+                {text: 'OK', onPress: () => navigation.goBack()},
             ]);
             return;
         }
@@ -85,43 +135,64 @@ export default function A1MeasurementsScreen({route, navigation}: Props) {
         if (!draft || !attempt) return;
 
         const m = attempt.measurements;
-        setTHitRaw(m?.tHitSec != null ? String(m.tHitSec) : "");
-        setTStopRaw(m?.tStopSec != null ? String(m.tStopSec) : "");
 
-        setInZone(typeof m?.inTargetZone === "boolean" ? m.inTargetZone : null);
-        setDistanceRaw(m?.distanceFromCenterCm != null ? String(m.distanceFromCenterCm) : "");
+        setTHitRaw(m?.tHitSec != null ? String(m.tHitSec) : '');
+        setTStopRaw(m?.tStopSec != null ? String(m.tStopSec) : '');
+
+        setInZone(typeof m?.inTargetZone === 'boolean' ? m.inTargetZone : null);
+        setDistanceRaw(
+            m?.distanceFromCenterCm != null ? String(m.distanceFromCenterCm) : '',
+        );
 
         setBounceOccurred(Boolean(m?.bounceOccurred));
-        setTUpRaw(m?.bounceTimeToPeakSec != null ? String(m.bounceTimeToPeakSec) : "");
+        setTUpRaw(m?.bounceTimeToPeakSec != null ? String(m.bounceTimeToPeakSec) : '');
     }, [attempt, draft]);
 
-    const targetRequired = useMemo(() => Boolean(draft?.session.targetZoneEnabled), [draft?.session.targetZoneEnabled]);
+    const targetRequired = useMemo(
+        () => Boolean(draft?.session.targetZoneEnabled),
+        [draft?.session.targetZoneEnabled],
+    );
 
     function persistMeasurements(next: AttemptMeasurementsDraft) {
-        const updated = updateAttempt(runId, attemptIndex, {measurements: next});
+        const updated = updateAttempt(runId, attemptIndex, {
+            measurements: next,
+        });
+
         setDraft(updated);
         setAttempt(updated.attempts[attemptIndex]);
     }
 
     function validate(): string | null {
         const tHit = toNumberOrUndefined(tHitRaw);
-        if (tHit == null || tHit <= 0) return "Time to First Ground Contact (t_hit) must be > 0.";
+
+        if (tHit == null || tHit <= 0) {
+            return 'Time to First Ground Contact (t_hit) must be > 0.';
+        }
 
         const tStop = toNumberOrUndefined(tStopRaw);
-        if (tStop == null || tStop < 0) return "Stopping time (t_stop) must be ≥ 0.";
+
+        if (tStop == null || tStop < 0) {
+            return 'Stopping time (t_stop) must be ≥ 0.';
+        }
 
         if (targetRequired && inZone === null) {
-            return "Target zone is enabled. Please answer whether it landed in the target zone.";
+            return 'Target zone is enabled. Please answer whether it landed in the target zone.';
         }
 
         if (distanceRaw.trim()) {
             const d = toNumberOrUndefined(distanceRaw);
-            if (d == null || d < 0) return "Distance from center must be a non-negative number.";
+
+            if (d == null || d < 0) {
+                return 'Distance from center must be a non-negative number.';
+            }
         }
 
         if (bounceOccurred) {
             const tUp = toNumberOrUndefined(tUpRaw);
-            if (tUp == null || tUp <= 0) return "Bounce is ON. Please enter time to peak after bounce (t_up) > 0.";
+
+            if (tUp == null || tUp <= 0) {
+                return 'Bounce is ON. Please enter time to peak after bounce (t_up) > 0.';
+            }
         }
 
         return null;
@@ -131,45 +202,62 @@ export default function A1MeasurementsScreen({route, navigation}: Props) {
         if (!draft || !attempt) return;
 
         const err = validate();
+
         if (err) {
-            Alert.alert("Check fields", err);
+            Alert.alert('Check fields', err);
             return;
         }
 
         const next: AttemptMeasurementsDraft = {
             tHitSec: toNumberOrUndefined(tHitRaw),
             tStopSec: toNumberOrUndefined(tStopRaw),
-            inTargetZone: targetRequired ? (inZone ?? undefined) : undefined,
-            distanceFromCenterCm: distanceRaw.trim() ? toNumberOrUndefined(distanceRaw) : undefined,
+            inTargetZone: targetRequired ? inZone ?? undefined : undefined,
+            distanceFromCenterCm: distanceRaw.trim()
+                ? toNumberOrUndefined(distanceRaw)
+                : undefined,
             bounceOccurred: bounceOccurred ? true : undefined,
-            bounceTimeToPeakSec: bounceOccurred ? toNumberOrUndefined(tUpRaw) : undefined,
+            bounceTimeToPeakSec: bounceOccurred
+                ? toNumberOrUndefined(tUpRaw)
+                : undefined,
         };
 
         persistMeasurements(next);
-        navigation.navigate("A1Result", {activityId, runId, attemptIndex});
+        navigation.navigate('A1Result', {activityId, runId, attemptIndex});
     }
 
-    async function attachVideo(kind: "record" | "pick") {
+    async function attachVideo(kind: 'record' | 'pick') {
         try {
             if (!draft || !attempt) return;
+
             setSavingVideo(true);
 
             const picked =
-                kind === "record" ? await recordVideoWithCamera() : await pickVideoFromLibrary();
+                kind === 'record'
+                    ? await recordVideoWithCamera()
+                    : await pickVideoFromLibrary();
 
             if (!picked) return;
 
             const now = Date.now();
+
             const updated = updateAttempt(runId, attemptIndex, {
-                video: {type: "video", uri: picked.uri, createdAt: now},
+                video: {
+                    type: 'video',
+                    uri: picked.uri,
+                    createdAt: now,
+                },
             });
 
             setDraft(updated);
             setAttempt(updated.attempts[attemptIndex]);
 
-            Alert.alert("Video attached ✅", "This video will be uploaded when you submit.");
+            showToast(
+                'Video attached',
+                'success',
+                'The video will be uploaded during submission.',
+            );
         } catch (e: any) {
-            Alert.alert("Video error", e?.message ?? "Failed to attach video.");
+            Alert.alert('Video error', e?.message ?? 'Failed to attach video.');
         } finally {
             setSavingVideo(false);
         }
@@ -177,259 +265,392 @@ export default function A1MeasurementsScreen({route, navigation}: Props) {
 
     function clearVideo() {
         if (!draft || !attempt) return;
-        const updated = updateAttempt(runId, attemptIndex, {video: undefined});
+
+        const updated = updateAttempt(runId, attemptIndex, {
+            video: undefined,
+        });
+
         setDraft(updated);
         setAttempt(updated.attempts[attemptIndex]);
+
+        showToast(
+            'Video removed',
+            'info',
+            'You can attach another recording anytime.',
+        );
     }
 
     if (!user) return null;
 
     if (!draft || !attempt) {
         return (
-            <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading measurement draft..."/>
+            </AppGradientScreen>
         );
     }
 
-    const hasVideo = typeof attempt.video?.uri === "string" && attempt.video.uri.length > 0;
+    const hasVideo =
+        typeof attempt.video?.uri === 'string' && attempt.video.uri.length > 0;
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Measurements</Text>
-                <Text style={styles.sub}>{attemptLabel(attemptIndex)}</Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge
+                        label={attemptIndex === 0 ? 'Baseline' : `Prototype ${attemptIndex}`}
+                        tone={attemptIndex === 0 ? 'info' : 'primary'}
+                    />
 
-                {/* Evidence (Video) */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Evidence — Video</Text>
-                    <Text style={styles.help}>
-                        Attach one video per attempt. Best tested on a real device for recording.
-                    </Text>
+                    <AppText variant="title" style={styles.title}>
+                        Measurements
+                    </AppText>
 
-                    <View style={{marginTop: 10, gap: 10}}>
-                        <Pressable
-                            style={[styles.secondaryBtn, savingVideo && {opacity: 0.6}]}
-                            onPress={() => attachVideo("record")}
-                            disabled={savingVideo}
-                        >
-                            <Text style={styles.secondaryBtnText}>Record Video</Text>
-                        </Pressable>
-
-                        <Pressable
-                            style={[styles.secondaryBtn, savingVideo && {opacity: 0.6}]}
-                            onPress={() => attachVideo("pick")}
-                            disabled={savingVideo}
-                        >
-                            <Text style={styles.secondaryBtnText}>Pick From Library</Text>
-                        </Pressable>
-
-                        {savingVideo ? (
-                            <View style={{flexDirection: "row", alignItems: "center", gap: 8}}>
-                                <ActivityIndicator/>
-                                <Text style={{opacity: 0.75}}>Preparing video…</Text>
-                            </View>
-                        ) : null}
-
-                        <View style={styles.evidenceRow}>
-                            <Text style={{fontWeight: "900"}}>Status:</Text>
-                            <Text style={{opacity: 0.75}}>{hasVideo ? "Video attached ✅" : "No video yet"}</Text>
-                        </View>
-
-                        {hasVideo ? (
-                            <Pressable style={styles.dangerBtn} onPress={clearVideo}>
-                                <Text style={styles.dangerBtnText}>Remove Video</Text>
-                            </Pressable>
-                        ) : null}
-                    </View>
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        {attemptLabel(attemptIndex)} · Record evidence and enter measured
+                        values before computing results.
+                    </AppText>
                 </View>
 
-                {/* Flight time */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Part 1 — Flight time</Text>
-                    <Text style={styles.help}>Time to First Ground Contact (t_hit), in seconds.</Text>
+                <InfoBanner
+                    title="Measurement guidance"
+                    message="Use slow-motion video when possible. Keep timing values consistent so the result screen can calculate fair comparisons."
+                    tone="info"
+                />
 
-                    <Text style={styles.label}>t_hit (seconds)</Text>
-                    <TextInput
+                <AppSectionHeader
+                    title="Evidence"
+                    subtitle="Attach one video per attempt for later submission."
+                />
+
+                <AppCard>
+                    <View style={styles.cardHeader}>
+                        <View style={styles.cardHeaderText}>
+                            <AppText variant="sectionTitle">Video Evidence</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Recording works best on a real device.
+                            </AppText>
+                        </View>
+
+                        <AppBadge
+                            label={hasVideo ? 'Attached' : 'Missing'}
+                            tone={hasVideo ? 'success' : 'warning'}
+                        />
+                    </View>
+
+                    <View style={styles.videoActions}>
+                        <AppButton
+                            title="Record Video"
+                            variant="outline"
+                            onPress={() => attachVideo('record')}
+                            disabled={savingVideo}
+                        />
+
+                        <AppButton
+                            title="Pick From Library"
+                            variant="outline"
+                            onPress={() => attachVideo('pick')}
+                            disabled={savingVideo}
+                        />
+                    </View>
+
+                    {savingVideo ? (
+                        <View style={styles.loadingRow}>
+                            <ActivityIndicator color={colors.primary}/>
+                            <AppText variant="caption" color="textMuted">
+                                Preparing video...
+                            </AppText>
+                        </View>
+                    ) : null}
+
+                    <View style={styles.statusBox}>
+                        <AppText variant="bodyStrong">Status</AppText>
+                        <AppText variant="caption" color={hasVideo ? 'success' : 'textMuted'}>
+                            {hasVideo ? 'Video attached' : 'No video yet'}
+                        </AppText>
+                    </View>
+
+                    {hasVideo ? (
+                        <AppButton
+                            title="Remove Video"
+                            variant="danger"
+                            onPress={clearVideo}
+                            style={styles.removeButton}
+                        />
+                    ) : null}
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Flight Time"
+                    subtitle="Measure time to first ground contact."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="t_hit (seconds)"
                         value={tHitRaw}
                         onChangeText={setTHitRaw}
                         placeholder="e.g. 1.2"
                         keyboardType="decimal-pad"
-                        style={styles.input}
                     />
-                </View>
 
-                {/* Stop time */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Part 2 — Stopping time</Text>
-                    <Text style={styles.help}>
-                        Time from First Contact to Stop Moving (t_stop), in seconds (slow-motion recommended).
-                    </Text>
+                    <AppText variant="caption" color="textMuted" style={styles.helpText}>
+                        t_hit is the time from release until first ground contact.
+                    </AppText>
+                </AppCard>
 
-                    <Text style={styles.label}>t_stop (seconds)</Text>
-                    <TextInput
+                <AppSectionHeader
+                    title="Stopping Time"
+                    subtitle="Measure how long the object continues moving after contact."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="t_stop (seconds)"
                         value={tStopRaw}
                         onChangeText={setTStopRaw}
                         placeholder="e.g. 0.05"
                         keyboardType="decimal-pad"
-                        style={styles.input}
                     />
-                </View>
 
-                {/* Target zone */}
+                    <AppText variant="caption" color="textMuted" style={styles.helpText}>
+                        t_stop is the time from first contact until the object stops moving.
+                    </AppText>
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Landing Accuracy"
+                    subtitle={
+                        targetRequired
+                            ? 'Required because target zone is enabled.'
+                            : 'Optional for this session.'
+                    }
+                />
+
                 {targetRequired ? (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Part 3 — Landing accuracy (target zone)</Text>
-                        <Text style={styles.help}>Required because target zone is enabled in Session Setup.</Text>
+                    <AppCard>
+                        <AppText variant="bodyStrong">Did it land in the target zone?</AppText>
 
                         <View style={styles.choiceRow}>
-                            <Pressable style={[styles.choiceBtn, inZone === true && styles.choiceBtnOn]}
-                                       onPress={() => setInZone(true)}>
-                                <Text style={[styles.choiceText, inZone === true && styles.choiceTextOn]}>Yes</Text>
-                            </Pressable>
-                            <Pressable style={[styles.choiceBtn, inZone === false && styles.choiceBtnOn]}
-                                       onPress={() => setInZone(false)}>
-                                <Text style={[styles.choiceText, inZone === false && styles.choiceTextOn]}>No</Text>
-                            </Pressable>
+                            <ChoiceButton
+                                label="Yes"
+                                active={inZone === true}
+                                onPress={() => setInZone(true)}
+                            />
+
+                            <ChoiceButton
+                                label="No"
+                                active={inZone === false}
+                                onPress={() => setInZone(false)}
+                            />
                         </View>
 
-                        <Text style={styles.label}>Distance from center (cm) (optional)</Text>
-                        <TextInput
+                        <AppInput
+                            label="Distance from center (cm) optional"
                             value={distanceRaw}
                             onChangeText={setDistanceRaw}
                             placeholder="e.g. 35"
                             keyboardType="decimal-pad"
-                            style={styles.input}
                         />
-                    </View>
+                    </AppCard>
                 ) : (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Landing accuracy</Text>
-                        <Text style={styles.help}>Target zone is not enabled. You can skip accuracy scoring for this
-                            session.</Text>
-                    </View>
+                    <AppCard>
+                        <AppText variant="body" color="textMuted">
+                            Target zone is not enabled. You can skip accuracy scoring for this
+                            session.
+                        </AppText>
+                    </AppCard>
                 )}
 
-                {/* Bounce */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Bounce (optional)</Text>
-                    <Text style={styles.help}>If a bounce occurred, we estimate extra impact using time to peak after
-                        bounce.</Text>
+                <AppSectionHeader
+                    title="Bounce"
+                    subtitle="Optional extra impact estimate if the object bounced."
+                />
 
-                    <View style={styles.rowBetween}>
-                        <Text style={styles.label}>Bounce occurred?</Text>
+                <AppCard>
+                    <View style={styles.switchRow}>
+                        <View style={styles.switchText}>
+                            <AppText variant="bodyStrong">Bounce occurred?</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Enable only if there was a visible bounce after contact.
+                            </AppText>
+                        </View>
+
                         <Switch
                             value={bounceOccurred}
                             onValueChange={(v) => {
                                 setBounceOccurred(v);
-                                if (!v) setTUpRaw("");
+                                if (!v) setTUpRaw('');
                             }}
                         />
                     </View>
 
                     {bounceOccurred ? (
-                        <>
-                            <Text style={styles.label}>t_up (seconds) — time to peak after bounce</Text>
-                            <TextInput
-                                value={tUpRaw}
-                                onChangeText={setTUpRaw}
-                                placeholder="e.g. 0.15"
-                                keyboardType="decimal-pad"
-                                style={styles.input}
-                            />
-                        </>
+                        <AppInput
+                            label="t_up (seconds)"
+                            value={tUpRaw}
+                            onChangeText={setTUpRaw}
+                            placeholder="e.g. 0.15"
+                            keyboardType="decimal-pad"
+                        />
                     ) : null}
-                </View>
+                </AppCard>
 
-                <Pressable style={styles.primaryBtn} onPress={onCompute}>
-                    <Text style={styles.primaryBtnText}>Compute Results</Text>
-                </Pressable>
+                <AppButton title="Compute Results" onPress={onCompute}/>
 
-                <Text style={styles.footerHint}>
-                    Next: Results (computed values + interpretation). Then save attempt and continue.
-                </Text>
+                <AppText variant="caption" color="textMuted" style={styles.footerHint}>
+                    Next: Results screen with computed values and interpretation. Then you
+                    can save the attempt and continue.
+                </AppText>
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type ChoiceButtonProps = {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+};
+
+function ChoiceButton({label, active, onPress}: ChoiceButtonProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.choiceButton, active && styles.choiceButtonActive]}
+        >
+            <AppText
+                variant="bodyStrong"
+                color={active ? 'inverseText' : 'text'}
+                align="center"
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18, fontWeight: "800"},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: Platform.OS === "ios" ? 12 : 10,
-    },
-
-    choiceRow: {flexDirection: "row", gap: 10, marginTop: 12},
-    choiceBtn: {
+    keyboard: {
         flex: 1,
+    },
+
+    header: {
+        marginBottom: spacing.lg,
+    },
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    cardHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    cardHeaderText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    videoActions: {
+        marginTop: spacing.lg,
+        gap: spacing.md,
+    },
+
+    loadingRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+
+    statusBox: {
+        marginTop: spacing.md,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    removeButton: {
+        marginTop: spacing.md,
+    },
+
+    helpText: {
+        marginTop: -spacing.sm,
+    },
+
+    choiceRow: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.md,
+        marginBottom: spacing.lg,
+    },
+
+    choiceButton: {
+        flex: 1,
+        minHeight: 46,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.md,
     },
-    choiceBtnOn: {backgroundColor: "#111", borderColor: "#111"},
-    choiceText: {fontWeight: "900", opacity: 0.85},
-    choiceTextOn: {color: "white", opacity: 1},
 
-    rowBetween: {flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
-
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    choiceButtonActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
-
-    secondaryBtn: {
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+    switchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    secondaryBtnText: {fontWeight: "900", opacity: 0.9},
 
-    dangerBtn: {
-        backgroundColor: "#ffecec",
-        borderWidth: 1,
-        borderColor: "#ffbdbd",
-        borderRadius: 12,
-        paddingVertical: 10,
-        alignItems: "center",
+    switchText: {
+        flex: 1,
     },
-    dangerBtnText: {fontWeight: "900", color: "#b00020"},
 
-    evidenceRow: {flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4},
+    footerHint: {
+        marginTop: spacing.md,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

@@ -1,21 +1,18 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     createActivity6RunDraft,
@@ -29,13 +26,34 @@ import {
     type Activity6RunDraft,
     type A6ParticipantDraft,
     type A6TracingPathType,
-} from "../../../store/activity6RunDraftStore";
+} from '../../../store/activity6RunDraftStore';
 
-import {confirmBatteryBeforeActivity} from "../../../services/battery";
+import {confirmBatteryBeforeActivity} from '../../../services/battery';
 
-/* =========================================================
-   Helpers
-========================================================= */
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A6SessionSetup'>;
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+const PATH_OPTIONS: Array<{ label: string; value: A6TracingPathType }> = [
+    {label: 'Circle', value: 'circle'},
+    {label: 'Wave', value: 'wave'},
+    {label: 'Zigzag', value: 'zigzag'},
+    {label: 'Figure-8', value: 'figure8'},
+];
 
 function clampInt(n: number, min: number, max: number) {
     if (!Number.isFinite(n)) return min;
@@ -48,7 +66,7 @@ function clampNum(n: number, min: number, max: number) {
 }
 
 function digitsOnly(s: string) {
-    return s.replace(/[^\d]/g, "");
+    return s.replace(/[^\d]/g, '');
 }
 
 function trimOrEmpty(s: string) {
@@ -56,31 +74,45 @@ function trimOrEmpty(s: string) {
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
-function formatGeoText(geo: Activity6RunDraft["session"]["geo"] | undefined): string {
-    if (!geo) return "No coordinate saved yet";
-    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return "No coordinate saved yet";
+function formatGeoText(geo: Activity6RunDraft['session']['geo'] | undefined): string {
+    if (!geo) return 'No coordinate saved yet';
+    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) {
+        return 'No coordinate saved yet';
+    }
 
-    const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
-    const timeText = isFiniteNumber(geo.capturedAt) ? ` • ${new Date(geo.capturedAt).toLocaleString()}` : "";
+    const accText = isFiniteNumber(geo.accuracyM)
+        ? ` (±${Math.round(geo.accuracyM)}m)`
+        : '';
+    const timeText = isFiniteNumber(geo.capturedAt)
+        ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
+        : '';
+
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
+async function requestGpsPermissionSafe(): Promise<'granted' | 'denied'> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
         const res = await Location.requestForegroundPermissionsAsync();
-        return res.status === "granted" ? "granted" : "denied";
+        return res.status === 'granted' ? 'granted' : 'denied';
     } catch {
-        return "denied";
+        return 'denied';
     }
 }
 
-async function getCurrentGeoSafe(): Promise<{ lat: number; lng: number; accuracyM?: number } | null> {
+async function getCurrentGeoSafe(): Promise<
+    | {
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+}
+    | null
+> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
 
         const servicesEnabled = await Location.hasServicesEnabledAsync();
         if (!servicesEnabled) return null;
@@ -91,33 +123,18 @@ async function getCurrentGeoSafe(): Promise<{ lat: number; lng: number; accuracy
 
         const lat = pos?.coords?.latitude;
         const lng = pos?.coords?.longitude;
+
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
         const acc = pos?.coords?.accuracy ?? undefined;
-        const accuracyM = typeof acc === "number" && Number.isFinite(acc) ? acc : undefined;
+        const accuracyM =
+            typeof acc === 'number' && Number.isFinite(acc) ? acc : undefined;
 
         return {lat, lng, accuracyM};
     } catch {
         return null;
     }
 }
-
-/* =========================================================
-   Types
-========================================================= */
-
-type Props = NativeStackScreenProps<AppStackParamList, "A6SessionSetup">;
-
-const PATH_OPTIONS: Array<{ label: string; value: A6TracingPathType }> = [
-    {label: "Circle", value: "circle"},
-    {label: "Wave", value: "wave"},
-    {label: "Zigzag", value: "zigzag"},
-    {label: "Figure-8", value: "figure8"},
-];
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A6SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -129,27 +146,58 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
     const hasBootstrappedRef = useRef(false);
 
-    // UI buffers
-    const [sessionLabel, setSessionLabel] = useState("");
-    const [participantCountRaw, setParticipantCountRaw] = useState("1");
+    const [sessionLabel, setSessionLabel] = useState('');
+    const [participantCountRaw, setParticipantCountRaw] = useState('1');
+    const [trialsPerHandRaw, setTrialsPerHandRaw] = useState('3');
 
-    const [trialsPerHandRaw, setTrialsPerHandRaw] = useState("3");
+    const [delayMinSecRaw, setDelayMinSecRaw] = useState('1.0');
+    const [delayMaxSecRaw, setDelayMaxSecRaw] = useState('3.0');
+    const [targetSizePxRaw, setTargetSizePxRaw] = useState('56');
 
-    const [delayMinSecRaw, setDelayMinSecRaw] = useState("1.0");
-    const [delayMaxSecRaw, setDelayMaxSecRaw] = useState("3.0");
-    const [targetSizePxRaw, setTargetSizePxRaw] = useState("56");
+    const [tracingPathType, setTracingPathType] =
+        useState<A6TracingPathType>('circle');
+    const [maxAllowedDeviationPxRaw, setMaxAllowedDeviationPxRaw] = useState('40');
+    const [accuracyThresholdPctRaw, setAccuracyThresholdPctRaw] = useState('70');
 
-    const [tracingPathType, setTracingPathType] = useState<A6TracingPathType>("circle");
-    const [maxAllowedDeviationPxRaw, setMaxAllowedDeviationPxRaw] = useState("40");
-    const [accuracyThresholdPctRaw, setAccuracyThresholdPctRaw] = useState("70");
-
-    // GPS
     const [gpsEnabled, setGpsEnabled] = useState(true);
-    const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
+    const [gpsPermission, setGpsPermission] = useState<
+        'unknown' | 'granted' | 'denied'
+    >('unknown');
     const [capturingGps, setCapturingGps] = useState(false);
 
-    // participant add input
-    const [newParticipantName, setNewParticipantName] = useState("");
+    const [newParticipantName, setNewParticipantName] = useState('');
+
+    const [toast, setToast] = useState<{
+        visible: boolean;
+        title: string;
+        message?: string;
+        tone?: ToastTone;
+    }>({
+        visible: false,
+        title: '',
+    });
+
+    function showToast(title: string, message?: string, tone: ToastTone = 'info') {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
+    useEffect(() => {
+        if (!toast.visible) return;
+
+        const timer = setTimeout(() => {
+            setToast((prev) => ({
+                ...prev,
+                visible: false,
+            }));
+        }, 2500);
+
+        return () => clearTimeout(timer);
+    }, [toast.visible]);
 
     useEffect(() => {
         if (!user) return;
@@ -183,7 +231,7 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                         participantCount: 1,
                         trialsPerHand: 3,
                         target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
-                        tracingPathType: "circle",
+                        tracingPathType: 'circle',
                         maxAllowedDeviationPx: 100,
                         accuracyThresholdPct: 60,
                     });
@@ -199,17 +247,20 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
                 if (recoverable) {
                     Alert.alert(
-                        "Resume previous draft?",
-                        "We found an unfinished Activity 6 draft. Would you like to continue it or start a new session?",
+                        'Resume previous draft?',
+                        'We found an unfinished Activity 6 draft. Would you like to continue it or start a new session?',
                         [
                             {
-                                text: "Start New",
-                                style: "destructive",
+                                text: 'Start New',
+                                style: 'destructive',
                                 onPress: async () => {
                                     try {
                                         await discardActivity6RunDraft(recoverable.runId);
                                     } catch (error) {
-                                        console.error("[A6SessionSetup] Failed to discard old draft", error);
+                                        console.error(
+                                            '[A6SessionSetup] Failed to discard old draft',
+                                            error,
+                                        );
                                     }
 
                                     const created = createActivity6RunDraft({
@@ -218,8 +269,12 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                                         gpsEnabled: true,
                                         participantCount: 1,
                                         trialsPerHand: 3,
-                                        target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
-                                        tracingPathType: "circle",
+                                        target: {
+                                            delayMinSec: 1.0,
+                                            delayMaxSec: 3.0,
+                                            targetSizePx: 56,
+                                        },
+                                        tracingPathType: 'circle',
                                         maxAllowedDeviationPx: 100,
                                         accuracyThresholdPct: 60,
                                     });
@@ -228,13 +283,13 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                                 },
                             },
                             {
-                                text: "Resume",
+                                text: 'Resume',
                                 onPress: () => {
                                     setDraft(recoverable);
                                     navigation.setParams({runId: recoverable.runId});
                                 },
                             },
-                        ]
+                        ],
                     );
                     return;
                 }
@@ -246,14 +301,14 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     participantCount: 1,
                     trialsPerHand: 3,
                     target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
-                    tracingPathType: "circle",
+                    tracingPathType: 'circle',
                     maxAllowedDeviationPx: 100,
                     accuracyThresholdPct: 60,
                 });
                 setDraft(created);
                 navigation.setParams({runId: created.runId});
             } catch (error) {
-                console.error("[A6SessionSetup] Failed to bootstrap draft", error);
+                console.error('[A6SessionSetup] Failed to bootstrap draft', error);
 
                 const fallback = createActivity6RunDraft({
                     activityId,
@@ -262,7 +317,7 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
                     participantCount: 1,
                     trialsPerHand: 3,
                     target: {delayMinSec: 1.0, delayMaxSec: 3.0, targetSizePx: 56},
-                    tracingPathType: "circle",
+                    tracingPathType: 'circle',
                     maxAllowedDeviationPx: 100,
                     accuracyThresholdPct: 60,
                 });
@@ -279,25 +334,28 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
     useEffect(() => {
         if (!draft) return;
 
-        setSessionLabel(draft.session.sessionLabel ?? "");
+        setSessionLabel(draft.session.sessionLabel ?? '');
         setParticipantCountRaw(String(draft.session.participantCount ?? 1));
-
         setTrialsPerHandRaw(String(draft.session.trialsPerHand ?? 3));
 
         setDelayMinSecRaw(String(draft.session.target?.delayMinSec ?? 1.0));
         setDelayMaxSecRaw(String(draft.session.target?.delayMaxSec ?? 3.0));
         setTargetSizePxRaw(String(draft.session.target?.targetSizePx ?? 56));
 
-        setTracingPathType(draft.session.tracingPathType ?? "circle");
+        setTracingPathType(draft.session.tracingPathType ?? 'circle');
         setMaxAllowedDeviationPxRaw(String(draft.session.maxAllowedDeviationPx ?? 40));
         setAccuracyThresholdPctRaw(String(draft.session.accuracyThresholdPct ?? 70));
 
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
-        setGpsPermission(draft.session.gpsPermission ?? "unknown");
+        setGpsPermission(draft.session.gpsPermission ?? 'unknown');
     }, [draft]);
 
     const participants = draft?.session.participants ?? [];
-    const geoCaptured = Boolean(draft?.session.geo && isFiniteNumber(draft?.session.geo.lat) && isFiniteNumber(draft?.session.geo.lng));
+    const geoCaptured = Boolean(
+        draft?.session.geo &&
+        isFiniteNumber(draft.session.geo.lat) &&
+        isFiniteNumber(draft.session.geo.lng),
+    );
 
     const sessionError = useMemo(() => {
         if (!draft) return null;
@@ -307,17 +365,37 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
     function persistSessionBase(): Activity6RunDraft | null {
         if (!draft) return null;
 
-        const nextParticipantCount = clampInt(parseInt(digitsOnly(participantCountRaw || "1"), 10), 1, 6);
-        const nextTrialsPerHand = clampInt(parseInt(digitsOnly(trialsPerHandRaw || "3"), 10), 1, 10);
+        const nextParticipantCount = clampInt(
+            parseInt(digitsOnly(participantCountRaw || '1'), 10),
+            1,
+            6,
+        );
+        const nextTrialsPerHand = clampInt(
+            parseInt(digitsOnly(trialsPerHandRaw || '3'), 10),
+            1,
+            10,
+        );
 
-        const minSec = clampNum(parseFloat(delayMinSecRaw || "1.0"), 0.5, 10);
-        const maxSec = clampNum(parseFloat(delayMaxSecRaw || "3.0"), 0.5, 10);
+        const minSec = clampNum(parseFloat(delayMinSecRaw || '1.0'), 0.5, 10);
+        const maxSec = clampNum(parseFloat(delayMaxSecRaw || '3.0'), 0.5, 10);
         const fixedMax = Math.max(maxSec, minSec + 0.1);
 
-        const targetSizePx = clampInt(parseInt(digitsOnly(targetSizePxRaw || "56"), 10), 24, 120);
+        const targetSizePx = clampInt(
+            parseInt(digitsOnly(targetSizePxRaw || '56'), 10),
+            24,
+            120,
+        );
 
-        const maxDev = clampInt(parseInt(digitsOnly(maxAllowedDeviationPxRaw || "40"), 10), 10, 200);
-        const accThreshold = clampInt(parseInt(digitsOnly(accuracyThresholdPctRaw || "70"), 10), 0, 100);
+        const maxDev = clampInt(
+            parseInt(digitsOnly(maxAllowedDeviationPxRaw || '40'), 10),
+            10,
+            200,
+        );
+        const accThreshold = clampInt(
+            parseInt(digitsOnly(accuracyThresholdPctRaw || '70'), 10),
+            0,
+            100,
+        );
 
         const next = updateActivity6Session(draft.runId, {
             sessionLabel: trimOrEmpty(sessionLabel) || undefined,
@@ -353,31 +431,39 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
         const name = trimOrEmpty(newParticipantName);
         if (!name) {
-            Alert.alert("Missing name", "Enter a participant name first.");
+            showToast('Missing name', 'Enter a participant name first.', 'warning');
             return;
         }
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount >= 6) {
-            Alert.alert("Limit reached", "Participant count cannot exceed 6.");
+            showToast('Limit reached', 'Participant count cannot exceed 6.', 'warning');
             return;
         }
 
-        const afterCount = updateActivity6Session(draft.runId, {participantCount: currentCount + 1});
+        const afterCount = updateActivity6Session(draft.runId, {
+            participantCount: currentCount + 1,
+        });
 
-        const appended = afterCount.session.participants?.[afterCount.session.participants.length - 1];
+        const appended =
+            afterCount.session.participants?.[afterCount.session.participants.length - 1];
+
         if (!appended?.id) {
             setDraft(afterCount);
-            setNewParticipantName("");
+            setNewParticipantName('');
             setParticipantCountRaw(String(afterCount.session.participantCount));
             return;
         }
 
-        const afterRename = updateActivity6Participant(afterCount.runId, appended.id, {name});
+        const afterRename = updateActivity6Participant(afterCount.runId, appended.id, {
+            name,
+        });
 
         setDraft(afterRename);
         setParticipantCountRaw(String(afterRename.session.participantCount));
-        setNewParticipantName("");
+        setNewParticipantName('');
+
+        showToast('Participant added', `${name} was added to this session.`, 'success');
     }
 
     function onRemoveParticipant(participantId: string) {
@@ -385,19 +471,19 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount <= 1) {
-            Alert.alert("Not allowed", "At least 1 participant is required.");
+            showToast('Not allowed', 'At least 1 participant is required.', 'warning');
             return;
         }
 
-        Alert.alert("Remove participant?", "This will remove the participant from the session.", [
-            {text: "Cancel", style: "cancel"},
+        Alert.alert('Remove participant?', 'This will remove the participant from the session.', [
+            {text: 'Cancel', style: 'cancel'},
             {
-                text: "Remove",
-                style: "destructive",
+                text: 'Remove',
+                style: 'destructive',
                 onPress: () => {
-                    const filtered: A6ParticipantDraft[] = (draft.session.participants ?? []).filter(
-                        (p) => p.id !== participantId
-                    );
+                    const filtered: A6ParticipantDraft[] = (
+                        draft.session.participants ?? []
+                    ).filter((p) => p.id !== participantId);
 
                     const next = updateActivity6Session(draft.runId, {
                         participantCount: currentCount - 1,
@@ -406,6 +492,12 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
                     setDraft(next);
                     setParticipantCountRaw(String(next.session.participantCount));
+
+                    showToast(
+                        'Participant removed',
+                        'The participant was removed from this session.',
+                        'info',
+                    );
                 },
             },
         ]);
@@ -421,13 +513,21 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
         });
 
         setDraft(next);
+
+        if (!nextVal) {
+            showToast(
+                'GPS disabled',
+                'Location evidence will be removed until GPS is enabled again.',
+                'warning',
+            );
+        }
     }
 
     async function onCaptureGps() {
         if (!draft) return;
 
         if (!gpsEnabled) {
-            Alert.alert("GPS disabled", "Enable GPS first to capture coordinates.");
+            showToast('GPS disabled', 'Enable GPS first to capture coordinates.', 'warning');
             return;
         }
 
@@ -435,18 +535,20 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             setCapturingGps(true);
 
             let status = gpsPermission;
-            if (status === "unknown" || status === "denied") {
+            if (status === 'unknown' || status === 'denied') {
                 status = await requestGpsPermissionSafe();
                 setGpsPermission(status);
 
-                const nextPerm = updateActivity6Session(draft.runId, {gpsPermission: status});
+                const nextPerm = updateActivity6Session(draft.runId, {
+                    gpsPermission: status,
+                });
                 setDraft(nextPerm);
             }
 
-            if (status !== "granted") {
+            if (status !== 'granted') {
                 Alert.alert(
-                    "Permission denied",
-                    "Location permission is required for submission. Please enable it in device settings."
+                    'Permission denied',
+                    'Location permission is required for submission. Please enable it in device settings.',
                 );
                 return;
             }
@@ -454,15 +556,15 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
-                    "Location unavailable",
-                    "Could not capture your location. Please ensure Location Services are ON and try again."
+                    'Location unavailable',
+                    'Could not capture your location. Please ensure Location Services are ON and try again.',
                 );
                 return;
             }
 
             const next = updateActivity6Session(draft.runId, {
                 gpsEnabled: true,
-                gpsPermission: "granted",
+                gpsPermission: 'granted',
                 geo: {
                     lat: g.lat,
                     lng: g.lng,
@@ -472,7 +574,12 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
             });
 
             setDraft(next);
-            Alert.alert("Location captured ✅", "GPS coordinate has been saved for submission.");
+
+            showToast(
+                'Location captured',
+                'GPS coordinate has been saved for submission.',
+                'success',
+            );
         } finally {
             setCapturingGps(false);
         }
@@ -486,19 +593,19 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
         const err = validateA6Session(persisted);
         if (err) {
-            Alert.alert("Check setup", err);
+            showToast('Check setup', err, 'danger');
             return;
         }
 
         const canContinue = await confirmBatteryBeforeActivity({
             activityId,
-            activityTitle: "Activity 6: Reaction Board",
-            intensity: "HIGH",
+            activityTitle: 'Activity 6: Reaction Board',
+            intensity: 'HIGH',
         });
 
         if (!canContinue) return;
 
-        navigation.navigate("A6Prediction", {
+        navigation.navigate('A6Prediction', {
             activityId,
             runId: persisted.runId,
         });
@@ -508,340 +615,495 @@ export default function A6SessionSetupScreen({route, navigation}: Props) {
 
     if (bootstrapping || !draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading session…</Text>
-                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Checking for unfinished Activity 6 session..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
         <KeyboardAvoidingView
-            style={{flex: 1, backgroundColor: "#fff"}}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView contentContainerStyle={styles.container}>
-                <Text style={styles.title}>Session Setup</Text>
-                <Text style={styles.sub}>
-                    Configure participants, reaction trials, tracing difficulty, and GPS policy before starting.
-                </Text>
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 6" tone="primary"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Session</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Reaction Board Setup
+                    </AppText>
 
-                    <Text style={styles.label}>Session label</Text>
-                    <TextInput
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Configure participants, reaction trials, tracing challenge, and GPS evidence before prediction.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="Reaction and tracing activity"
+                    message="Students compare reaction speed and tracing accuracy under controlled settings."
+                    tone="info"
+                />
+
+                <AppSectionHeader
+                    title="Session"
+                    subtitle="Use a clear label so your team can identify this run later."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Session label"
                         value={sessionLabel}
                         onChangeText={setSessionLabel}
                         placeholder="e.g. Week 6 – Reaction Board"
-                        style={styles.input}
                     />
-                    <Text style={styles.note}>
-                        Use a clear label so your team can find runs later.
-                    </Text>
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Participants</Text>
+                <AppSectionHeader
+                    title="Participants"
+                    subtitle="Each participant can complete dominant and non-dominant hand trials."
+                />
 
-                    <Text style={styles.help}>
-                        You can run this as a team session. At least 1 participant is required.
-                    </Text>
-
-                    <Text style={styles.label}>Participant count (1–6)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Participant count (1–6)"
                         value={participantCountRaw}
                         onChangeText={(t) => setParticipantCountRaw(digitsOnly(t))}
                         keyboardType="number-pad"
                         placeholder="e.g. 3"
-                        style={styles.input}
                     />
-                    <Text style={styles.note}>
-                        Tip: you can also add/remove participants using the controls below.
-                    </Text>
 
                     <View style={styles.addRow}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Add participant (name)</Text>
-                            <TextInput
+                        <View style={styles.addInput}>
+                            <AppInput
+                                label="Add participant"
                                 value={newParticipantName}
                                 onChangeText={setNewParticipantName}
                                 placeholder="e.g. Ruixin"
-                                style={styles.input}
                             />
                         </View>
-                        <Pressable style={styles.smallBtn} onPress={onAddParticipant}>
-                            <Text style={styles.smallBtnText}>Add</Text>
-                        </Pressable>
+
+                        <AppButton
+                            title="Add"
+                            onPress={onAddParticipant}
+                            fullWidth={false}
+                            style={styles.addButton}
+                        />
                     </View>
 
                     {participants.length === 0 ? (
-                        <Text style={styles.muted}>No participants initialized.</Text>
+                        <InfoBanner
+                            title="No participants initialized"
+                            message="Add at least one participant before running trials."
+                            tone="warning"
+                        />
                     ) : (
-                        <View style={{marginTop: 10}}>
+                        <View style={styles.participantList}>
                             {participants.map((p, idx) => (
                                 <View key={p.id} style={styles.participantCard}>
-                                    <Text style={styles.participantHeader}>Participant {idx + 1}</Text>
+                                    <View style={styles.participantHeader}>
+                                        <AppBadge label={`Participant ${idx + 1}`} tone="info"/>
 
-                                    <TextInput
+                                        <Pressable
+                                            onPress={() => onRemoveParticipant(p.id)}
+                                            style={styles.removeButton}
+                                        >
+                                            <AppText variant="caption" color="danger">
+                                                Remove
+                                            </AppText>
+                                        </Pressable>
+                                    </View>
+
+                                    <AppInput
+                                        label="Name"
                                         value={p.name}
                                         onChangeText={(t) => onRenameParticipant(p.id, t)}
                                         placeholder={`Participant ${idx + 1}`}
-                                        style={styles.input}
                                     />
 
-                                    <View style={styles.participantFooter}>
-                                        <Text style={styles.participantMeta}>
-                                            Added • {new Date(p.createdAt).toLocaleString()}
-                                        </Text>
-
-                                        <Pressable onPress={() => onRemoveParticipant(p.id)} style={styles.removeBtn}>
-                                            <Text style={styles.removeBtnText}>Remove</Text>
-                                        </Pressable>
-                                    </View>
+                                    <AppText variant="caption" color="textMuted">
+                                        Added • {new Date(p.createdAt).toLocaleString()}
+                                    </AppText>
                                 </View>
                             ))}
                         </View>
                     )}
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Reaction Trials</Text>
-                    <Text style={styles.help}>
-                        The target appears after a random delay. Each participant completes dominant + non-dominant
-                        trials.
-                    </Text>
+                <AppSectionHeader
+                    title="Reaction Trials"
+                    subtitle="Configure target delay and target size for the reaction test."
+                />
 
-                    <Text style={styles.label}>Trials per hand (1–10)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Trials per hand (1–10)"
                         value={trialsPerHandRaw}
                         onChangeText={(t) => setTrialsPerHandRaw(digitsOnly(t))}
                         keyboardType="number-pad"
                         placeholder="e.g. 3"
-                        style={styles.input}
                     />
 
-                    <Text style={styles.label}>Target delay min (seconds)</Text>
-                    <TextInput
-                        value={delayMinSecRaw}
-                        onChangeText={setDelayMinSecRaw}
-                        keyboardType="decimal-pad"
-                        placeholder="e.g. 1.0"
-                        style={styles.input}
-                    />
+                    <View style={styles.grid}>
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Delay min"
+                                value={delayMinSecRaw}
+                                onChangeText={setDelayMinSecRaw}
+                                keyboardType="decimal-pad"
+                                placeholder="1.0"
+                            />
+                        </View>
 
-                    <Text style={styles.label}>Target delay max (seconds)</Text>
-                    <TextInput
-                        value={delayMaxSecRaw}
-                        onChangeText={setDelayMaxSecRaw}
-                        keyboardType="decimal-pad"
-                        placeholder="e.g. 3.0"
-                        style={styles.input}
-                    />
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Delay max"
+                                value={delayMaxSecRaw}
+                                onChangeText={setDelayMaxSecRaw}
+                                keyboardType="decimal-pad"
+                                placeholder="3.0"
+                            />
+                        </View>
+                    </View>
 
-                    <Text style={styles.label}>Target size (px)</Text>
-                    <TextInput
+                    <AppInput
+                        label="Target size (px)"
                         value={targetSizePxRaw}
                         onChangeText={(t) => setTargetSizePxRaw(digitsOnly(t))}
                         keyboardType="number-pad"
-                        placeholder="e.g. 56"
-                        style={styles.input}
+                        placeholder="56"
                     />
 
-                    <Text style={styles.note}>
-                        Keep the delay range realistic (e.g. 1–3s) so students stay attentive.
-                    </Text>
-                </View>
+                    <AppText variant="caption" color="textMuted">
+                        Keep the delay range realistic, such as 1–3 seconds, so students stay attentive.
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Tracing Challenge</Text>
-                    <Text style={styles.help}>
-                        Students trace a moving path. Accuracy is computed from deviation vs allowed threshold.
-                    </Text>
+                <AppSectionHeader
+                    title="Tracing Challenge"
+                    subtitle="Configure path type and scoring thresholds."
+                />
 
-                    <Text style={styles.label}>Path type</Text>
-                    <View style={{flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8}}>
-                        {PATH_OPTIONS.map((opt) => {
-                            const on = tracingPathType === opt.value;
-                            return (
-                                <Pressable
-                                    key={opt.value}
-                                    onPress={() => setTracingPathType(opt.value)}
-                                    style={[styles.pill, on && styles.pillOn]}
-                                >
-                                    <Text style={[styles.pillText, on && styles.pillTextOn]}>{opt.label}</Text>
-                                </Pressable>
-                            );
-                        })}
+                <AppCard>
+                    <AppText variant="bodyStrong">Path type</AppText>
+
+                    <View style={styles.segmentWrap}>
+                        {PATH_OPTIONS.map((opt) => (
+                            <SegmentButton
+                                key={opt.value}
+                                label={opt.label}
+                                active={tracingPathType === opt.value}
+                                onPress={() => setTracingPathType(opt.value)}
+                            />
+                        ))}
                     </View>
 
-                    <Text style={styles.label}>Max allowed deviation (px)</Text>
-                    <TextInput
+                    <AppInput
+                        label="Max allowed deviation (px)"
                         value={maxAllowedDeviationPxRaw}
                         onChangeText={(t) => setMaxAllowedDeviationPxRaw(digitsOnly(t))}
                         keyboardType="number-pad"
-                        placeholder="e.g. 40"
-                        style={styles.input}
+                        placeholder="40"
+                        containerStyle={styles.blockGap}
                     />
 
-                    <Text style={styles.label}>Accuracy threshold for leaderboard (%)</Text>
-                    <TextInput
+                    <AppInput
+                        label="Accuracy threshold (%)"
                         value={accuracyThresholdPctRaw}
                         onChangeText={(t) => setAccuracyThresholdPctRaw(digitsOnly(t))}
                         keyboardType="number-pad"
-                        placeholder="e.g. 70"
-                        style={styles.input}
+                        placeholder="70"
                     />
 
-                    <Text style={styles.note}>
+                    <AppText variant="caption" color="textMuted">
                         A higher threshold makes leaderboard eligibility stricter.
-                    </Text>
-                </View>
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
-                    <Text style={styles.help}>
-                        You can run trials without GPS, but submission will be blocked until GPS is granted and a
-                        coordinate is captured.
-                    </Text>
+                <AppSectionHeader
+                    title="GPS Evidence"
+                    subtitle="Required before final submission."
+                />
 
-                    <View style={[styles.row, {marginTop: 10}]}>
-                        <Text style={[styles.label, {marginTop: 0}]}>Enable GPS</Text>
+                <AppCard>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Enable GPS</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Submission will be blocked until GPS is granted and a coordinate is captured.
+                            </AppText>
+                        </View>
+
                         <Switch value={gpsEnabled} onValueChange={onToggleGps}/>
                     </View>
 
-                    <View style={styles.geoRow}>
-                        <Text style={styles.geoText}>{formatGeoText(draft.session.geo)}</Text>
-                        <Pressable
-                            style={[styles.smallBtn, capturingGps && styles.smallBtnDisabled]}
-                            onPress={onCaptureGps}
-                            disabled={capturingGps}
-                        >
-                            <Text style={styles.smallBtnText}>{capturingGps ? "Capturing…" : "Capture"}</Text>
-                        </Pressable>
+                    <StatusRow
+                        label="Permission"
+                        value={
+                            gpsPermission === 'unknown'
+                                ? 'Not requested'
+                                : gpsPermission === 'granted'
+                                    ? 'Granted'
+                                    : 'Denied'
+                        }
+                        good={gpsPermission === 'granted'}
+                    />
+
+                    <StatusRow
+                        label="Coordinate"
+                        value={geoCaptured ? 'Captured' : gpsEnabled ? 'Not captured' : 'GPS off'}
+                        good={geoCaptured}
+                    />
+
+                    <View style={styles.coordinateBox}>
+                        <AppText variant="caption" color="textMuted">
+                            Saved coordinate
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.coordinateText}>
+                            {formatGeoText(draft.session.geo)}
+                        </AppText>
                     </View>
 
-                    <Text style={styles.note}>
-                        Status: {gpsPermission.toUpperCase()} • Saved: {geoCaptured ? "YES" : "NO"}
-                    </Text>
-                </View>
+                    <AppButton
+                        title={capturingGps ? 'Capturing...' : 'Capture GPS Coordinate'}
+                        onPress={onCaptureGps}
+                        disabled={capturingGps || !gpsEnabled}
+                        variant="outline"
+                        style={styles.blockGap}
+                    />
 
-                <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
-                </Pressable>
+                    {capturingGps ? (
+                        <View style={styles.loadingInline}>
+                            <ActivityIndicator color={colors.primary}/>
+                            <AppText variant="caption" color="textMuted">
+                                Waiting for location response...
+                            </AppText>
+                        </View>
+                    ) : null}
+                </AppCard>
 
-                {sessionError ? <Text style={styles.errorText}>⚠️ {sessionError}</Text> : null}
+                {sessionError ? (
+                    <InfoBanner title="Fix before continuing" message={sessionError} tone="danger"/>
+                ) : null}
 
-                <View style={{height: 40}}/>
-            </ScrollView>
+                <AppButton title="Continue to Prediction" onPress={onContinue}/>
+
+                <View style={styles.bottomSpace}/>
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type SegmentButtonProps = {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+};
+
+function SegmentButton({label, active, onPress}: SegmentButtonProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.segmentButton, active && styles.segmentButtonActive]}
+        >
+            <AppText
+                variant="caption"
+                color={active ? 'inverseText' : 'text'}
+                align="center"
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
+type StatusRowProps = {
+    label: string;
+    value: string;
+    good?: boolean;
+};
+
+function StatusRow({label, value, good = false}: StatusRowProps) {
+    return (
+        <View style={styles.statusRow}>
+            <AppText variant="bodyStrong">{label}</AppText>
+
+            <View
+                style={[
+                    styles.statusPill,
+                    good ? styles.statusPillGood : styles.statusPillBad,
+                ]}
+            >
+                <AppText variant="caption" color={good ? 'success' : 'danger'}>
+                    {value} {good ? '✓' : '!'}
+                </AppText>
+            </View>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    keyboard: {
+        flex: 1,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900", marginBottom: 8},
-    help: {opacity: 0.75, lineHeight: 18},
-    muted: {marginTop: 8, opacity: 0.6},
 
-    label: {marginTop: 10, fontWeight: "800"},
-    input: {
-        marginTop: 6,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        fontSize: 14,
+    header: {
+        marginBottom: spacing.lg,
     },
-    note: {marginTop: 10, opacity: 0.7, lineHeight: 18},
 
-    row: {flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
-
-    addRow: {flexDirection: "row", alignItems: "flex-end", gap: 10, marginTop: 10},
-
-    smallBtn: {
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
-        minWidth: 80,
-        alignItems: "center",
-        justifyContent: "center",
+    title: {
+        marginTop: spacing.md,
     },
-    smallBtnDisabled: {opacity: 0.6},
-    smallBtnText: {fontWeight: "800"},
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    grid: {
+        flexDirection: 'row',
+        gap: spacing.md,
+    },
+
+    gridCol: {
+        flex: 1,
+    },
+
+    addRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: spacing.md,
+    },
+
+    addInput: {
+        flex: 1,
+    },
+
+    addButton: {
+        minWidth: 86,
+        marginBottom: spacing.md,
+    },
+
+    participantList: {
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
 
     participantCard: {
-        marginTop: 10,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fff",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
     },
-    participantHeader: {fontWeight: "900"},
-    participantFooter: {
-        marginTop: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-    },
-    participantMeta: {opacity: 0.7, fontSize: 12},
 
-    removeBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 10,
-        backgroundColor: "#fff",
+    participantHeader: {
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+
+    removeButton: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+    },
+
+    segmentWrap: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+    },
+
+    segmentButton: {
         borderWidth: 1,
-        borderColor: "#f3c2c2",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
     },
-    removeBtnText: {fontWeight: "900"},
 
-    geoRow: {marginTop: 10, flexDirection: "row", alignItems: "center", gap: 10},
-    geoText: {flex: 1, opacity: 0.8},
+    segmentButtonActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
 
-    pill: {
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
+    settingRow: {
+        marginTop: spacing.sm,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    pillOn: {
-        borderColor: "#111",
-        backgroundColor: "#111",
-    },
-    pillText: {fontWeight: "900", opacity: 0.9},
-    pillTextOn: {color: "#fff", opacity: 1},
 
-    primaryBtn: {
-        marginTop: 18,
-        backgroundColor: "#111",
-        borderRadius: 14,
-        paddingVertical: 14,
-        alignItems: "center",
+    settingText: {
+        flex: 1,
     },
-    primaryBtnText: {color: "#fff", fontWeight: "900"},
-    errorText: {marginTop: 12, color: "#b00020", fontWeight: "800"},
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    blockGap: {
+        marginTop: spacing.lg,
+    },
+
+    statusRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    statusPill: {
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+    },
+
+    statusPillGood: {
+        backgroundColor: colors.successSoft,
+    },
+
+    statusPillBad: {
+        backgroundColor: colors.dangerSoft,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    coordinateText: {
+        marginTop: spacing.xs,
+    },
+
+    loadingInline: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

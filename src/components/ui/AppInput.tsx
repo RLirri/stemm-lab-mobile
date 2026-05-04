@@ -4,46 +4,74 @@ import {
     StyleSheet,
     TextInput,
     TextInputProps,
+    View,
     ViewStyle,
 } from 'react-native';
 
-import {
-    colors,
-    radius,
-    spacing,
-    typography,
-} from '../../theme';
+import {colors, radius, spacing, typography} from '../../theme';
+import {AppText} from './AppText';
 
 type Props = TextInputProps & {
+    label?: string;
+    error?: string;
     containerStyle?: StyleProp<ViewStyle>;
 };
 
 export function AppInput({
+                             label,
+                             error,
                              containerStyle,
                              style,
                              ...props
                          }: Props) {
     return (
-        <TextInput
-            placeholderTextColor={colors.textMuted}
-            style={[styles.input, style, containerStyle]}
-            {...props}
-        />
+        <View style={[styles.container, containerStyle]}>
+            {label ? (
+                <AppText variant="caption" color="textMuted" style={styles.label}>
+                    {label}
+                </AppText>
+            ) : null}
+
+            <TextInput
+                {...props}
+                placeholderTextColor={colors.textSubtle}
+                style={[styles.input, error ? styles.inputError : null, style]}
+            />
+
+            {error ? (
+                <AppText variant="caption" color="danger" style={styles.error}>
+                    {error}
+                </AppText>
+            ) : null}
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
+    container: {
+        marginBottom: spacing.md,
+    },
+
+    label: {
+        marginBottom: spacing.xs,
+    },
+
     input: {
-        minHeight: 54,
+        minHeight: 48,
         borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: colors.surface,
         borderRadius: radius.lg,
+        backgroundColor: colors.surface,
         paddingHorizontal: spacing.md,
-        marginTop: spacing.md,
-        marginBottom: spacing.md,
-
-        fontSize: typography.body.fontSize,
         color: colors.text,
+        ...typography.body,
+    },
+
+    inputError: {
+        borderColor: colors.danger,
+    },
+
+    error: {
+        marginTop: spacing.xs,
     },
 });

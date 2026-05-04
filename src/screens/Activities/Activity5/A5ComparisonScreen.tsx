@@ -1,21 +1,11 @@
 // src/screens/Activities/Activity5/A5ComparisonScreen.tsx
-import React, {useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getActivity5RunDraft,
     type Activity5RunDraft,
@@ -23,21 +13,38 @@ import {
     type A5MovementType,
     type A5TrialDraft,
     type A5TrialMode,
-} from "../../../store/activity5RunDraftStore";
+} from '../../../store/activity5RunDraftStore';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A5Comparison">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
 
-/**
- * ✅ Display scaling only.
- * Keep stored metrics raw; scale only for UI + improvement ranking.
- *
- * If your computeTrialMetrics now uses SMOOTHNESS_SCALE = 100,
- * then displaying raw values will look like 0.2 instead of 20.0.
- */
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A5Comparison'>;
+
 const SMOOTHNESS_DISPLAY_SCALE = 100;
 
+type FilterKey = 'all' | A5MovementType;
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
+
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
 function scaleSmoothness(x: number | undefined): number | undefined {
@@ -46,24 +53,19 @@ function scaleSmoothness(x: number | undefined): number | undefined {
 }
 
 function fmt(n: number | undefined, digits = 1) {
-    if (!isFiniteNumber(n)) return "—";
+    if (!isFiniteNumber(n)) return '—';
     return n.toFixed(digits);
 }
 
-function latestTrial(trials: A5TrialDraft[], pid: string, mv: A5MovementType, mode: A5TrialMode) {
+function latestTrial(
+    trials: A5TrialDraft[],
+    pid: string,
+    mv: A5MovementType,
+    mode: A5TrialMode,
+) {
     return trials
         .filter((t) => t.participantId === pid && t.movementType === mv && t.mode === mode)
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
-}
-
-type FilterKey = "all" | A5MovementType;
-
-function FilterChip(props: { label: string; selected: boolean; onPress: () => void }) {
-    return (
-        <Pressable onPress={props.onPress} style={[styles.chip, props.selected && styles.chipSelected]}>
-            <Text style={[styles.chipText, props.selected && styles.chipTextSelected]}>{props.label}</Text>
-        </Pressable>
-    );
 }
 
 export default function A5ComparisonScreen({route, navigation}: Props) {
@@ -71,18 +73,34 @@ export default function A5ComparisonScreen({route, navigation}: Props) {
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity5RunDraft | null>(null);
-    const [filter, setFilter] = useState<FilterKey>("all");
+    const [filter, setFilter] = useState<FilterKey>('all');
+
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({visible: true, title, message, tone});
+    }
 
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity5RunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session not found", "Please restart Activity 5.", [
-                {text: "OK", onPress: () => navigation.replace("A5SessionSetup", {activityId})},
+            Alert.alert('Session not found', 'Please restart Activity 5.', [
+                {
+                    text: 'OK',
+                    onPress: () => navigation.replace('A5SessionSetup', {activityId}),
+                },
             ]);
             return;
         }
+
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
@@ -98,36 +116,28 @@ export default function A5ComparisonScreen({route, navigation}: Props) {
             participantName: string;
             movementType: A5MovementType;
             movementTitle: string;
-
-            // raw (stored)
             baselineSmoothRaw?: number;
             feedbackSmoothRaw?: number;
-
-            // scaled (for UI + ranking)
             baselineSmooth?: number;
             feedbackSmooth?: number;
             improvement?: number;
-
             baselineDuration?: number;
             feedbackDuration?: number;
-
             baselineDisp?: number;
             feedbackDisp?: number;
         }> = [];
 
         for (const p of participants) {
             for (const mv of movements) {
-                const b = latestTrial(trials, p.id, mv.type, "baseline");
-                const f = latestTrial(trials, p.id, mv.type, "feedback");
+                const baseline = latestTrial(trials, p.id, mv.type, 'baseline');
+                const feedback = latestTrial(trials, p.id, mv.type, 'feedback');
 
-                const baselineSmoothRaw = b?.metrics?.smoothnessIndex;
-                const feedbackSmoothRaw = f?.metrics?.smoothnessIndex;
+                const baselineSmoothRaw = baseline?.metrics?.smoothnessIndex;
+                const feedbackSmoothRaw = feedback?.metrics?.smoothnessIndex;
 
-                // ✅ apply display scale consistently
                 const baselineSmooth = scaleSmoothness(baselineSmoothRaw);
                 const feedbackSmooth = scaleSmoothness(feedbackSmoothRaw);
 
-                // ✅ improvement in the SAME scaled units as UI
                 const improvement =
                     isFiniteNumber(baselineSmooth) && isFiniteNumber(feedbackSmooth)
                         ? baselineSmooth - feedbackSmooth
@@ -138,255 +148,440 @@ export default function A5ComparisonScreen({route, navigation}: Props) {
                     participantName: p.name,
                     movementType: mv.type,
                     movementTitle: mv.title,
-
                     baselineSmoothRaw,
                     feedbackSmoothRaw,
                     baselineSmooth,
                     feedbackSmooth,
                     improvement,
-
-                    baselineDuration: b?.metrics?.durationSec,
-                    feedbackDuration: f?.metrics?.durationSec,
-
-                    baselineDisp: b?.metrics?.displacementMagnitudeCm,
-                    feedbackDisp: f?.metrics?.displacementMagnitudeCm,
+                    baselineDuration: baseline?.metrics?.durationSec,
+                    feedbackDuration: feedback?.metrics?.durationSec,
+                    baselineDisp: baseline?.metrics?.displacementMagnitudeCm,
+                    feedbackDisp: feedback?.metrics?.displacementMagnitudeCm,
                 });
             }
         }
 
-        // rank by scaled improvement
         return out.sort((a, b) => (b.improvement ?? -Infinity) - (a.improvement ?? -Infinity));
     }, [draft, movements, participants, trials]);
 
     const filteredRows = useMemo(() => {
-        if (filter === "all") return rows;
+        if (filter === 'all') return rows;
         return rows.filter((r) => r.movementType === filter);
     }, [filter, rows]);
 
     const best = useMemo(() => {
-        const top = filteredRows.find((r) => isFiniteNumber(r.improvement));
-        return top ?? null;
+        return filteredRows.find((r) => isFiniteNumber(r.improvement)) ?? null;
+    }, [filteredRows]);
+
+    const completePairs = useMemo(() => {
+        return filteredRows.filter((r) => isFiniteNumber(r.improvement)).length;
     }, [filteredRows]);
 
     function goToResults() {
-        navigation.navigate("A5Results", {activityId, runId});
+        showToast('Opening results', 'success', 'Preparing movement analysis.');
+
+        setTimeout(() => {
+            navigation.navigate('A5Results', {activityId, runId});
+        }, 600);
     }
 
     function goToTrials() {
-        navigation.navigate("A5GuidedTrials", {activityId, runId});
+        navigation.navigate('A5GuidedTrials', {activityId, runId});
     }
 
     if (!user) return null;
 
     if (!draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading comparison dashboard..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container}>
-                <Text style={styles.title}>Compare</Text>
-                <Text style={styles.sub}>
-                    Smoothness Index is scaled for readability (×{SMOOTHNESS_DISPLAY_SCALE}). Lower is smoother.
-                    {"\n"}Improvement = Baseline − Feedback (positive means feedback improved smoothness).
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 5" tone="primary"/>
 
-                {/* Filter */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Filter by Movement</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Movement Comparison
+                    </AppText>
+
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Compare baseline and feedback trials. Smoothness index is scaled by ×
+                        {SMOOTHNESS_DISPLAY_SCALE} for readability.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="How to read this screen"
+                    message="Lower smoothness is better. Improvement = Baseline − Feedback, so a positive value means feedback improved smoothness."
+                    tone="info"
+                />
+
+                <AppSectionHeader
+                    title="Filter by Movement"
+                    subtitle="Choose one movement or compare all movement types."
+                />
+
+                <AppCard>
                     <View style={styles.chipWrap}>
-                        <FilterChip label="All" selected={filter === "all"} onPress={() => setFilter("all")}/>
+                        <FilterChip
+                            label="All"
+                            selected={filter === 'all'}
+                            onPress={() => setFilter('all')}
+                        />
+
                         {movements.map((m) => (
                             <FilterChip
                                 key={m.type}
-                                label={m.title.replace("Movement ", "M")}
+                                label={m.title.replace('Movement ', 'M')}
                                 selected={filter === m.type}
                                 onPress={() => setFilter(m.type)}
                             />
                         ))}
                     </View>
+                </AppCard>
+
+                <View style={styles.heroCard}>
+                    <View style={styles.heroTop}>
+                        <AppText variant="bodyStrong" color="inverseText">
+                            Top Improvement
+                        </AppText>
+
+                        <AppBadge
+                            label={`${completePairs} complete`}
+                            tone={completePairs > 0 ? 'success' : 'warning'}
+                        />
+                    </View>
+
+                    <AppText variant="title" color="inverseText" style={styles.heroScore}>
+                        {best ? fmt(best.improvement, 1) : '—'}
+                    </AppText>
+
+                    <AppText variant="body" color="inverseText" style={styles.heroMeta}>
+                        {best
+                            ? `${best.participantName} • ${best.movementTitle}`
+                            : 'No complete baseline and feedback pair yet.'}
+                    </AppText>
+
+                    <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                        Positive improvement indicates the feedback trial was smoother than
+                        baseline.
+                    </AppText>
                 </View>
 
-                {/* Best highlight */}
-                <View style={styles.hero}>
-                    <Text style={styles.heroTitle}>Top Improvement (Current Filter)</Text>
-                    <Text style={styles.heroScore}>{best ? fmt(best.improvement, 1) : "—"}</Text>
-                    <Text style={styles.heroMeta}>
-                        {best ? `${best.participantName} • ${best.movementTitle}` : "No complete baseline+feedback pair yet."}
-                    </Text>
-                </View>
+                <AppSectionHeader
+                    title="Ranked Comparisons"
+                    subtitle="Rows are ranked by improvement, highest first."
+                />
 
-                {/* Comparison list */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Ranked Comparisons</Text>
-                    <Text style={styles.help}>
-                        Rows are ranked by improvement (highest first). Missing values mean the trial hasn’t been
-                        recorded yet.
-                    </Text>
+                {filteredRows.length === 0 ? (
+                    <AppCard>
+                        <AppText variant="body" color="textMuted">
+                            No comparison rows available.
+                        </AppText>
+                    </AppCard>
+                ) : (
+                    <View style={styles.rowList}>
+                        {filteredRows.map((r, idx) => {
+                            const imp = r.improvement;
+                            const impOk = isFiniteNumber(imp);
+                            const impPositive = impOk && imp >= 0;
 
-                    {filteredRows.length === 0 ? (
-                        <Text style={styles.muted}>No comparison rows available.</Text>
-                    ) : (
-                        <View style={{marginTop: 10, gap: 12}}>
-                            {filteredRows.map((r, idx) => {
-                                const imp = r.improvement;
-                                const impOk = isFiniteNumber(imp);
-                                const impPositive = impOk && (imp as number) >= 0;
-
-                                return (
-                                    <View key={`${r.participantId}_${r.movementType}`} style={styles.rowCard}>
-                                        <View style={styles.rowHeader}>
-                                            <Text style={styles.rank}>#{idx + 1}</Text>
-                                            <Text style={styles.rowTitle}>
-                                                {r.participantName} • {r.movementTitle}
-                                            </Text>
+                            return (
+                                <AppCard key={`${r.participantId}_${r.movementType}`}>
+                                    <View style={styles.rowHeader}>
+                                        <View style={styles.rankBadge}>
+                                            <AppText variant="caption" color="inverseText">
+                                                #{idx + 1}
+                                            </AppText>
                                         </View>
 
-                                        <TwoCol
-                                            leftLabel={`Baseline smoothness (×${SMOOTHNESS_DISPLAY_SCALE})`}
-                                            leftValue={fmt(r.baselineSmooth, 1)}
-                                            rightLabel={`Feedback smoothness (×${SMOOTHNESS_DISPLAY_SCALE})`}
-                                            rightValue={fmt(r.feedbackSmooth, 1)}
-                                        />
-                                        <TwoCol
-                                            leftLabel="Baseline duration"
-                                            leftValue={r.baselineDuration != null ? `${fmt(r.baselineDuration, 1)} s` : "—"}
-                                            rightLabel="Feedback duration"
-                                            rightValue={r.feedbackDuration != null ? `${fmt(r.feedbackDuration, 1)} s` : "—"}
-                                        />
-                                        <TwoCol
-                                            leftLabel="Baseline displacement"
-                                            leftValue={r.baselineDisp != null ? `${fmt(r.baselineDisp, 1)} cm` : "—"}
-                                            rightLabel="Feedback displacement"
-                                            rightValue={r.feedbackDisp != null ? `${fmt(r.feedbackDisp, 1)} cm` : "—"}
-                                        />
+                                        <View style={styles.rowTitleArea}>
+                                            <AppText variant="sectionTitle">
+                                                {r.participantName}
+                                            </AppText>
 
-                                        <View style={styles.improveRow}>
-                                            <Text style={{opacity: 0.75}}>Improvement (B − F)</Text>
-                                            <Text
-                                                style={[
-                                                    styles.improveValue,
-                                                    impOk ? (impPositive ? styles.pos : styles.neg) : styles.mutedValue,
-                                                ]}
-                                            >
-                                                {impOk ? fmt(imp as number, 1) : "—"}
-                                            </Text>
+                                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                                {r.movementTitle}
+                                            </AppText>
                                         </View>
+
+                                        <AppBadge
+                                            label={impOk ? (impPositive ? 'Improved' : 'Worse') : 'Missing'}
+                                            tone={impOk ? (impPositive ? 'success' : 'warning') : 'info'}
+                                        />
                                     </View>
-                                );
-                            })}
-                        </View>
-                    )}
+
+                                    <View style={styles.metricGrid}>
+                                        <MetricTile
+                                            label={`Baseline smoothness ×${SMOOTHNESS_DISPLAY_SCALE}`}
+                                            value={fmt(r.baselineSmooth, 1)}
+                                        />
+
+                                        <MetricTile
+                                            label={`Feedback smoothness ×${SMOOTHNESS_DISPLAY_SCALE}`}
+                                            value={fmt(r.feedbackSmooth, 1)}
+                                        />
+
+                                        <MetricTile
+                                            label="Baseline duration"
+                                            value={
+                                                r.baselineDuration != null ? `${fmt(r.baselineDuration, 1)} s` : '—'
+                                            }
+                                        />
+
+                                        <MetricTile
+                                            label="Feedback duration"
+                                            value={
+                                                r.feedbackDuration != null ? `${fmt(r.feedbackDuration, 1)} s` : '—'
+                                            }
+                                        />
+
+                                        <MetricTile
+                                            label="Baseline displacement"
+                                            value={
+                                                r.baselineDisp != null ? `${fmt(r.baselineDisp, 1)} cm` : '—'
+                                            }
+                                        />
+
+                                        <MetricTile
+                                            label="Feedback displacement"
+                                            value={
+                                                r.feedbackDisp != null ? `${fmt(r.feedbackDisp, 1)} cm` : '—'
+                                            }
+                                        />
+                                    </View>
+
+                                    <View style={styles.improvementBox}>
+                                        <View style={styles.improvementText}>
+                                            <AppText variant="bodyStrong">Improvement</AppText>
+
+                                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                                Baseline − Feedback
+                                            </AppText>
+                                        </View>
+
+                                        <AppText
+                                            variant="subtitle"
+                                            color={impOk ? (impPositive ? 'success' : 'danger') : 'textMuted'}
+                                        >
+                                            {impOk ? fmt(imp, 1) : '—'}
+                                        </AppText>
+                                    </View>
+                                </AppCard>
+                            );
+                        })}
+                    </View>
+                )}
+
+                <View style={styles.actions}>
+                    <AppButton
+                        title="Back to Trials"
+                        variant="outline"
+                        onPress={goToTrials}
+                    />
+
+                    <AppButton title="Go to Results" onPress={goToResults}/>
                 </View>
 
-                {/* Actions */}
-                <View style={styles.btnRow}>
-                    <Pressable style={styles.secondaryBtn} onPress={goToTrials}>
-                        <Text style={styles.secondaryBtnText}>Back to Trials</Text>
-                    </Pressable>
-                    <Pressable style={styles.primaryBtn} onPress={goToResults}>
-                        <Text style={styles.primaryBtnText}>Go to Results</Text>
-                    </Pressable>
-                </View>
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
 
-                <View style={{height: 40}}/>
-            </ScrollView>
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
-function TwoCol(props: {
-    leftLabel: string;
-    leftValue: string;
-    rightLabel: string;
-    rightValue: string;
-}) {
+type FilterChipProps = {
+    label: string;
+    selected: boolean;
+    onPress: () => void;
+};
+
+function FilterChip({label, selected, onPress}: FilterChipProps) {
     return (
-        <View style={styles.twoCol}>
-            <View style={{flex: 1}}>
-                <Text style={styles.smallLabel}>{props.leftLabel}</Text>
-                <Text style={styles.smallValue}>{props.leftValue}</Text>
-            </View>
-            <View style={{flex: 1}}>
-                <Text style={styles.smallLabel}>{props.rightLabel}</Text>
-                <Text style={styles.smallValue}>{props.rightValue}</Text>
-            </View>
+        <Pressable
+            onPress={onPress}
+            style={[styles.chip, selected && styles.chipSelected]}
+        >
+            <AppText
+                variant="bodyStrong"
+                color={selected ? 'inverseText' : 'text'}
+                align="center"
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
+type MetricTileProps = {
+    label: string;
+    value: string;
+};
+
+function MetricTile({label, value}: MetricTileProps) {
+    return (
+        <View style={styles.metricTile}>
+            <AppText variant="caption" color="textMuted">
+                {label}
+            </AppText>
+
+            <AppText variant="bodyStrong" style={styles.metricValue}>
+                {value}
+            </AppText>
         </View>
     );
 }
 
-/* =========================================================
-   Styles
-========================================================= */
-
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
-    hero: {marginTop: 16, borderRadius: 16, backgroundColor: "#111", padding: 16},
-    heroTitle: {color: "white", fontWeight: "900", opacity: 0.9},
-    heroScore: {color: "white", fontWeight: "900", fontSize: 34, marginTop: 6},
-    heroMeta: {color: "white", opacity: 0.85, marginTop: 4, lineHeight: 18},
-
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14
+    keyboard: {
+        flex: 1,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900", marginBottom: 8},
-    help: {opacity: 0.75, lineHeight: 18},
-    muted: {marginTop: 10, opacity: 0.6},
 
-    chipWrap: {marginTop: 10, flexDirection: "row", flexWrap: "wrap", gap: 10},
+    header: {
+        marginBottom: spacing.lg,
+    },
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    chipWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+    },
+
     chip: {
         borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "white",
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 999
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
     },
-    chipSelected: {borderColor: "#111", backgroundColor: "#111"},
-    chipText: {fontWeight: "900", opacity: 0.85},
-    chipTextSelected: {color: "white", opacity: 1},
 
-    rowCard: {borderWidth: 1, borderColor: "#eee", backgroundColor: "white", borderRadius: 14, padding: 14},
-    rowHeader: {flexDirection: "row", alignItems: "center", gap: 10},
-    rank: {width: 34, textAlign: "center", fontWeight: "900", opacity: 0.7},
-    rowTitle: {fontWeight: "900", flex: 1},
+    chipSelected: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primary,
+    },
 
-    twoCol: {marginTop: 10, flexDirection: "row", gap: 12},
-    smallLabel: {opacity: 0.7, fontSize: 12},
-    smallValue: {fontWeight: "900", marginTop: 2},
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
+    },
 
-    improveRow: {marginTop: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center"},
-    improveValue: {fontWeight: "900"},
-    pos: {color: "#0a7a2f"},
-    neg: {color: "#b00020"},
-    mutedValue: {opacity: 0.6},
+    heroTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: spacing.md,
+    },
 
-    btnRow: {marginTop: 18, flexDirection: "row", gap: 10},
-    secondaryBtn: {
+    heroScore: {
+        marginTop: spacing.md,
+    },
+
+    heroMeta: {
+        marginTop: spacing.xs,
+        opacity: 0.9,
+    },
+
+    heroHint: {
+        marginTop: spacing.md,
+        opacity: 0.75,
+    },
+
+    rowList: {
+        gap: spacing.md,
+    },
+
+    rowHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+    },
+
+    rankBadge: {
+        width: 42,
+        height: 34,
+        borderRadius: radius.md,
+        backgroundColor: colors.primaryDark,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    rowTitleArea: {
         flex: 1,
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-        backgroundColor: "white"
     },
-    secondaryBtnText: {fontWeight: "900"},
-    primaryBtn: {flex: 1, backgroundColor: "#111", paddingVertical: 12, borderRadius: 12, alignItems: "center"},
-    primaryBtnText: {color: "white", fontWeight: "900"},
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    metricGrid: {
+        marginTop: spacing.md,
+        gap: spacing.sm,
+    },
+
+    metricTile: {
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    metricValue: {
+        marginTop: spacing.xs,
+    },
+
+    improvementBox: {
+        marginTop: spacing.md,
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    improvementText: {
+        flex: 1,
+    },
+
+    actions: {
+        marginTop: spacing.lg,
+        gap: spacing.md,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

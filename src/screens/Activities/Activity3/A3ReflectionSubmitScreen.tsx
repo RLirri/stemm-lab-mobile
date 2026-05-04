@@ -1,41 +1,56 @@
-import React, {useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import {doc, getDoc} from "firebase/firestore";
+// src/screens/Activities/Activity3/A3ReflectionSubmitScreen.tsx
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth, db} from "../../../services/firebase";
-import {queueFinalSubmission} from "../../../services/offlineSubmissionQueueService";
-import {submitActivity3} from "../../../services/activitySubmissionService";
-import {ReflectionQualityCard} from "../../../components/reflection/ReflectionQualityCard";
-import {checkReflectionQuality} from "../../../services/reflectionQualityService";
+import React, {useEffect, useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {doc, getDoc} from 'firebase/firestore';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth, db} from '../../../services/firebase';
+import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
+import {submitActivity3} from '../../../services/activitySubmissionService';
+import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQualityCard';
+import {checkReflectionQuality} from '../../../services/reflectionQualityService';
 
 import {
     clearActivity3RunDraft,
     getActivity3RunDraft,
     setActivity3Reflection,
     type Activity3RunDraft,
-} from "../../../store/activity3RunDraftStore";
+} from '../../../store/activity3RunDraftStore';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A3ReflectionSubmit">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A3ReflectionSubmit'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 function clampInt(n: number, min: number, max: number) {
     return Math.max(min, Math.min(max, Math.round(n)));
 }
 
 function isNonEmptyString(x: unknown): x is string {
-    return typeof x === "string" && x.trim().length > 0;
+    return typeof x === 'string' && x.trim().length > 0;
 }
 
 function hasSessionVideo(d: Activity3RunDraft) {
@@ -43,7 +58,10 @@ function hasSessionVideo(d: Activity3RunDraft) {
 }
 
 function countMeasurementVideos(d: Activity3RunDraft) {
-    return d.measurements.reduce((acc, m) => acc + (isNonEmptyString(m.video?.uri) ? 1 : 0), 0);
+    return d.measurements.reduce(
+        (acc, m) => acc + (isNonEmptyString(m.video?.uri) ? 1 : 0),
+        0,
+    );
 }
 
 function hasAnyMeasurement(d: Activity3RunDraft) {
@@ -51,13 +69,15 @@ function hasAnyMeasurement(d: Activity3RunDraft) {
 }
 
 function hasAnyValidAngle(d: Activity3RunDraft) {
-    return d.measurements.some((m) => typeof m.bendAngleDeg === "number" && Number.isFinite(m.bendAngleDeg));
+    return d.measurements.some(
+        (m) => typeof m.bendAngleDeg === 'number' && Number.isFinite(m.bendAngleDeg),
+    );
 }
 
 function hasPrediction(d: Activity3RunDraft) {
     return (
-        typeof d.prediction?.predictedBestDesignIndex === "number" &&
-        typeof d.prediction?.predictedBestDistanceCm === "number"
+        typeof d.prediction?.predictedBestDesignIndex === 'number' &&
+        typeof d.prediction?.predictedBestDistanceCm === 'number'
     );
 }
 
@@ -67,15 +87,15 @@ function newestGeoText(d: Activity3RunDraft) {
         .find((m) => m.geo);
 
     const geo = geoRow?.geo;
-    if (!geo) return "No coordinate saved yet";
+    if (!geo) return 'No coordinate saved yet';
 
-    const acc = geo.accuracyM ? ` (±${Math.round(geo.accuracyM)}m)` : "";
+    const acc = geo.accuracyM ? ` (±${Math.round(geo.accuracyM)}m)` : '';
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${acc}`;
 }
 
 function friendlyFirebaseError(error: unknown) {
     if (error instanceof Error) return error.message;
-    return "Submission failed.";
+    return 'Submission failed.';
 }
 
 export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
@@ -83,28 +103,52 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
     const {activityId, runId} = route.params;
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
-    const [reflectionText, setReflectionText] = useState("");
+    const [reflectionText, setReflectionText] = useState('');
     const [rating, setRating] = useState<number>(4);
     const [submitting, setSubmitting] = useState(false);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     const reflectionQuality = useMemo(
         () => checkReflectionQuality(reflectionText),
-        [reflectionText]
+        [reflectionText],
     );
 
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity3RunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {text: "OK", onPress: () => navigation.replace("A3SessionSetup", {activityId})},
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A3SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
 
         setDraft(d);
-        setReflectionText(d.reflection?.reflectionText ?? "");
+        setReflectionText(d.reflection?.reflectionText ?? '');
         setRating(d.reflection?.rating ?? 4);
     }, [activityId, navigation, runId, user]);
 
@@ -113,7 +157,8 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
 
         const sessionVid = hasSessionVideo(draft);
         const measVidCount = countMeasurementVideos(draft);
-        const gpsOk = draft.session.gpsEnabled && draft.session.gpsPermission === "granted";
+        const gpsOk =
+            draft.session.gpsEnabled && draft.session.gpsPermission === 'granted';
 
         return {
             sessionVid,
@@ -127,7 +172,7 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
         if (!draft || draft.measurements.length === 0) return null;
 
         const valid = draft.measurements.filter(
-            (m) => typeof m.bendAngleDeg === "number" && Number.isFinite(m.bendAngleDeg)
+            (m) => typeof m.bendAngleDeg === 'number' && Number.isFinite(m.bendAngleDeg),
         );
 
         if (valid.length === 0) return null;
@@ -141,58 +186,66 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
 
     const smartReflectionSummary = useMemo(() => {
         if (!draft || !bestMeasurement) {
-            return "Use your measurements to explain which fan setup produced the strongest air movement.";
+            return 'Use your measurements to explain which fan setup produced the strongest air movement.';
         }
 
         const angle = bestMeasurement.bendAngleDeg;
-        const angleText = typeof angle === "number" ? `${angle.toFixed(1)}°` : "the highest recorded angle";
+        const angleText =
+            typeof angle === 'number'
+                ? `${angle.toFixed(1)}°`
+                : 'the highest recorded angle';
+
         const distanceText =
-            typeof bestMeasurement.distanceCm === "number"
+            typeof bestMeasurement.distanceCm === 'number'
                 ? ` at ${bestMeasurement.distanceCm} cm`
-                : "";
+                : '';
 
         const predictedDistance = draft.prediction?.predictedBestDistanceCm;
         const predictedDistanceText =
-            typeof predictedDistance === "number"
+            typeof predictedDistance === 'number'
                 ? ` Your predicted best distance was ${predictedDistance} cm.`
-                : "";
+                : '';
 
         return `Your strongest result was a bend angle of ${angleText}${distanceText}.${predictedDistanceText}`;
     }, [bestMeasurement, draft]);
 
     function validate(): string | null {
-        if (!draft) return "Draft not found.";
+        if (!draft) return 'Draft not found.';
 
         if (!hasAnyMeasurement(draft) || !hasAnyValidAngle(draft)) {
-            return "No measurements found. Please record at least one bend angle before submitting.";
+            return 'No measurements found. Please record at least one bend angle before submitting.';
         }
 
         if (!hasPrediction(draft)) {
-            return "Prediction is required before submission.";
+            return 'Prediction is required before submission.';
         }
 
         if (reflectionQuality.isSubmissionBlocked) {
-            return "Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.";
+            return 'Please improve your reflection before submitting. It may be empty, too short, or contain inappropriate language.';
         }
 
         if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
-            return "Rating must be between 1 and 5.";
+            return 'Rating must be between 1 and 5.';
         }
 
         if (!hasSessionVideo(draft)) {
-            return "Session video is required before submission. Go back and attach a session video.";
+            return 'Session video is required before submission. Go back and attach a session video.';
         }
 
-        if (!draft.session.gpsEnabled) return "GPS must be enabled before submission.";
-        if (draft.session.gpsPermission !== "granted") return "GPS permission must be granted before submission.";
+        if (!draft.session.gpsEnabled) return 'GPS must be enabled before submission.';
+        if (draft.session.gpsPermission !== 'granted') {
+            return 'GPS permission must be granted before submission.';
+        }
 
         return null;
     }
 
     async function fetchTeamIdOrThrow(uid: string): Promise<string> {
-        const snap = await getDoc(doc(db, "users", uid));
+        const snap = await getDoc(doc(db, 'users', uid));
         const teamId = snap.data()?.teamId;
-        if (!teamId) throw new Error("You must join a team before submitting.");
+
+        if (!teamId) throw new Error('You must join a team before submitting.');
+
         return teamId;
     }
 
@@ -202,21 +255,24 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
         if (submitting) return;
 
         const err = validate();
+
         if (err) {
             const lower = err.toLowerCase();
 
-            Alert.alert("Cannot submit", err, [
-                lower.includes("session video")
+            Alert.alert('Cannot submit', err, [
+                lower.includes('session video')
                     ? {
-                        text: "Go attach video",
-                        onPress: () => navigation.navigate("A3SessionSetup", {activityId, runId}),
+                        text: 'Go attach video',
+                        onPress: () =>
+                            navigation.navigate('A3SessionSetup', {activityId, runId}),
                     }
-                    : lower.includes("measurements")
+                    : lower.includes('measurements')
                         ? {
-                            text: "Go to Measurements",
-                            onPress: () => navigation.navigate("A3Measurements", {activityId, runId}),
+                            text: 'Go to Measurements',
+                            onPress: () =>
+                                navigation.navigate('A3Measurements', {activityId, runId}),
                         }
-                        : {text: "OK"},
+                        : {text: 'OK'},
             ]);
             return;
         }
@@ -228,6 +284,7 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                 reflectionText: reflectionText.trim(),
                 rating,
             });
+
             setDraft(updated);
 
             const teamId = await fetchTeamIdOrThrow(user.uid);
@@ -242,25 +299,17 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
 
             clearActivity3RunDraft(runId);
 
-            Alert.alert("Submitted ✅", `Your score: ${res.score}`, [
-                {
-                    text: "View Leaderboard",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 1,
-                            routes: [{name: "Home" as never}, {name: "Leaderboard" as never}],
-                        }),
-                },
-                {
-                    text: "Back to Home",
-                    style: "cancel",
-                    onPress: () =>
-                        navigation.reset({
-                            index: 0,
-                            routes: [{name: "Home" as never}],
-                        }),
-                },
-            ]);
+            showToast('Submission successful', 'success', `Score: ${res.score}`);
+
+            setTimeout(() => {
+                navigation.reset({
+                    index: 1,
+                    routes: [
+                        {name: 'Home' as never},
+                        {name: 'Leaderboard' as never},
+                    ],
+                });
+            }, 1400);
         } catch (error: unknown) {
             try {
                 const teamId = await fetchTeamIdOrThrow(user.uid);
@@ -272,7 +321,7 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
 
                 await queueFinalSubmission({
                     runId: updated.runId,
-                    activityId: "activity03_handFan",
+                    activityId: 'activity03_handFan',
                     userId: user.uid,
                     teamId,
                     payload: {
@@ -287,12 +336,20 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
                     },
                 });
 
-                Alert.alert(
-                    "Saved offline",
-                    "Firebase submission failed, so this finalized submission was saved locally and will sync automatically when connection is available."
+                showToast(
+                    'Submission saved offline',
+                    'info',
+                    'It will sync automatically when connection is available.',
                 );
+
+                setTimeout(() => {
+                    navigation.reset({
+                        index: 0,
+                        routes: [{name: 'Home' as never}],
+                    });
+                }, 1600);
             } catch (queueError: unknown) {
-                Alert.alert("Error", friendlyFirebaseError(queueError));
+                Alert.alert('Error', friendlyFirebaseError(queueError));
             }
         } finally {
             setSubmitting(false);
@@ -303,217 +360,331 @@ export default function A3ReflectionSubmitScreen({route, navigation}: Props) {
 
     if (!draft || !evidenceVM) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading draft…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading reflection draft..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Reflection & Submit</Text>
-                <Text style={styles.sub}>
-                    Check evidence, write a meaningful reflection, and submit your Hand Fan Challenge result.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 3" tone="primary"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Evidence Checklist</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Reflection & Submit
+                    </AppText>
 
-                    <View style={{marginTop: 10, gap: 10}}>
-                        <ChecklistRow label="Session video (required)" ok={evidenceVM.sessionVid}/>
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Check evidence, write a meaningful reflection, and submit your Hand Fan
+                        Challenge result.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="Final submission check"
+                    message="Activity 3 requires a prediction, valid measurement data, session video evidence, GPS enabled, and a complete reflection."
+                    tone="info"
+                />
+
+                <AppSectionHeader
+                    title="Evidence Checklist"
+                    subtitle="Required evidence and context before final submission."
+                />
+
+                <AppCard>
+                    <View style={styles.checkList}>
+                        <ChecklistRow label="Session video" ok={evidenceVM.sessionVid} required/>
+
                         <ChecklistRow
-                            label="Measurement videos (optional, but great)"
+                            label="Measurement videos"
                             ok={evidenceVM.measVidCount > 0}
                             meta={`${evidenceVM.measVidCount} attached`}
                         />
-                        <ChecklistRow label="GPS enabled + granted (required)" ok={evidenceVM.gpsOk}/>
+
+                        <ChecklistRow label="GPS enabled and granted" ok={evidenceVM.gpsOk} required/>
                     </View>
 
-                    <View style={styles.badgeRow}>
-                        <Text style={styles.badgeLabel}>Saved coordinate</Text>
-                        <View style={[styles.badge, evidenceVM.gpsOk ? styles.badgeYes : styles.badgeNo]}>
-                            <Text style={styles.badgeText}>{evidenceVM.geoText}</Text>
+                    <View style={styles.coordinateBox}>
+                        <View style={styles.coordinateText}>
+                            <AppText variant="bodyStrong">Saved coordinate</AppText>
+
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                {evidenceVM.geoText}
+                            </AppText>
                         </View>
+
+                        <AppBadge
+                            label={evidenceVM.gpsOk ? 'Available' : 'Missing'}
+                            tone={evidenceVM.gpsOk ? 'success' : 'warning'}
+                        />
                     </View>
 
                     {!evidenceVM.sessionVid ? (
-                        <Pressable
-                            style={[styles.secondaryBtn, {marginTop: 12}]}
-                            onPress={() => navigation.navigate("A3SessionSetup", {activityId, runId})}
-                        >
-                            <Text style={styles.secondaryBtnText}>Attach Session Video</Text>
-                        </Pressable>
+                        <AppButton
+                            title="Attach Session Video"
+                            variant="outline"
+                            onPress={() =>
+                                navigation.navigate('A3SessionSetup', {activityId, runId})
+                            }
+                            style={styles.attachButton}
+                        />
                     ) : null}
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Reflection</Text>
+                <AppSectionHeader
+                    title="Reflection"
+                    subtitle="Explain your result using evidence from the experiment."
+                />
 
+                <AppCard>
                     <View style={styles.smartBox}>
-                        <Text style={styles.smartTitle}>Smart reflection guide</Text>
-                        <Text style={styles.smartText}>{smartReflectionSummary}</Text>
-                        <Text style={styles.smartText}>Try to include:</Text>
-                        <Text style={styles.promptText}>• Which fan design bent the material the most, and why.</Text>
-                        <Text style={styles.promptText}>• How distance, folds, layers, or material stiffness affected
-                            airflow.</Text>
-                        <Text style={styles.promptText}>• Whether your prediction matched the measured bend
-                            angle.</Text>
-                        <Text style={styles.promptText}>• One improvement for making the test fairer or more
-                            accurate.</Text>
+                        <AppText variant="bodyStrong" color="primary">
+                            Smart reflection guide
+                        </AppText>
+
+                        <AppText variant="body" style={styles.smartText}>
+                            {smartReflectionSummary}
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.promptIntro}>
+                            Try to include:
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • Which fan design bent the material the most, and why.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • How distance, folds, layers, or material stiffness affected airflow.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • Whether your prediction matched the measured bend angle.
+                        </AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.promptText}>
+                            • One improvement for making the test fairer or more accurate.
+                        </AppText>
                     </View>
 
-                    <Text style={styles.label}>Your reflection</Text>
-                    <TextInput
+                    <AppInput
+                        label="Your reflection"
                         value={reflectionText}
                         onChangeText={setReflectionText}
                         placeholder="Example: The strongest fan setup created the largest bend angle because the airflow was more focused..."
-                        style={[styles.input, {height: 150, textAlignVertical: "top"}]}
                         multiline
+                        style={styles.reflectionInput}
                     />
 
                     <ReflectionQualityCard result={reflectionQuality}/>
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Rating</Text>
-                    <Text style={styles.help}>How did this activity feel overall? (1–5)</Text>
+                <AppSectionHeader title="Rating" subtitle="How did this activity feel overall?"/>
 
+                <AppCard>
                     <View style={styles.ratingRow}>
                         {[1, 2, 3, 4, 5].map((n) => {
                             const on = rating === n;
+
                             return (
                                 <Pressable
                                     key={n}
                                     onPress={() => setRating(clampInt(n, 1, 5))}
-                                    style={[styles.rateBtn, on && styles.rateBtnOn]}
+                                    style={[styles.rateButton, on && styles.rateButtonOn]}
                                 >
-                                    <Text style={[styles.rateText, on && styles.rateTextOn]}>{n}</Text>
+                                    <AppText
+                                        variant="bodyStrong"
+                                        color={on ? 'inverseText' : 'text'}
+                                        align="center"
+                                    >
+                                        {n}
+                                    </AppText>
                                 </Pressable>
                             );
                         })}
                     </View>
-                </View>
+                </AppCard>
 
-                <Pressable
-                    style={[styles.primaryBtn, submitting && {opacity: 0.7}]}
+                <AppButton
+                    title={submitting ? 'Submitting...' : 'Submit'}
                     onPress={onSubmit}
                     disabled={submitting}
-                >
-                    {submitting ? (
-                        <View style={{flexDirection: "row", alignItems: "center", gap: 10}}>
-                            <ActivityIndicator color="white"/>
-                            <Text style={styles.primaryBtnText}>Submitting…</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.primaryBtnText}>Submit</Text>
-                    )}
-                </Pressable>
+                    loading={submitting}
+                />
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                {submitting ? (
+                    <View style={styles.submittingHint}>
+                        <ActivityIndicator color={colors.primary}/>
+
+                        <AppText variant="caption" color="textMuted">
+                            Preparing final submission...
+                        </AppText>
+                    </View>
+                ) : null}
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
-function ChecklistRow(props: { label: string; ok: boolean; meta?: string }) {
+type ChecklistRowProps = {
+    label: string;
+    ok: boolean;
+    meta?: string;
+    required?: boolean;
+};
+
+function ChecklistRow({label, ok, meta, required = false}: ChecklistRowProps) {
     return (
-        <View style={{flexDirection: "row", alignItems: "center", justifyContent: "space-between"}}>
-            <View style={{flex: 1, paddingRight: 10}}>
-                <Text style={{fontWeight: "900"}}>{props.label}</Text>
-                {props.meta ? <Text style={{marginTop: 4, opacity: 0.7}}>{props.meta}</Text> : null}
+        <View style={styles.checkRow}>
+            <View style={styles.checkText}>
+                <AppText variant="bodyStrong">
+                    {label}
+                    {required ? ' required' : ''}
+                </AppText>
+
+                {meta ? (
+                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                        {meta}
+                    </AppText>
+                ) : null}
             </View>
-            <View style={[styles.tickPill, props.ok ? styles.tickYes : styles.tickNo]}>
-                <Text style={styles.tickText}>{props.ok ? "OK" : "Missing"}</Text>
-            </View>
+
+            <AppBadge label={ok ? 'OK' : 'Missing'} tone={ok ? 'success' : 'warning'}/>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    keyboard: {
+        flex: 1,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
+
+    header: {
+        marginBottom: spacing.lg,
+    },
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    checkList: {
+        gap: spacing.md,
+    },
+
+    checkRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    checkText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    coordinateText: {
+        flex: 1,
+    },
+
+    attachButton: {
+        marginTop: spacing.md,
+    },
 
     smartBox: {
-        marginTop: 10,
         borderWidth: 1,
-        borderColor: "#dbeafe",
-        backgroundColor: "#eff6ff",
-        borderRadius: 12,
-        padding: 12,
-    },
-    smartTitle: {fontWeight: "900", color: "#1e3a8a"},
-    smartText: {marginTop: 6, color: "#1f2937", lineHeight: 18},
-    promptText: {marginTop: 6, opacity: 0.85, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
+        borderColor: colors.primarySoft,
+        backgroundColor: colors.accentSoft,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+        marginBottom: spacing.lg,
     },
 
-    ratingRow: {marginTop: 10, flexDirection: "row", gap: 10},
-    rateBtn: {
+    smartText: {
+        marginTop: spacing.sm,
+    },
+
+    promptIntro: {
+        marginTop: spacing.md,
+    },
+
+    promptText: {
+        marginTop: spacing.xs,
+    },
+
+    reflectionInput: {
+        minHeight: 150,
+        textAlignVertical: 'top',
+    },
+
+    ratingRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+
+    rateButton: {
         flex: 1,
+        minHeight: 48,
+        borderRadius: radius.lg,
         borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingVertical: 12,
-        alignItems: "center",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    rateBtnOn: {backgroundColor: "#111", borderColor: "#111"},
-    rateText: {fontWeight: "900", opacity: 0.85},
-    rateTextOn: {color: "white", opacity: 1},
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    rateButtonOn: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
+    submittingHint: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
     },
-    secondaryBtnText: {fontWeight: "900"},
 
-    tickPill: {borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10},
-    tickYes: {backgroundColor: "#111"},
-    tickNo: {backgroundColor: "#777"},
-    tickText: {color: "white", fontWeight: "900"},
-
-    badgeRow: {marginTop: 12, gap: 8},
-    badgeLabel: {fontWeight: "800", opacity: 0.9},
-    badge: {borderRadius: 12, paddingVertical: 10, paddingHorizontal: 10},
-    badgeYes: {backgroundColor: "#111"},
-    badgeNo: {backgroundColor: "#777"},
-    badgeText: {color: "white", fontWeight: "900"},
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

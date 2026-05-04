@@ -1,21 +1,11 @@
 // src/screens/Activities/Activity7/A7ResultsScreen.tsx
 
-import React, {useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, KeyboardAvoidingView, Platform, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     getActivity7RunDraft,
@@ -24,131 +14,123 @@ import {
     getA7LeaderboardMetrics,
     type Activity7RunDraft,
     type A7ParticipantSummary,
-} from "../../../store/activity7RunDraftStore";
+} from '../../../store/activity7RunDraftStore';
 
-import ActivityBarChart from "../../../components/charts/ActivityBarChart";
-import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
+import ActivityBarChart from '../../../components/charts/ActivityBarChart';
+import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import {
     buildA7Visualization,
     type A7RecoveryParticipant,
-} from "../../../services/resultInsights/activity7VisualizationService";
+} from '../../../services/resultInsights/activity7VisualizationService';
 
-import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
-import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
+import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
+import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A7Results">;
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A7Results'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 function isFiniteNumber(v: unknown): v is number {
-    return typeof v === "number" && Number.isFinite(v);
+    return typeof v === 'number' && Number.isFinite(v);
 }
 
 function mean(xs: number[]): number | undefined {
     if (!xs.length) return undefined;
-    return xs.reduce((s, x) => s + x, 0) / xs.length;
+    return xs.reduce((sum, x) => sum + x, 0) / xs.length;
 }
 
 function fmtBpm(v?: number): string {
-    if (!isFiniteNumber(v)) return "—";
+    if (!isFiniteNumber(v)) return '—';
     return `${v.toFixed(1)} BPM`;
 }
 
 function fmtDelta(v?: number): string {
-    if (!isFiniteNumber(v)) return "—";
-    const sign = v > 0 ? "+" : "";
+    if (!isFiniteNumber(v)) return '—';
+    const sign = v > 0 ? '+' : '';
     return `${sign}${v.toFixed(1)} BPM`;
 }
 
 function fmtScore(v?: number): string {
-    if (!isFiniteNumber(v)) return "—";
+    if (!isFiniteNumber(v)) return '—';
     return v.toFixed(3);
 }
 
 function fmtN(v?: number): string {
-    if (!isFiniteNumber(v)) return "—";
+    if (!isFiniteNumber(v)) return '—';
     return `${Math.round(v)}`;
 }
 
-function participantName(d: Activity7RunDraft, participantId: string): string {
-    return d.session.participants.find(p => p.id === participantId)?.name ?? "—";
+function participantName(draft: Activity7RunDraft, participantId: string): string {
+    return draft.session.participants.find((p) => p.id === participantId)?.name ?? '—';
 }
 
 function stripReflectionBlockingItems(missing: string[]): string[] {
     return missing.filter(
-        item =>
+        (item) =>
             ![
-                "Reflection text",
-                "Rating (1–5)",
-                "GPS permission granted",
-                "GPS coordinates captured",
-            ].includes(item)
+                'Reflection text',
+                'Rating (1–5)',
+                'GPS permission granted',
+                'GPS coordinates captured',
+            ].includes(item),
     );
 }
 
 function getPredictionVerdict(errors: Array<number | undefined>): string {
-    const vals = errors.filter(isFiniteNumber);
-    if (!vals.length) return "Not enough data";
+    const values = errors.filter(isFiniteNumber);
+    if (!values.length) return 'Not enough data';
 
-    const avg = mean(vals);
-    if (!isFiniteNumber(avg)) return "Not enough data";
-    if (avg <= 2) return "Very close";
-    if (avg <= 5) return "Reasonably close";
-    if (avg <= 10) return "Partly correct";
+    const avg = mean(values);
+    if (!isFiniteNumber(avg)) return 'Not enough data';
+    if (avg <= 2) return 'Very close';
+    if (avg <= 5) return 'Reasonably close';
+    if (avg <= 10) return 'Partly correct';
 
-    return "Not very close";
+    return 'Not very close';
 }
 
 function minDefined(xs: Array<number | undefined>): number | undefined {
-    const vals = xs.filter(isFiniteNumber);
-    return vals.length ? Math.min(...vals) : undefined;
+    const values = xs.filter(isFiniteNumber);
+    return values.length ? Math.min(...values) : undefined;
 }
 
 function maxDefined(xs: Array<number | undefined>): number | undefined {
-    const vals = xs.filter(isFiniteNumber);
-    return vals.length ? Math.max(...vals) : undefined;
+    const values = xs.filter(isFiniteNumber);
+    return values.length ? Math.max(...values) : undefined;
 }
 
-function getHighestPhaseLabel(s: A7ParticipantSummary): string {
+function getHighestPhaseLabel(summary: A7ParticipantSummary): string {
     const candidates = [
-        {label: "Rest", value: s.restBpm},
-        {label: "Post-Jog", value: s.postJogBpm},
-        {label: "Post-Star-Jumps", value: s.postStarJumpBpm},
-    ].filter(item => isFiniteNumber(item.value));
+        {label: 'Rest', value: summary.restBpm},
+        {label: 'Post-Jog', value: summary.postJogBpm},
+        {label: 'Post-Star-Jumps', value: summary.postStarJumpBpm},
+    ].filter((item) => isFiniteNumber(item.value));
 
-    if (!candidates.length) return "—";
+    if (!candidates.length) return '—';
 
     candidates.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
     return candidates[0].label;
-}
-
-function Pill({label}: { label: string }): React.JSX.Element {
-    return (
-        <View style={styles.pill}>
-            <Text style={styles.pillText}>{label}</Text>
-        </View>
-    );
-}
-
-function Divider(): React.JSX.Element {
-    return <View style={styles.divider}/>;
-}
-
-function MetricRow(props: {
-    label: string;
-    value: string;
-    hint?: string;
-}): React.JSX.Element {
-    return (
-        <View style={styles.metricRow}>
-            <View style={styles.metricTextBlock}>
-                <Text style={styles.metricLabel}>{props.label}</Text>
-                {props.hint ? (
-                    <Text style={styles.metricHint}>{props.hint}</Text>
-                ) : null}
-            </View>
-            <Text style={styles.metricValue}>{props.value}</Text>
-        </View>
-    );
 }
 
 export default function A7ResultsScreen({
@@ -160,14 +142,25 @@ export default function A7ResultsScreen({
 
     const [draft, setDraft] = useState<Activity7RunDraft | null>(null);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({visible: true, title, message, tone});
+    }
+
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity7RunDraft(runId);
 
         if (!d) {
-            Alert.alert("Session expired", "Please restart Activity 7.", [
-                {text: "OK", onPress: () => navigation.goBack()},
+            Alert.alert('Session expired', 'Please restart Activity 7.', [
+                {text: 'OK', onPress: () => navigation.goBack()},
             ]);
             return;
         }
@@ -208,29 +201,25 @@ export default function A7ResultsScreen({
 
         const summaries = metrics.participantSummaries ?? [];
         const bestId = metrics.bestParticipantId;
-        const bestSummary = summaries.find(
-            summary => summary.participantId === bestId
-        );
+        const bestSummary = summaries.find((summary) => summary.participantId === bestId);
 
-        const bestParticipantName = bestId
-            ? participantName(draft, bestId)
-            : undefined;
+        const bestParticipantName = bestId ? participantName(draft, bestId) : undefined;
 
-        const lowestRest = minDefined(summaries.map(s => s.restBpm));
+        const lowestRest = minDefined(summaries.map((summary) => summary.restBpm));
 
         const highestExercise = maxDefined([
-            ...summaries.map(s => s.postJogBpm),
-            ...summaries.map(s => s.postStarJumpBpm),
+            ...summaries.map((summary) => summary.postJogBpm),
+            ...summaries.map((summary) => summary.postStarJumpBpm),
         ]);
 
         const avgPredictionAbsError = mean(
-            summaries.flatMap(summary =>
+            summaries.flatMap((summary) =>
                 [
                     summary.prediction?.restAbsError,
                     summary.prediction?.postJogAbsError,
                     summary.prediction?.postStarJumpAbsError,
-                ].filter(isFiniteNumber)
-            )
+                ].filter(isFiniteNumber),
+            ),
         );
 
         return {
@@ -250,11 +239,12 @@ export default function A7ResultsScreen({
             });
         }
 
-        const participants: A7RecoveryParticipant[] =
-            metrics.participantSummaries.map(summary => ({
+        const participants: A7RecoveryParticipant[] = metrics.participantSummaries.map(
+            (summary) => ({
                 label: participantName(draft, summary.participantId),
                 recoveryConsistencyScore: summary.recoveryConsistencyScore,
-            }));
+            }),
+        );
 
         return buildA7Visualization({
             phaseAverages: {
@@ -269,17 +259,14 @@ export default function A7ResultsScreen({
     const performanceFeedback = useMemo(() => {
         if (!metrics) return null;
 
-        const trials = metrics.participantSummaries.flatMap(summary => {
+        const trials = metrics.participantSummaries.flatMap((summary) => {
             const arr: Array<{
                 label: string;
                 restingBpm: number;
                 postExerciseBpm: number;
             }> = [];
 
-            if (
-                summary.restBpm != null &&
-                summary.postJogBpm != null
-            ) {
+            if (summary.restBpm != null && summary.postJogBpm != null) {
                 arr.push({
                     label: `${summary.participantId}-jog`,
                     restingBpm: summary.restBpm,
@@ -287,10 +274,7 @@ export default function A7ResultsScreen({
                 });
             }
 
-            if (
-                summary.restBpm != null &&
-                summary.postStarJumpBpm != null
-            ) {
+            if (summary.restBpm != null && summary.postStarJumpBpm != null) {
                 arr.push({
                     label: `${summary.participantId}-star`,
                     restingBpm: summary.restBpm,
@@ -301,77 +285,106 @@ export default function A7ResultsScreen({
             return arr;
         });
 
-        return generatePerformanceFeedback("activity7", {trials});
+        return generatePerformanceFeedback('activity7', {trials});
     }, [metrics]);
 
     function refresh() {
         const d = getActivity7RunDraft(runId);
-        if (d) setDraft(d);
+
+        if (d) {
+            setDraft(d);
+            showToast('Results refreshed', 'info', 'Latest breathing metrics loaded.');
+        }
     }
 
     function goToMeasurements() {
-        navigation.navigate("A7Measurements", {activityId, runId});
+        navigation.navigate('A7Measurements', {activityId, runId});
     }
 
     function goToSubmit() {
-        navigation.navigate("A7ReflectionSubmit", {activityId, runId});
+        if (!canProceedToReflection) {
+            Alert.alert(
+                'Experiment data incomplete',
+                `Please complete these items first:\n${experimentBlockingMissing.join('\n')}`,
+            );
+            return;
+        }
+
+        showToast('Results ready', 'success', 'Opening reflection and submission.');
+
+        setTimeout(() => {
+            navigation.navigate('A7ReflectionSubmit', {activityId, runId});
+        }, 700);
     }
 
     if (!user) return null;
 
     if (!draft || !metrics) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={styles.loadingText}>Loading…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading results dashboard..."/>
+            </AppGradientScreen>
         );
     }
 
-    const summaries: A7ParticipantSummary[] =
-        metrics.participantSummaries ?? [];
+    const summaries: A7ParticipantSummary[] = metrics.participantSummaries ?? [];
     const prediction = draft.prediction;
 
     return (
         <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView contentContainerStyle={styles.container}>
-                <View style={styles.headerRow}>
-                    <Text style={styles.title}>Results Dashboard</Text>
-                    <Pressable style={styles.ghostBtn} onPress={refresh}>
-                        <Text style={styles.ghostBtnText}>Refresh</Text>
-                    </Pressable>
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <View style={styles.headerTop}>
+                        <AppBadge label="Activity 7" tone="primary"/>
+
+                        <AppButton
+                            title="Refresh"
+                            variant="outline"
+                            onPress={refresh}
+                            style={styles.refreshButton}
+                        />
+                    </View>
+
+                    <AppText variant="title" style={styles.title}>
+                        Results Dashboard
+                    </AppText>
+
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Review breathing rate at rest and after exercise, compare phase
+                        changes, and check recovery consistency before submission.
+                    </AppText>
                 </View>
 
-                <Text style={styles.sub}>
-                    Review breathing rate at rest and after exercise, compare
-                    changes between phases, and check recovery consistency.
-                    Lower recovery consistency score is better for leaderboard
-                    ranking.
-                </Text>
+                <View style={styles.heroCard}>
+                    <View style={styles.heroTop}>
+                        <AppText variant="bodyStrong" color="inverseText">
+                            Best Recovery Consistency
+                        </AppText>
 
-                <View style={styles.hero}>
-                    <Text style={styles.heroTitle}>
-                        Best Recovery Consistency
-                    </Text>
-                    <Text style={styles.heroScore}>
-                        {visualization.bestRecovery?.recoveryConsistencyScore !=
-                        null
-                            ? visualization.bestRecovery.recoveryConsistencyScore.toFixed(
-                                3
-                            )
-                            : "—"}
-                    </Text>
-                    <Text style={styles.heroMeta}>
+                        <AppBadge
+                            label={leaderboardEligible ? 'Eligible' : 'Not eligible'}
+                            tone={leaderboardEligible ? 'success' : 'warning'}
+                        />
+                    </View>
+
+                    <AppText variant="title" color="inverseText" style={styles.heroScore}>
+                        {visualization.bestRecovery?.recoveryConsistencyScore != null
+                            ? visualization.bestRecovery.recoveryConsistencyScore.toFixed(3)
+                            : '—'}
+                    </AppText>
+
+                    <AppText variant="body" color="inverseText" style={styles.heroMeta}>
                         {visualization.bestRecovery?.label ??
-                            "Complete breathing measurements to calculate this."}
-                    </Text>
-                    <Text style={styles.heroHint}>
-                        Lower recovery consistency score indicates a more stable
-                        breathing recovery pattern.
-                    </Text>
+                            'Complete breathing measurements to calculate this.'}
+                    </AppText>
+
+                    <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                        Lower recovery consistency score indicates a more stable breathing
+                        recovery pattern.
+                    </AppText>
                 </View>
 
                 <ActivityBarChart
@@ -390,44 +403,42 @@ export default function A7ResultsScreen({
 
                 <ResultsInsightCard insight={visualization.insight}/>
 
-                {performanceFeedback && (
+                {performanceFeedback ? (
                     <PerformanceFeedbackCard feedback={performanceFeedback}/>
-                )}
+                ) : null}
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Highlights</Text>
+                <AppSectionHeader
+                    title="Highlights"
+                    subtitle="Key leaderboard and prediction outcomes."
+                />
 
-                    <View style={styles.pillWrap}>
-                        <Pill
-                            label={
-                                leaderboardEligible
-                                    ? "Leaderboard: Eligible"
-                                    : "Leaderboard: Not eligible"
-                            }
+                <AppCard>
+                    <View style={styles.badgeWrap}>
+                        <AppBadge
+                            label={leaderboardEligible ? 'Leaderboard eligible' : 'Not eligible'}
+                            tone={leaderboardEligible ? 'success' : 'warning'}
                         />
-                        <Pill
+
+                        <AppBadge
                             label={
                                 prediction
-                                    ? `Prediction entered: Rest ${fmtN(
-                                        prediction.predictedRestBpm
-                                    )} / After exercise ${fmtN(
-                                        prediction.predictedAfterExerciseBpm
-                                    )}`
-                                    : "Prediction missing"
+                                    ? `Prediction: Rest ${fmtN(
+                                        prediction.predictedRestBpm,
+                                    )} / After ${fmtN(prediction.predictedAfterExerciseBpm)}`
+                                    : 'Prediction missing'
                             }
+                            tone={prediction ? 'success' : 'warning'}
                         />
                     </View>
-
-                    <Divider/>
 
                     <MetricRow
                         label="Best recovery consistency"
                         value={
                             highlights?.bestParticipantName
                                 ? `${highlights.bestParticipantName} • ${fmtScore(
-                                    highlights.bestRecoveryScore
+                                    highlights.bestRecoveryScore,
                                 )}`
-                                : "—"
+                                : '—'
                         }
                         hint="Lower score means more stable recovery relative to resting breathing rate."
                     />
@@ -441,25 +452,26 @@ export default function A7ResultsScreen({
                     <MetricRow
                         label="Highest post-exercise breathing rate"
                         value={fmtBpm(highlights?.highestExercise)}
-                        hint="Computed across both post-jog and post-star-jumps phases."
+                        hint="Computed across post-jog and post-star-jumps phases."
                     />
 
                     <MetricRow
                         label="Average prediction error"
                         value={
                             isFiniteNumber(highlights?.avgPredictionAbsError)
-                                ? `${highlights!.avgPredictionAbsError!.toFixed(
-                                    1
-                                )} BPM`
-                                : "—"
+                                ? `${highlights.avgPredictionAbsError.toFixed(1)} BPM`
+                                : '—'
                         }
-                        hint="Average absolute error across all available measured-vs-predicted values."
+                        hint="Average absolute error across all measured-vs-predicted values."
                     />
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Team Summary</Text>
+                <AppSectionHeader
+                    title="Team Summary"
+                    subtitle="Team-level breathing and recovery metrics."
+                />
 
+                <AppCard>
                     <MetricRow
                         label="Average resting breathing rate"
                         value={fmtBpm(metrics.avgRestBpm)}
@@ -480,9 +492,7 @@ export default function A7ResultsScreen({
 
                     <MetricRow
                         label="Team recovery consistency score"
-                        value={fmtScore(
-                            leaderboard?.teamRecoveryConsistencyScore
-                        )}
+                        value={fmtScore(leaderboard?.teamRecoveryConsistencyScore)}
                         hint="Lower team score indicates more consistent recovery patterns across participants."
                     />
 
@@ -490,41 +500,32 @@ export default function A7ResultsScreen({
                         label="Best participant result"
                         value={
                             leaderboard?.bestParticipantId
-                                ? `${participantName(
-                                    draft,
-                                    leaderboard.bestParticipantId
-                                )} • ${fmtScore(
-                                    leaderboard.bestParticipantRecoveryConsistencyScore
+                                ? `${participantName(draft, leaderboard.bestParticipantId)} • ${fmtScore(
+                                    leaderboard.bestParticipantRecoveryConsistencyScore,
                                 )}`
-                                : "—"
+                                : '—'
                         }
-                        hint="Best participant is the one with the lowest recovery consistency score."
+                        hint="Best participant has the lowest recovery consistency score."
                     />
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>
-                        Per Participant Breakdown
-                    </Text>
-                    <Text style={styles.help}>
-                        Compare each participant’s breathing rate at rest and
-                        after exercise, then review deltas, recovery
-                        consistency, and prediction accuracy.
-                    </Text>
+                <AppSectionHeader
+                    title="Per Participant Breakdown"
+                    subtitle="Measured phases, phase deltas, recovery score, and prediction accuracy."
+                />
 
-                    <Divider/>
-
-                    {summaries.length === 0 ? (
-                        <Text style={styles.empty}>
-                            No results yet. Record all breathing measurements
-                            first.
-                        </Text>
-                    ) : (
-                        summaries.map(summary => {
-                            const name = participantName(
-                                draft,
-                                summary.participantId
-                            );
+                {summaries.length === 0 ? (
+                    <AppCard>
+                        <InfoBanner
+                            title="No results yet"
+                            message="Record all breathing measurements first."
+                            tone="warning"
+                        />
+                    </AppCard>
+                ) : (
+                    <View style={styles.participantList}>
+                        {summaries.map((summary) => {
+                            const name = participantName(draft, summary.participantId);
 
                             const verdict = getPredictionVerdict([
                                 summary.prediction?.restAbsError,
@@ -533,501 +534,361 @@ export default function A7ResultsScreen({
                             ]);
 
                             return (
-                                <View
-                                    key={summary.participantId}
-                                    style={styles.participantCard}
-                                >
+                                <AppCard key={summary.participantId}>
                                     <View style={styles.participantHeader}>
-                                        <Text style={styles.participantName}>
-                                            {name}
-                                        </Text>
-                                        <Text style={styles.participantMeta}>
-                                            Recovery score:{" "}
-                                            <Text style={styles.bold}>
-                                                {fmtScore(
-                                                    summary.recoveryConsistencyScore
-                                                )}
-                                            </Text>
-                                        </Text>
-                                    </View>
+                                        <View style={styles.participantText}>
+                                            <AppText variant="sectionTitle">{name}</AppText>
 
-                                    <Text style={styles.participantHint}>
-                                        Highest measured phase:{" "}
-                                        {getHighestPhaseLabel(summary)}
-                                    </Text>
-
-                                    <View style={styles.grid2}>
-                                        <View style={styles.gridBox}>
-                                            <Text style={styles.gridTitle}>
-                                                Measured breathing rates
-                                            </Text>
-                                            <MetricRow
-                                                label="Rest"
-                                                value={fmtBpm(summary.restBpm)}
-                                            />
-                                            <MetricRow
-                                                label="Post-Jog"
-                                                value={fmtBpm(
-                                                    summary.postJogBpm
-                                                )}
-                                            />
-                                            <MetricRow
-                                                label="Post-Star-Jumps"
-                                                value={fmtBpm(
-                                                    summary.postStarJumpBpm
-                                                )}
-                                            />
+                                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                                Highest measured phase: {getHighestPhaseLabel(summary)}
+                                            </AppText>
                                         </View>
 
-                                        <View style={styles.gridBox}>
-                                            <Text style={styles.gridTitle}>
-                                                Phase changes
-                                            </Text>
-                                            <MetricRow
-                                                label="Rest → Jog"
-                                                value={fmtDelta(
-                                                    summary.deltaRestToJog
-                                                )}
-                                            />
-                                            <MetricRow
-                                                label="Rest → Star Jumps"
-                                                value={fmtDelta(
-                                                    summary.deltaRestToStarJump
-                                                )}
-                                            />
-                                            <MetricRow
-                                                label="Jog → Star Jumps"
-                                                value={fmtDelta(
-                                                    summary.deltaJogToStarJump
-                                                )}
-                                            />
-                                        </View>
-                                    </View>
-
-                                    <View style={styles.predictionBlock}>
-                                        <MetricRow
-                                            label="Prediction verdict"
-                                            value={verdict}
-                                            hint="Judged from available absolute error values."
+                                        <AppBadge
+                                            label={fmtScore(summary.recoveryConsistencyScore)}
+                                            tone="info"
                                         />
+                                    </View>
+
+                                    <View style={styles.sectionBox}>
+                                        <AppText variant="bodyStrong">Measured breathing rates</AppText>
+
+                                        <MetricRow label="Rest" value={fmtBpm(summary.restBpm)} compact/>
+                                        <MetricRow label="Post-Jog" value={fmtBpm(summary.postJogBpm)} compact/>
+                                        <MetricRow
+                                            label="Post-Star-Jumps"
+                                            value={fmtBpm(summary.postStarJumpBpm)}
+                                            compact
+                                        />
+                                    </View>
+
+                                    <View style={styles.sectionBox}>
+                                        <AppText variant="bodyStrong">Phase changes</AppText>
+
+                                        <MetricRow
+                                            label="Rest to Jog"
+                                            value={fmtDelta(summary.deltaRestToJog)}
+                                            compact
+                                        />
+
+                                        <MetricRow
+                                            label="Rest to Star Jumps"
+                                            value={fmtDelta(summary.deltaRestToStarJump)}
+                                            compact
+                                        />
+
+                                        <MetricRow
+                                            label="Jog to Star Jumps"
+                                            value={fmtDelta(summary.deltaJogToStarJump)}
+                                            compact
+                                        />
+                                    </View>
+
+                                    <View style={styles.sectionBox}>
+                                        <View style={styles.predictionHeader}>
+                                            <AppText variant="bodyStrong">Prediction accuracy</AppText>
+                                            <AppBadge label={verdict} tone="info"/>
+                                        </View>
 
                                         <MetricRow
                                             label="Rest prediction error"
                                             value={
-                                                isFiniteNumber(
-                                                    summary.prediction
-                                                        ?.restAbsError
-                                                )
-                                                    ? `${summary.prediction!.restAbsError!.toFixed(
-                                                        1
-                                                    )} BPM`
-                                                    : "—"
+                                                isFiniteNumber(summary.prediction?.restAbsError)
+                                                    ? `${summary.prediction.restAbsError.toFixed(1)} BPM`
+                                                    : '—'
                                             }
+                                            compact
                                         />
 
                                         <MetricRow
                                             label="Post-Jog prediction error"
                                             value={
-                                                isFiniteNumber(
-                                                    summary.prediction
-                                                        ?.postJogAbsError
-                                                )
-                                                    ? `${summary.prediction!.postJogAbsError!.toFixed(
-                                                        1
-                                                    )} BPM`
-                                                    : "—"
+                                                isFiniteNumber(summary.prediction?.postJogAbsError)
+                                                    ? `${summary.prediction.postJogAbsError.toFixed(1)} BPM`
+                                                    : '—'
                                             }
+                                            compact
                                         />
 
                                         <MetricRow
                                             label="Post-Star-Jumps prediction error"
                                             value={
-                                                isFiniteNumber(
-                                                    summary.prediction
-                                                        ?.postStarJumpAbsError
-                                                )
-                                                    ? `${summary.prediction!.postStarJumpAbsError!.toFixed(
-                                                        1
-                                                    )} BPM`
-                                                    : "—"
+                                                isFiniteNumber(summary.prediction?.postStarJumpAbsError)
+                                                    ? `${summary.prediction.postStarJumpAbsError.toFixed(1)} BPM`
+                                                    : '—'
                                             }
+                                            compact
                                         />
                                     </View>
-                                </View>
+                                </AppCard>
                             );
-                        })
-                    )}
-                </View>
+                        })}
+                    </View>
+                )}
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Experiment Readiness</Text>
-                    <Text style={styles.help}>
-                        You can continue to Reflection & Submit once the
-                        experiment data is complete.
-                    </Text>
+                <AppSectionHeader
+                    title="Experiment Readiness"
+                    subtitle="You can continue once experiment data is complete."
+                />
 
-                    <Divider/>
-
-                    {experimentBlockingMissing.length === 0 ? (
-                        <View style={styles.readyBox}>
-                            <Text style={styles.readyTitle}>
-                                Ready for Reflection
-                            </Text>
-                            <Text style={styles.readyText}>
-                                All required breathing measurements and computed
-                                datasets are present. You can continue to the
-                                reflection page.
-                            </Text>
-                        </View>
+                <AppCard>
+                    {canProceedToReflection ? (
+                        <InfoBanner
+                            title="Ready for reflection"
+                            message="All required breathing measurements and computed datasets are present."
+                            tone="success"
+                        />
                     ) : (
-                        <View style={styles.missingBox}>
-                            <Text style={styles.missingTitle}>
-                                Complete these experiment items first
-                            </Text>
-                            {experimentBlockingMissing.map((item, index) => (
-                                <Text
-                                    key={`${item}_${index}`}
-                                    style={styles.missingItem}
-                                >
-                                    • {item}
-                                </Text>
-                            ))}
-                        </View>
+                        <InfoBanner
+                            title="Complete experiment items first"
+                            message={experimentBlockingMissing.join(' • ')}
+                            tone="warning"
+                        />
                     )}
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Final Submission Notes</Text>
-                    <Text style={styles.help}>
-                        Reflection, rating, and GPS are completed in the
-                        Reflection & Submit screen. Video evidence remains
-                        optional.
-                    </Text>
+                <AppSectionHeader
+                    title="Final Submission Notes"
+                    subtitle="Reflection, rating, GPS, and optional video are completed on the final screen."
+                />
 
-                    <Divider/>
+                <AppCard>
+                    <View style={styles.stepList}>
+                        <StepItem index={1} title="Write reflection text"/>
+                        <StepItem index={2} title="Choose rating from 1 to 5"/>
+                        <StepItem index={3} title="Confirm GPS permission and coordinate"/>
+                        <StepItem index={4} title="Attach optional session video"/>
+                    </View>
+                </AppCard>
 
-                    <Text style={styles.noteText}>You will complete:</Text>
-                    <Text style={styles.noteItem}>• Reflection text</Text>
-                    <Text style={styles.noteItem}>• Rating (1–5)</Text>
-                    <Text style={styles.noteItem}>
-                        • GPS permission / coordinate check
-                    </Text>
-                    <Text style={styles.noteItem}>• Optional session video</Text>
-                </View>
-
-                <View style={styles.actionRow}>
-                    <Pressable
-                        style={styles.secondaryBtn}
+                <View style={styles.actions}>
+                    <AppButton
+                        title="Back to Measurements"
+                        variant="outline"
                         onPress={goToMeasurements}
-                    >
-                        <Text style={styles.secondaryBtnText}>
-                            Back to Measurements
-                        </Text>
-                    </Pressable>
+                    />
+
+                    <AppButton
+                        title="Go to Reflection & Submit"
+                        onPress={goToSubmit}
+                        disabled={!canProceedToReflection}
+                    />
                 </View>
 
-                <Pressable
-                    style={[
-                        styles.primaryBtnWide,
-                        !canProceedToReflection && styles.btnDisabled,
-                    ]}
-                    disabled={!canProceedToReflection}
-                    onPress={goToSubmit}
-                >
-                    <Text style={styles.primaryBtnText}>
-                        Go to Reflection & Submit
-                    </Text>
-                </Pressable>
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
 
                 <View style={styles.bottomSpace}/>
-            </ScrollView>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type MetricRowProps = {
+    label: string;
+    value: string;
+    hint?: string;
+    compact?: boolean;
+};
+
+function MetricRow({label, value, hint, compact = false}: MetricRowProps) {
+    return (
+        <View style={[styles.metricRow, compact && styles.metricRowCompact]}>
+            <View style={styles.metricTextBlock}>
+                <AppText variant="bodyStrong">{label}</AppText>
+
+                {hint ? (
+                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                        {hint}
+                    </AppText>
+                ) : null}
+            </View>
+
+            <AppText variant="bodyStrong" align="right" style={styles.metricValue}>
+                {value}
+            </AppText>
+        </View>
+    );
+}
+
+type StepItemProps = {
+    index: number;
+    title: string;
+};
+
+function StepItem({index, title}: StepItemProps) {
+    return (
+        <View style={styles.stepItem}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
+            </View>
+
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {title}
+            </AppText>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    flex: {
+    keyboard: {
         flex: 1,
     },
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#FFFFFF",
+
+    header: {
+        marginBottom: spacing.lg,
     },
-    center: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#FFFFFF",
+
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    loadingText: {
-        marginTop: 10,
-        opacity: 0.7,
-        color: "#344054",
+
+    refreshButton: {
+        minWidth: 108,
     },
-    headerRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-    },
+
     title: {
-        fontSize: 26,
-        fontWeight: "900",
-        color: "#172033",
-        flex: 1,
+        marginTop: spacing.md,
     },
-    sub: {
-        marginTop: 8,
-        opacity: 0.75,
-        lineHeight: 20,
-        color: "#344054",
+
+    subtitle: {
+        marginTop: spacing.sm,
     },
-    hero: {
-        marginTop: 16,
-        borderRadius: 16,
-        backgroundColor: "#111827",
-        padding: 16,
+
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
     },
-    heroTitle: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-        opacity: 0.9,
+
+    heroTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
+
     heroScore: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-        fontSize: 36,
-        marginTop: 6,
+        marginTop: spacing.md,
     },
+
     heroMeta: {
-        color: "#FFFFFF",
+        marginTop: spacing.xs,
         opacity: 0.9,
-        marginTop: 4,
     },
+
     heroHint: {
-        color: "#FFFFFF",
-        opacity: 0.65,
-        marginTop: 8,
-        lineHeight: 18,
-    },
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FAFAFA",
-        borderRadius: 14,
-        padding: 14,
-    },
-    participantCard: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FFFFFF",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: "900",
-        color: "#172033",
-    },
-    help: {
-        marginTop: 6,
+        marginTop: spacing.md,
         opacity: 0.75,
-        lineHeight: 18,
-        color: "#344054",
     },
-    divider: {
-        height: 1,
-        backgroundColor: "#E5E7EB",
-        marginVertical: 12,
+
+    badgeWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginBottom: spacing.md,
     },
-    pillWrap: {
-        marginTop: 10,
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: 10,
-    },
-    pill: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FFFFFF",
-    },
-    pillText: {
-        fontWeight: "900",
-        color: "#172033",
-    },
+
     metricRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 6,
-        gap: 10,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
     },
+
+    metricRowCompact: {
+        paddingVertical: spacing.xs,
+    },
+
     metricTextBlock: {
         flex: 1,
     },
-    metricLabel: {
-        fontWeight: "800",
-        opacity: 0.85,
-        color: "#172033",
-    },
-    metricHint: {
-        marginTop: 2,
-        opacity: 0.65,
-        fontSize: 12,
-        lineHeight: 16,
-        color: "#344054",
-    },
+
     metricValue: {
-        fontWeight: "900",
-        color: "#172033",
-        textAlign: "right",
+        flex: 1,
     },
+
+    participantList: {
+        gap: spacing.md,
+    },
+
     participantHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "baseline",
-        gap: 10,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    participantName: {
-        fontSize: 16,
-        fontWeight: "900",
-        color: "#172033",
-    },
-    participantMeta: {
-        opacity: 0.75,
-        color: "#344054",
-        textAlign: "right",
-        flexShrink: 1,
-    },
-    participantHint: {
-        marginTop: 6,
-        opacity: 0.75,
-        fontWeight: "800",
-        color: "#344054",
-    },
-    bold: {
-        fontWeight: "900",
-        color: "#172033",
-    },
-    grid2: {
-        marginTop: 12,
-        flexDirection: "row",
-        gap: 10,
-    },
-    gridBox: {
+
+    participantText: {
         flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    sectionBox: {
+        marginTop: spacing.md,
+        borderRadius: radius.lg,
         borderWidth: 1,
-        borderColor: "#E5E7EB",
-        borderRadius: 12,
-        padding: 12,
-        backgroundColor: "#FAFAFA",
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
     },
-    gridTitle: {
-        fontWeight: "900",
-        marginBottom: 6,
-        color: "#172033",
+
+    predictionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        marginBottom: spacing.sm,
     },
-    predictionBlock: {
-        marginTop: 10,
+
+    stepList: {
+        gap: spacing.md,
     },
-    empty: {
-        marginTop: 8,
-        opacity: 0.7,
-        color: "#344054",
+
+    stepItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
     },
-    readyBox: {
-        padding: 14,
-        borderRadius: 12,
-        backgroundColor: "#F3F4F6",
+
+    stepNumber: {
+        width: 28,
+        height: 28,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    readyTitle: {
-        fontWeight: "900",
-        color: "#172033",
-    },
-    readyText: {
-        marginTop: 6,
-        opacity: 0.75,
-        lineHeight: 18,
-        color: "#344054",
-    },
-    missingBox: {
-        padding: 14,
-        borderRadius: 12,
-        backgroundColor: "#FFF7ED",
-        borderWidth: 1,
-        borderColor: "#FED7AA",
-    },
-    missingTitle: {
-        fontWeight: "900",
-        color: "#172033",
-    },
-    missingItem: {
-        marginTop: 8,
-        opacity: 0.85,
-        lineHeight: 18,
-        color: "#344054",
-    },
-    noteText: {
-        opacity: 0.8,
-        fontWeight: "800",
-        color: "#172033",
-    },
-    noteItem: {
-        marginTop: 8,
-        opacity: 0.8,
-        lineHeight: 18,
-        color: "#344054",
-    },
-    actionRow: {
-        marginTop: 14,
-        flexDirection: "row",
-        gap: 10,
-    },
-    secondaryBtn: {
+
+    stepText: {
         flex: 1,
-        borderWidth: 1,
-        borderColor: "#111827",
-        paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: "center",
-        backgroundColor: "#FFFFFF",
     },
-    secondaryBtnText: {
-        fontWeight: "900",
-        color: "#111827",
+
+    actions: {
+        marginTop: spacing.lg,
+        gap: spacing.md,
     },
-    primaryBtnWide: {
-        marginTop: 14,
-        backgroundColor: "#111827",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-    },
-    btnDisabled: {
-        opacity: 0.5,
-    },
-    ghostBtn: {
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        backgroundColor: "#FFFFFF",
-    },
-    ghostBtnText: {
-        fontWeight: "900",
-        color: "#172033",
-    },
+
     bottomSpace: {
-        height: 40,
+        height: spacing.xxl,
     },
 });

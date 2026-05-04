@@ -1,21 +1,18 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     createActivity7RunDraft,
@@ -28,13 +25,27 @@ import {
     validateA7Session,
     type Activity7RunDraft,
     type A7ParticipantDraft,
-} from "../../../store/activity7RunDraftStore";
+} from '../../../store/activity7RunDraftStore';
 
-import {confirmBatteryBeforeActivity} from "../../../services/battery";
+import {confirmBatteryBeforeActivity} from '../../../services/battery';
 
-/* =========================================================
-   Helpers
-========================================================= */
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A7SessionSetup'>;
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
 
 function clampInt(n: number, min: number, max: number) {
     if (!Number.isFinite(n)) return min;
@@ -47,18 +58,17 @@ function clampNum(n: number, min: number, max: number) {
 }
 
 function digitsOnly(s: string) {
-    return s.replace(/[^\d]/g, "");
+    return s.replace(/[^\d]/g, '');
 }
 
 function digitsAndSingleDot(s: string) {
-    const cleaned = s.replace(/[^\d.]/g, "");
-    const firstDot = cleaned.indexOf(".");
+    const cleaned = s.replace(/[^\d.]/g, '');
+    const firstDot = cleaned.indexOf('.');
     if (firstDot < 0) return cleaned;
+
     return (
         cleaned.slice(0, firstDot + 1) +
-        cleaned
-            .slice(firstDot + 1)
-            .replace(/\./g, "")
+        cleaned.slice(firstDot + 1).replace(/\./g, '')
     );
 }
 
@@ -67,42 +77,46 @@ function trimOrEmpty(s: string) {
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
-function formatGeoText(geo: Activity7RunDraft["session"]["geo"] | undefined): string {
-    if (!geo) return "No coordinate saved yet";
+function formatGeoText(geo: Activity7RunDraft['session']['geo'] | undefined): string {
+    if (!geo) return 'No coordinate saved yet';
     if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) {
-        return "No coordinate saved yet";
+        return 'No coordinate saved yet';
     }
 
     const accText = isFiniteNumber(geo.accuracyM)
         ? ` (±${Math.round(geo.accuracyM)}m)`
-        : "";
+        : '';
+
     const timeText = isFiniteNumber(geo.capturedAt)
         ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
-        : "";
+        : '';
 
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
+async function requestGpsPermissionSafe(): Promise<'granted' | 'denied'> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
         const res = await Location.requestForegroundPermissionsAsync();
-        return res.status === "granted" ? "granted" : "denied";
+        return res.status === 'granted' ? 'granted' : 'denied';
     } catch {
-        return "denied";
+        return 'denied';
     }
 }
 
-async function getCurrentGeoSafe(): Promise<{
+async function getCurrentGeoSafe(): Promise<
+    | {
     lat: number;
     lng: number;
     accuracyM?: number;
-} | null> {
+}
+    | null
+> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
 
         const servicesEnabled = await Location.hasServicesEnabledAsync();
         if (!servicesEnabled) return null;
@@ -118,23 +132,13 @@ async function getCurrentGeoSafe(): Promise<{
 
         const acc = pos?.coords?.accuracy ?? undefined;
         const accuracyM =
-            typeof acc === "number" && Number.isFinite(acc) ? acc : undefined;
+            typeof acc === 'number' && Number.isFinite(acc) ? acc : undefined;
 
         return {lat, lng, accuracyM};
     } catch {
         return null;
     }
 }
-
-/* =========================================================
-   Types
-========================================================= */
-
-type Props = NativeStackScreenProps<AppStackParamList, "A7SessionSetup">;
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A7SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -146,31 +150,60 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
     const hasBootstrappedRef = useRef(false);
 
-    // UI buffers
-    const [sessionLabel, setSessionLabel] = useState("");
-    const [participantCountRaw, setParticipantCountRaw] = useState("1");
+    const [sessionLabel, setSessionLabel] = useState('');
+    const [participantCountRaw, setParticipantCountRaw] = useState('1');
 
-    const [measurementDurationSecRaw, setMeasurementDurationSecRaw] = useState("30");
-    const [targetSamplingHzRaw, setTargetSamplingHzRaw] = useState("25");
-    const [smoothingWindowSecRaw, setSmoothingWindowSecRaw] = useState("0.6");
-    const [minPeakGapMsRaw, setMinPeakGapMsRaw] = useState("1500");
+    const [measurementDurationSecRaw, setMeasurementDurationSecRaw] =
+        useState('30');
+    const [targetSamplingHzRaw, setTargetSamplingHzRaw] = useState('25');
+    const [smoothingWindowSecRaw, setSmoothingWindowSecRaw] = useState('0.6');
+    const [minPeakGapMsRaw, setMinPeakGapMsRaw] = useState('1500');
 
-    // GPS
     const [gpsEnabled, setGpsEnabled] = useState(true);
     const [gpsPermission, setGpsPermission] = useState<
-        "unknown" | "granted" | "denied"
-    >("unknown");
+        'unknown' | 'granted' | 'denied'
+    >('unknown');
     const [capturingGps, setCapturingGps] = useState(false);
 
-    // participant add input
-    const [newParticipantName, setNewParticipantName] = useState("");
+    const [newParticipantName, setNewParticipantName] = useState('');
+
+    const [toast, setToast] = useState<{
+        visible: boolean;
+        title: string;
+        message?: string;
+        tone?: ToastTone;
+    }>({
+        visible: false,
+        title: '',
+    });
+
+    function showToast(title: string, message?: string, tone: ToastTone = 'info') {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
+    useEffect(() => {
+        if (!toast.visible) return;
+
+        const timer = setTimeout(() => {
+            setToast((prev) => ({
+                ...prev,
+                visible: false,
+            }));
+        }, 2500);
+
+        return () => clearTimeout(timer);
+    }, [toast.visible]);
 
     useEffect(() => {
         if (!user) return;
         if (hasBootstrappedRef.current) return;
 
         hasBootstrappedRef.current = true;
-
         const userId = user.uid;
 
         async function bootstrap() {
@@ -213,17 +246,20 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
                 if (recoverable) {
                     Alert.alert(
-                        "Resume previous draft?",
-                        "We found an unfinished Activity 7 draft. Would you like to continue it or start a new session?",
+                        'Resume previous draft?',
+                        'We found an unfinished Activity 7 draft. Would you like to continue it or start a new session?',
                         [
                             {
-                                text: "Start New",
-                                style: "destructive",
+                                text: 'Start New',
+                                style: 'destructive',
                                 onPress: async () => {
                                     try {
                                         await discardActivity7RunDraft(recoverable.runId);
                                     } catch (error) {
-                                        console.error("[A7SessionSetup] Failed to discard old draft", error);
+                                        console.error(
+                                            '[A7SessionSetup] Failed to discard old draft',
+                                            error,
+                                        );
                                     }
 
                                     const created = createActivity7RunDraft({
@@ -241,13 +277,13 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                                 },
                             },
                             {
-                                text: "Resume",
+                                text: 'Resume',
                                 onPress: () => {
                                     setDraft(recoverable);
                                     navigation.setParams({runId: recoverable.runId});
                                 },
                             },
-                        ]
+                        ],
                     );
                     return;
                 }
@@ -265,7 +301,7 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                 setDraft(created);
                 navigation.setParams({runId: created.runId});
             } catch (error) {
-                console.error("[A7SessionSetup] Failed to bootstrap draft", error);
+                console.error('[A7SessionSetup] Failed to bootstrap draft', error);
 
                 const fallback = createActivity7RunDraft({
                     activityId,
@@ -290,57 +326,53 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
     useEffect(() => {
         if (!draft) return;
 
-        setSessionLabel(draft.session.sessionLabel ?? "");
+        setSessionLabel(draft.session.sessionLabel ?? '');
         setParticipantCountRaw(String(draft.session.participantCount ?? 1));
 
         setMeasurementDurationSecRaw(
-            String(draft.session.measurementDurationSec ?? 30)
+            String(draft.session.measurementDurationSec ?? 30),
         );
         setTargetSamplingHzRaw(String(draft.session.targetSamplingHz ?? 25));
         setSmoothingWindowSecRaw(String(draft.session.smoothingWindowSec ?? 0.6));
         setMinPeakGapMsRaw(String(draft.session.minPeakGapMs ?? 1500));
 
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
-        setGpsPermission(draft.session.gpsPermission ?? "unknown");
+        setGpsPermission(draft.session.gpsPermission ?? 'unknown');
     }, [draft]);
 
     const participants = draft?.session.participants ?? [];
     const geoCaptured =
         !!draft?.session.geo &&
-        isFiniteNumber(draft?.session.geo.lat) &&
-        isFiniteNumber(draft?.session.geo.lng);
+        isFiniteNumber(draft.session.geo.lat) &&
+        isFiniteNumber(draft.session.geo.lng);
 
     const sessionError = useMemo(() => {
         if (!draft) return null;
 
         const measurementDurationSec = clampInt(
-            Number(digitsOnly(measurementDurationSecRaw || "30")),
+            Number(digitsOnly(measurementDurationSecRaw || '30')),
             10,
-            120
+            120,
         );
 
         const participantCount = clampInt(
-            Number(digitsOnly(participantCountRaw || "1")),
+            Number(digitsOnly(participantCountRaw || '1')),
             1,
-            6
+            6,
         );
 
-        const targetSamplingHz = clampNum(
-            Number(targetSamplingHzRaw || "25"),
-            1,
-            500
-        );
+        const targetSamplingHz = clampNum(Number(targetSamplingHzRaw || '25'), 1, 500);
 
         const smoothingWindowSec = clampNum(
-            Number(smoothingWindowSecRaw || "0.6"),
+            Number(smoothingWindowSecRaw || '0.6'),
             0.1,
-            5
+            5,
         );
 
         const minPeakGapMs = clampInt(
-            Number(digitsOnly(minPeakGapMsRaw || "1500")),
+            Number(digitsOnly(minPeakGapMsRaw || '1500')),
             500,
-            10000
+            10000,
         );
 
         const shadow: Activity7RunDraft = {
@@ -375,33 +407,33 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         if (!draft) return null;
 
         const nextParticipantCount = clampInt(
-            parseInt(digitsOnly(participantCountRaw || "1"), 10),
+            parseInt(digitsOnly(participantCountRaw || '1'), 10),
             1,
-            6
+            6,
         );
 
         const nextMeasurementDurationSec = clampInt(
-            parseInt(digitsOnly(measurementDurationSecRaw || "30"), 10),
+            parseInt(digitsOnly(measurementDurationSecRaw || '30'), 10),
             10,
-            120
+            120,
         );
 
         const nextTargetSamplingHz = clampNum(
-            parseFloat(targetSamplingHzRaw || "25"),
+            parseFloat(targetSamplingHzRaw || '25'),
             1,
-            500
+            500,
         );
 
         const nextSmoothingWindowSec = clampNum(
-            parseFloat(smoothingWindowSecRaw || "0.6"),
+            parseFloat(smoothingWindowSecRaw || '0.6'),
             0.1,
-            5
+            5,
         );
 
         const nextMinPeakGapMs = clampInt(
-            parseInt(digitsOnly(minPeakGapMsRaw || "1500"), 10),
+            parseInt(digitsOnly(minPeakGapMsRaw || '1500'), 10),
             500,
-            10000
+            10000,
         );
 
         const next = updateActivity7Session(draft.runId, {
@@ -433,13 +465,13 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
         const name = trimOrEmpty(newParticipantName);
         if (!name) {
-            Alert.alert("Missing name", "Enter a participant name first.");
+            showToast('Missing name', 'Enter a participant name first.', 'warning');
             return;
         }
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount >= 6) {
-            Alert.alert("Limit reached", "Participant count cannot exceed 6.");
+            showToast('Limit reached', 'Participant count cannot exceed 6.', 'warning');
             return;
         }
 
@@ -448,13 +480,11 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         });
 
         const appended =
-            afterCount.session.participants?.[
-            afterCount.session.participants.length - 1
-                ];
+            afterCount.session.participants?.[afterCount.session.participants.length - 1];
 
         if (!appended?.id) {
             setDraft(afterCount);
-            setNewParticipantName("");
+            setNewParticipantName('');
             setParticipantCountRaw(String(afterCount.session.participantCount));
             return;
         }
@@ -465,7 +495,9 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
         setDraft(afterRename);
         setParticipantCountRaw(String(afterRename.session.participantCount));
-        setNewParticipantName("");
+        setNewParticipantName('');
+
+        showToast('Participant added', `${name} was added to this session.`, 'success');
     }
 
     function onRemoveParticipant(participantId: string) {
@@ -473,15 +505,15 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount <= 1) {
-            Alert.alert("Not allowed", "At least 1 participant is required.");
+            showToast('Not allowed', 'At least 1 participant is required.', 'warning');
             return;
         }
 
-        Alert.alert("Remove participant?", "This will remove the participant from the session.", [
-            {text: "Cancel", style: "cancel"},
+        Alert.alert('Remove participant?', 'This will remove the participant from the session.', [
+            {text: 'Cancel', style: 'cancel'},
             {
-                text: "Remove",
-                style: "destructive",
+                text: 'Remove',
+                style: 'destructive',
                 onPress: () => {
                     const filtered: A7ParticipantDraft[] = (
                         draft.session.participants ?? []
@@ -494,6 +526,12 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
                     setDraft(next);
                     setParticipantCountRaw(String(next.session.participantCount));
+
+                    showToast(
+                        'Participant removed',
+                        'The participant was removed from this session.',
+                        'info',
+                    );
                 },
             },
         ]);
@@ -501,6 +539,7 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
     function onToggleGps(nextVal: boolean) {
         setGpsEnabled(nextVal);
+
         if (!draft) return;
 
         const next = updateActivity7Session(draft.runId, {
@@ -509,13 +548,21 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
         });
 
         setDraft(next);
+
+        if (!nextVal) {
+            showToast(
+                'GPS disabled',
+                'Location evidence will be removed until GPS is enabled again.',
+                'warning',
+            );
+        }
     }
 
     async function onCaptureGps() {
         if (!draft) return;
 
         if (!gpsEnabled) {
-            Alert.alert("GPS disabled", "Enable GPS first to capture coordinates.");
+            showToast('GPS disabled', 'Enable GPS first to capture coordinates.', 'warning');
             return;
         }
 
@@ -523,7 +570,7 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
             setCapturingGps(true);
 
             let status = gpsPermission;
-            if (status === "unknown" || status === "denied") {
+            if (status === 'unknown' || status === 'denied') {
                 status = await requestGpsPermissionSafe();
                 setGpsPermission(status);
 
@@ -533,10 +580,10 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
                 setDraft(nextPerm);
             }
 
-            if (status !== "granted") {
+            if (status !== 'granted') {
                 Alert.alert(
-                    "Permission denied",
-                    "Location permission is required for submission. Please enable it in device settings."
+                    'Permission denied',
+                    'Location permission is required for submission. Please enable it in device settings.',
                 );
                 return;
             }
@@ -544,15 +591,15 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
-                    "Location unavailable",
-                    "Could not capture your location. Please ensure Location Services are ON and try again."
+                    'Location unavailable',
+                    'Could not capture your location. Please ensure Location Services are ON and try again.',
                 );
                 return;
             }
 
             const next = updateActivity7Session(draft.runId, {
                 gpsEnabled: true,
-                gpsPermission: "granted",
+                gpsPermission: 'granted',
                 geo: {
                     lat: g.lat,
                     lng: g.lng,
@@ -562,7 +609,12 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
             });
 
             setDraft(next);
-            Alert.alert("Location captured ✅", "GPS coordinate has been saved for submission.");
+
+            showToast(
+                'Location captured',
+                'GPS coordinate has been saved for submission.',
+                'success',
+            );
         } finally {
             setCapturingGps(false);
         }
@@ -576,19 +628,19 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
         const err = validateA7Session(persisted);
         if (err) {
-            Alert.alert("Check setup", err);
+            showToast('Check setup', err, 'danger');
             return;
         }
 
         const canContinue = await confirmBatteryBeforeActivity({
             activityId,
-            activityTitle: "Activity 7: Breathing Pace Trainer",
-            intensity: "HIGH",
+            activityTitle: 'Activity 7: Breathing Pace Trainer',
+            intensity: 'HIGH',
         });
 
         if (!canContinue) return;
 
-        navigation.navigate("A7Prediction", {
+        navigation.navigate('A7Prediction', {
             activityId,
             runId: persisted.runId,
         });
@@ -598,287 +650,426 @@ export default function A7SessionSetupScreen({route, navigation}: Props) {
 
     if (bootstrapping || !draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={{marginTop: 10, opacity: 0.7}}>Loading session…</Text>
-                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Checking for unfinished Activity 7 session..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
         <KeyboardAvoidingView
-            style={{flex: 1, backgroundColor: "#fff"}}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Session Setup</Text>
-                <Text style={styles.sub}>
-                    Configure participants, measurement timing, breathing-signal settings, and GPS
-                    policy before entering prediction.
-                </Text>
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 7" tone="info"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Session</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Breathing Setup
+                    </AppText>
 
-                    <Text style={styles.label}>Session label</Text>
-                    <TextInput
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Configure participants, measurement timing, breathing-signal settings, and GPS evidence before
+                        prediction.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="Breathing pace trainer"
+                    message="Each participant completes rest, post-jog, and post-star-jumps breathing phases using consistent measurement settings."
+                    tone="info"
+                />
+
+                <AppSectionHeader
+                    title="Session"
+                    subtitle="Use a clear label so your team can identify this breathing run later."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Session label"
                         value={sessionLabel}
                         onChangeText={setSessionLabel}
                         placeholder="e.g. Week 7 – Breathing Pace Trainer"
-                        style={styles.input}
                     />
-                    <Text style={styles.note}>
-                        Use a clear label so your team can identify this breathing session later.
-                    </Text>
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Participants</Text>
+                <AppSectionHeader
+                    title="Participants"
+                    subtitle="Each participant must complete the required breathing phases."
+                />
 
-                    <Text style={styles.help}>
-                        Each participant must complete all three required breathing phases: rest,
-                        post-jog, and post-star-jumps.
-                    </Text>
-
-                    <Text style={styles.label}>Participant count (1–6)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Participant count (1–6)"
                         value={participantCountRaw}
                         onChangeText={(t) => setParticipantCountRaw(digitsOnly(t))}
                         keyboardType="number-pad"
                         placeholder="e.g. 3"
-                        style={styles.input}
                     />
-                    <Text style={styles.note}>
-                        Tip: you can also add/remove participants using the controls below.
-                    </Text>
 
                     <View style={styles.addRow}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Add participant (name)</Text>
-                            <TextInput
+                        <View style={styles.addInput}>
+                            <AppInput
+                                label="Add participant"
                                 value={newParticipantName}
                                 onChangeText={setNewParticipantName}
                                 placeholder="e.g. Ruixin"
-                                style={styles.input}
                             />
                         </View>
-                        <Pressable style={styles.smallBtn} onPress={onAddParticipant}>
-                            <Text style={styles.smallBtnText}>Add</Text>
-                        </Pressable>
+
+                        <AppButton
+                            title="Add"
+                            onPress={onAddParticipant}
+                            fullWidth={false}
+                            style={styles.addButton}
+                        />
                     </View>
 
                     {participants.length === 0 ? (
-                        <Text style={styles.muted}>No participants initialized.</Text>
+                        <InfoBanner
+                            title="No participants initialized"
+                            message="Add at least one participant before measuring breathing phases."
+                            tone="warning"
+                        />
                     ) : (
-                        <View style={{marginTop: 10}}>
+                        <View style={styles.participantList}>
                             {participants.map((p, idx) => (
                                 <View key={p.id} style={styles.participantCard}>
-                                    <Text style={styles.participantHeader}>Participant {idx + 1}</Text>
-
-                                    <TextInput
-                                        value={p.name}
-                                        onChangeText={(t) => onRenameParticipant(p.id, t)}
-                                        placeholder={`Participant ${idx + 1}`}
-                                        style={styles.input}
-                                    />
-
-                                    <View style={styles.participantFooter}>
-                                        <Text style={styles.participantMeta}>
-                                            Added • {new Date(p.createdAt).toLocaleString()}
-                                        </Text>
+                                    <View style={styles.participantHeader}>
+                                        <AppBadge label={`Participant ${idx + 1}`} tone="info"/>
 
                                         <Pressable
                                             onPress={() => onRemoveParticipant(p.id)}
-                                            style={styles.removeBtn}
+                                            style={styles.removeButton}
                                         >
-                                            <Text style={styles.removeBtnText}>Remove</Text>
+                                            <AppText variant="caption" color="danger">
+                                                Remove
+                                            </AppText>
                                         </Pressable>
                                     </View>
+
+                                    <AppInput
+                                        label="Name"
+                                        value={p.name}
+                                        onChangeText={(t) => onRenameParticipant(p.id, t)}
+                                        placeholder={`Participant ${idx + 1}`}
+                                    />
+
+                                    <AppText variant="caption" color="textMuted">
+                                        Added • {new Date(p.createdAt).toLocaleString()}
+                                    </AppText>
                                 </View>
                             ))}
                         </View>
                     )}
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Measurement Settings</Text>
-                    <Text style={styles.help}>
-                        Keep these values consistent across participants for fair breathing comparison.
-                    </Text>
+                <AppSectionHeader
+                    title="Measurement Settings"
+                    subtitle="Keep values consistent across participants for fair comparison."
+                />
 
-                    <Text style={styles.label}>Measurement duration (10–120 sec)</Text>
-                    <TextInput
+                <AppCard>
+                    <AppInput
+                        label="Measurement duration"
                         value={measurementDurationSecRaw}
                         onChangeText={(t) => setMeasurementDurationSecRaw(digitsOnly(t))}
                         keyboardType="number-pad"
-                        placeholder="e.g. 30"
-                        style={styles.input}
+                        placeholder="30"
                     />
 
-                    <Text style={styles.label}>Target sampling rate (1–500 Hz)</Text>
-                    <TextInput
-                        value={targetSamplingHzRaw}
-                        onChangeText={(t) => setTargetSamplingHzRaw(digitsAndSingleDot(t))}
-                        keyboardType="decimal-pad"
-                        placeholder="e.g. 25"
-                        style={styles.input}
-                    />
+                    <AppText variant="caption" color="textMuted">
+                        Recommended range: 10–120 seconds.
+                    </AppText>
 
-                    <Text style={styles.label}>Signal smoothing window (0.1–5 sec)</Text>
-                    <TextInput
-                        value={smoothingWindowSecRaw}
-                        onChangeText={(t) => setSmoothingWindowSecRaw(digitsAndSingleDot(t))}
-                        keyboardType="decimal-pad"
-                        placeholder="e.g. 0.6"
-                        style={styles.input}
-                    />
+                    <View style={styles.grid}>
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Sampling rate"
+                                value={targetSamplingHzRaw}
+                                onChangeText={(t) => setTargetSamplingHzRaw(digitsAndSingleDot(t))}
+                                keyboardType="decimal-pad"
+                                placeholder="25"
+                                containerStyle={styles.blockGap}
+                            />
 
-                    <Text style={styles.label}>Minimum gap between breathing peaks (500–10000 ms)</Text>
-                    <TextInput
+                            <AppText variant="caption" color="textMuted">
+                                1–500 Hz
+                            </AppText>
+                        </View>
+
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Smoothing window"
+                                value={smoothingWindowSecRaw}
+                                onChangeText={(t) => setSmoothingWindowSecRaw(digitsAndSingleDot(t))}
+                                keyboardType="decimal-pad"
+                                placeholder="0.6"
+                                containerStyle={styles.blockGap}
+                            />
+
+                            <AppText variant="caption" color="textMuted">
+                                0.1–5 sec
+                            </AppText>
+                        </View>
+                    </View>
+
+                    <AppInput
+                        label="Minimum gap between breathing peaks"
                         value={minPeakGapMsRaw}
                         onChangeText={(t) => setMinPeakGapMsRaw(digitsOnly(t))}
                         keyboardType="number-pad"
-                        placeholder="e.g. 1500"
-                        style={styles.input}
+                        placeholder="1500"
+                        containerStyle={styles.blockGap}
                     />
 
-                    <Text style={styles.note}>
-                        A longer measurement window and a realistic peak gap help reduce unstable
-                        cycle counting during breathing estimation.
-                    </Text>
-                </View>
+                    <AppText variant="caption" color="textMuted">
+                        Use a realistic peak gap to reduce unstable breathing-cycle counting.
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
-                    <Text style={styles.help}>
-                        You can run measurements without GPS, but submission will be blocked until GPS
-                        is granted and a coordinate is captured.
-                    </Text>
+                <AppSectionHeader
+                    title="GPS Evidence"
+                    subtitle="Required before final submission."
+                />
 
-                    <View style={[styles.row, {marginTop: 10}]}>
-                        <Text style={[styles.label, {marginTop: 0}]}>Enable GPS</Text>
+                <AppCard>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Enable GPS</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Submission will be blocked until GPS is granted and a coordinate is captured.
+                            </AppText>
+                        </View>
+
                         <Switch value={gpsEnabled} onValueChange={onToggleGps}/>
                     </View>
 
-                    <View style={styles.geoRow}>
-                        <Text style={styles.geoText}>{formatGeoText(draft.session.geo)}</Text>
-                        <Pressable
-                            style={[styles.smallBtn, capturingGps && styles.smallBtnDisabled]}
-                            onPress={onCaptureGps}
-                            disabled={capturingGps}
-                        >
-                            <Text style={styles.smallBtnText}>
-                                {capturingGps ? "Capturing…" : "Capture"}
-                            </Text>
-                        </Pressable>
+                    <StatusRow
+                        label="Permission"
+                        value={
+                            gpsPermission === 'unknown'
+                                ? 'Not requested'
+                                : gpsPermission === 'granted'
+                                    ? 'Granted'
+                                    : 'Denied'
+                        }
+                        good={gpsPermission === 'granted'}
+                    />
+
+                    <StatusRow
+                        label="Coordinate"
+                        value={geoCaptured ? 'Captured' : gpsEnabled ? 'Not captured' : 'GPS off'}
+                        good={geoCaptured}
+                    />
+
+                    <View style={styles.coordinateBox}>
+                        <AppText variant="caption" color="textMuted">
+                            Saved coordinate
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.coordinateText}>
+                            {formatGeoText(draft.session.geo)}
+                        </AppText>
                     </View>
 
-                    <Text style={styles.note}>
-                        Status: {gpsPermission.toUpperCase()} • Saved: {geoCaptured ? "YES" : "NO"}
-                    </Text>
-                </View>
+                    <AppButton
+                        title={capturingGps ? 'Capturing...' : 'Capture GPS Coordinate'}
+                        onPress={onCaptureGps}
+                        disabled={capturingGps || !gpsEnabled}
+                        variant="outline"
+                        style={styles.blockGap}
+                    />
 
-                <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
-                </Pressable>
+                    {capturingGps ? (
+                        <View style={styles.loadingInline}>
+                            <ActivityIndicator color={colors.primary}/>
+                            <AppText variant="caption" color="textMuted">
+                                Waiting for location response...
+                            </AppText>
+                        </View>
+                    ) : null}
+                </AppCard>
 
-                {sessionError ? <Text style={styles.errorText}>⚠️ {sessionError}</Text> : null}
+                {sessionError ? (
+                    <InfoBanner title="Fix before continuing" message={sessionError} tone="danger"/>
+                ) : null}
 
-                <View style={{height: 40}}/>
-            </ScrollView>
+                <AppButton title="Continue to Prediction" onPress={onContinue}/>
+
+                <View style={styles.bottomSpace}/>
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type StatusRowProps = {
+    label: string;
+    value: string;
+    good?: boolean;
+};
+
+function StatusRow({label, value, good = false}: StatusRowProps) {
+    return (
+        <View style={styles.statusRow}>
+            <AppText variant="bodyStrong">{label}</AppText>
+
+            <View
+                style={[
+                    styles.statusPill,
+                    good ? styles.statusPillGood : styles.statusPillBad,
+                ]}
+            >
+                <AppText variant="caption" color={good ? 'success' : 'danger'}>
+                    {value} {good ? '✓' : '!'}
+                </AppText>
+            </View>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20, backgroundColor: "#fff"},
-    center: {flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff"},
-
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    keyboard: {
+        flex: 1,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900", marginBottom: 8},
-    help: {opacity: 0.75, lineHeight: 18},
-    muted: {marginTop: 8, opacity: 0.6},
 
-    label: {marginTop: 10, fontWeight: "800"},
-    input: {
-        marginTop: 6,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
-        borderRadius: 10,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        fontSize: 14,
+    header: {
+        marginBottom: spacing.lg,
     },
-    note: {marginTop: 10, opacity: 0.7, lineHeight: 18},
 
-    row: {flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
-
-    addRow: {flexDirection: "row", alignItems: "flex-end", gap: 10, marginTop: 10},
-
-    smallBtn: {
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "#fff",
-        minWidth: 80,
-        alignItems: "center",
-        justifyContent: "center",
+    title: {
+        marginTop: spacing.md,
     },
-    smallBtnDisabled: {opacity: 0.6},
-    smallBtnText: {fontWeight: "800"},
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    grid: {
+        flexDirection: 'row',
+        gap: spacing.md,
+    },
+
+    gridCol: {
+        flex: 1,
+    },
+
+    addRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: spacing.md,
+    },
+
+    addInput: {
+        flex: 1,
+    },
+
+    addButton: {
+        minWidth: 86,
+        marginBottom: spacing.md,
+    },
+
+    participantList: {
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
 
     participantCard: {
-        marginTop: 10,
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fff",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
     },
-    participantHeader: {fontWeight: "900"},
-    participantFooter: {
-        marginTop: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-    },
-    participantMeta: {opacity: 0.7, fontSize: 12},
 
-    removeBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 10,
-        backgroundColor: "#fff",
-        borderWidth: 1,
-        borderColor: "#f3c2c2",
+    participantHeader: {
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    removeBtnText: {fontWeight: "900"},
 
-    geoRow: {marginTop: 10, flexDirection: "row", alignItems: "center", gap: 10},
-    geoText: {flex: 1, opacity: 0.8},
-
-    primaryBtn: {
-        marginTop: 18,
-        backgroundColor: "#111",
-        borderRadius: 14,
-        paddingVertical: 14,
-        alignItems: "center",
+    removeButton: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
     },
-    primaryBtnText: {color: "#fff", fontWeight: "900"},
-    errorText: {marginTop: 12, color: "#b00020", fontWeight: "800"},
+
+    settingRow: {
+        marginTop: spacing.sm,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    settingText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    blockGap: {
+        marginTop: spacing.lg,
+    },
+
+    statusRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    statusPill: {
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+    },
+
+    statusPillGood: {
+        backgroundColor: colors.successSoft,
+    },
+
+    statusPillBad: {
+        backgroundColor: colors.dangerSoft,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    coordinateText: {
+        marginTop: spacing.xs,
+    },
+
+    loadingInline: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

@@ -1,87 +1,235 @@
-// src/screens/Activities/Activity3/A3OverviewScreen.tsx
-import React from "react";
-import {Pressable, ScrollView, StyleSheet, Text, View} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
-import type {AppStackParamList} from "../../../navigation/AppStack";
+import React from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A3Overview">;
+import type {AppStackParamList} from '../../../navigation/AppStack';
+
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppExpandableCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppText,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A3Overview'>;
+
 
 export default function A3OverviewScreen({route, navigation}: Props) {
     const {activityId} = route.params;
 
+    function onBack() {
+        navigation.goBack();
+    }
+
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Hand Fan Challenge</Text>
-            <Text style={styles.sub}>Physics – Air Movement & Material Response</Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 3" tone="primary"/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Objective</Text>
-                <Text style={styles.text}>
+                <AppText variant="title" style={styles.title}>
+                    Hand Fan Challenge
+                </AppText>
+
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Physics – Air Movement & Material Response
+                </AppText>
+            </View>
+
+            <AppCard>
+                <AppText variant="sectionTitle">Ready to begin?</AppText>
+
+                <AppText variant="caption" color="textMuted" style={styles.cardText}>
+                    Test different fan designs and compare how materials respond to airflow.
+                </AppText>
+
+                <AppButton
+                    title="Start Activity"
+                    onPress={() => navigation.navigate('A3SessionSetup', {activityId})}
+                    style={styles.startButton}
+                />
+                <AppButton
+                    title="Back"
+                    onPress={() =>
+                        Alert.alert('Back', 'Return to the previous screen?', [
+                            {text: 'Cancel', style: 'cancel'},
+                            {text: 'OK', onPress: onBack},
+                        ])
+                    }
+                    variant="ghost"
+                    style={styles.backButton}
+                />
+            </AppCard>
+
+            <AppSectionHeader
+                title="Activity Guide"
+                subtitle="Review the objective, equipment, rules, and safety notes."
+            />
+
+            <AppExpandableCard title="Objective" defaultExpanded>
+                <AppText variant="body" color="textMuted">
                     Compare different fan designs and measure how much flexible materials bend under airflow.
-                </Text>
+                </AppText>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Equipment">
+                <Bullet text="Paper or cardboard"/>
+                <Bullet text="Ruler or protractor"/>
+                <Bullet text="Mobile phone with STEMM Lab app"/>
+                <Bullet text="Sticky tape"/>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Distance Rule">
+                <AppText variant="body" color="textMuted">
+                    Maintain stable test distances during the experiment.
+                </AppText>
+
+                <View style={styles.distanceRow}>
+                    <DistanceChip label="15 cm"/>
+                    <DistanceChip label="30 cm"/>
+                    <DistanceChip label="45 cm"/>
+                </View>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="What To Record">
+                <StepItem index={1} text="Bend angle in degrees"/>
+                <StepItem index={2} text="Material type"/>
+                <StepItem index={3} text="Distance used"/>
+            </AppExpandableCard>
+
+            <AppExpandableCard title="Safety Note">
+                <AppText variant="body" color="textMuted">
+                    Keep the setup stable. Do not hit others and make sure the surrounding area is safe before testing.
+                </AppText>
+            </AppExpandableCard>
+
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
+    );
+}
+
+function Bullet({text}: { text: string }) {
+    return (
+        <View style={styles.bulletRow}>
+            <View style={styles.bulletDot}/>
+            <AppText variant="bodyStrong" style={styles.bulletText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
+
+function StepItem({index, text}: { index: number; text: string }) {
+    return (
+        <View style={styles.stepRow}>
+            <View style={styles.stepNumber}>
+                <AppText variant="caption" color="inverseText">
+                    {index}
+                </AppText>
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Equipment</Text>
-                <Text style={styles.text}>• Paper / Cardboard</Text>
-                <Text style={styles.text}>• Ruler / Protractor</Text>
-                <Text style={styles.text}>• Mobile phone (STEMM Lab)</Text>
-                <Text style={styles.text}>• Sticky tape</Text>
-            </View>
+            <AppText variant="bodyStrong" style={styles.stepText}>
+                {text}
+            </AppText>
+        </View>
+    );
+}
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Distance Rule</Text>
-                <Text style={styles.text}>Maintain stable test distances:</Text>
-                <Text style={styles.bold}>15 cm · 30 cm · 45 cm</Text>
-            </View>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>What To Record</Text>
-                <Text style={styles.text}>• Bend angle (degrees)</Text>
-                <Text style={styles.text}>• Material type</Text>
-                <Text style={styles.text}>• Distance used</Text>
-            </View>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Safety Note</Text>
-                <Text style={styles.text}>
-                    Keep stable. Do not hit others. Ensure safe surroundings.
-                </Text>
-            </View>
-
-            <Pressable
-                style={styles.primaryBtn}
-                onPress={() => navigation.navigate("A3SessionSetup", {activityId})}
-            >
-                <Text style={styles.primaryBtnText}>Start Activity</Text>
-            </Pressable>
-
-            <View style={{height: 30}}/>
-        </ScrollView>
+function DistanceChip({label}: { label: string }) {
+    return (
+        <View style={styles.distanceChip}>
+            <AppText variant="bodyStrong" color="primary">
+                {label}
+            </AppText>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 6, opacity: 0.7},
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    header: {
+        marginBottom: spacing.lg,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-    text: {marginTop: 6, lineHeight: 18},
-    bold: {marginTop: 6, fontWeight: "900"},
-    primaryBtn: {
-        marginTop: 20,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+
+    title: {
+        marginTop: spacing.md,
     },
-    primaryBtnText: {color: "white", fontWeight: "900"},
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    cardText: {
+        marginTop: spacing.sm,
+    },
+
+    startButton: {
+        marginTop: spacing.lg,
+    },
+
+    bulletRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
+
+    bulletDot: {
+        width: 8,
+        height: 8,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        marginTop: 7,
+    },
+
+    bulletText: {
+        flex: 1,
+    },
+
+    stepRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
+
+    stepNumber: {
+        width: 26,
+        height: 26,
+        borderRadius: radius.pill,
+        backgroundColor: colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    stepText: {
+        flex: 1,
+        paddingTop: 2,
+    },
+
+    distanceRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+        marginTop: spacing.md,
+    },
+
+    distanceChip: {
+        borderRadius: radius.pill,
+        backgroundColor: colors.primarySoft,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
+
+    backButton: {
+        marginTop: spacing.sm,
+    },
+
 });

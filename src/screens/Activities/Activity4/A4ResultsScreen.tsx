@@ -1,35 +1,49 @@
 // src/screens/Activities/Activity4/A4ResultsScreen.tsx
 
-import React, {useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
-
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getActivity4RunDraft,
     type Activity4RunDraft,
-} from "../../../store/activity4RunDraftStore";
+} from '../../../store/activity4RunDraftStore';
 
-import ActivityBarChart from "../../../components/charts/ActivityBarChart";
-import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
-import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
+import ActivityBarChart from '../../../components/charts/ActivityBarChart';
+import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
+import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
     buildA4Visualization,
     type A4VisualizationTrial,
-} from "../../../services/resultInsights/activity4VisualizationService";
-import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
+} from '../../../services/resultInsights/activity4VisualizationService';
+import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A4Results">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A4Results'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
 
 type MeasuredRow = {
     designIndex: number;
@@ -43,7 +57,12 @@ function rankLabel(rank: number): string {
 }
 
 function hasValidScore(row: MeasuredRow): row is MeasuredRow & { score: number } {
-    return row.hasScore && typeof row.score === "number" && Number.isFinite(row.score);
+    return row.hasScore && typeof row.score === 'number' && Number.isFinite(row.score);
+}
+
+function formatScore(value: number | null | undefined): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+    return value.toFixed(2);
 }
 
 export default function A4ResultsScreen({
@@ -55,27 +74,37 @@ export default function A4ResultsScreen({
 
     const [draft, setDraft] = useState<Activity4RunDraft | null>(null);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({visible: true, title, message, tone});
+    }
+
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity4RunDraft(runId);
 
         if (!d) {
-            Alert.alert("Session expired", "Please restart Activity 4.", [
+            Alert.alert('Session expired', 'Please restart Activity 4.', [
                 {
-                    text: "OK",
-                    onPress: () => navigation.replace("A4SessionSetup", {activityId}),
+                    text: 'OK',
+                    onPress: () => navigation.replace('A4SessionSetup', {activityId}),
                 },
             ]);
             return;
         }
 
-        if (typeof d.prediction?.predictedBestDesignIndex !== "number") {
-            Alert.alert("Prediction required", "Please complete prediction first.", [
+        if (typeof d.prediction?.predictedBestDesignIndex !== 'number') {
+            Alert.alert('Prediction required', 'Please complete prediction first.', [
                 {
-                    text: "Go to Prediction",
-                    onPress: () =>
-                        navigation.replace("A4Prediction", {activityId, runId}),
+                    text: 'Go to Prediction',
+                    onPress: () => navigation.replace('A4Prediction', {activityId, runId}),
                 },
             ]);
             return;
@@ -89,11 +118,11 @@ export default function A4ResultsScreen({
 
         const rows: MeasuredRow[] = draft.session.designs.map((design, index) => {
             const measurement = draft.measurements.find(
-                item => item.designIndex === index,
+                (item) => item.designIndex === index,
             );
 
             const score =
-                typeof measurement?.movementScore === "number" &&
+                typeof measurement?.movementScore === 'number' &&
                 Number.isFinite(measurement.movementScore)
                     ? measurement.movementScore
                     : null;
@@ -102,31 +131,29 @@ export default function A4ResultsScreen({
                 designIndex: index,
                 name: design.name ?? `Design ${index + 1}`,
                 score,
-                hasScore: typeof score === "number",
+                hasScore: typeof score === 'number',
             };
         });
 
         rows.sort((a, b) => {
-            if (a.score == null && b.score == null) {
-                return a.designIndex - b.designIndex;
-            }
-
+            if (a.score == null && b.score == null) return a.designIndex - b.designIndex;
             if (a.score == null) return 1;
             if (b.score == null) return -1;
-
             return a.score - b.score;
         });
 
         return rows;
     }, [draft]);
 
-    const measuredCount = useMemo(() => {
-        return measuredRows.filter(row => row.hasScore).length;
-    }, [measuredRows]);
+    const measuredCount = useMemo(
+        () => measuredRows.filter((row) => row.hasScore).length,
+        [measuredRows],
+    );
 
-    const best = useMemo(() => {
-        return measuredRows.find(row => row.hasScore) ?? null;
-    }, [measuredRows]);
+    const best = useMemo(
+        () => measuredRows.find((row) => row.hasScore) ?? null,
+        [measuredRows],
+    );
 
     const averageMovementScore = useMemo(() => {
         const scoredRows = measuredRows.filter(hasValidScore);
@@ -140,7 +167,7 @@ export default function A4ResultsScreen({
     const visualization = useMemo(() => {
         const trials: A4VisualizationTrial[] = measuredRows
             .filter(hasValidScore)
-            .map(row => ({
+            .map((row) => ({
                 label: row.name,
                 movementScore: row.score,
             }));
@@ -152,20 +179,17 @@ export default function A4ResultsScreen({
         if (!draft) return null;
 
         const predicted = draft.prediction?.predictedBestDesignIndex;
-        const predictedIndex = typeof predicted === "number" ? predicted : null;
+        const predictedIndex = typeof predicted === 'number' ? predicted : null;
 
         const predictedName =
             predictedIndex != null
-                ? draft.session.designs[predictedIndex]?.name ??
-                `Design ${predictedIndex + 1}`
-                : "—";
+                ? draft.session.designs[predictedIndex]?.name ?? `Design ${predictedIndex + 1}`
+                : '—';
 
         const bestIndex = best?.designIndex ?? null;
 
         const correct =
-            predictedIndex != null && bestIndex != null
-                ? predictedIndex === bestIndex
-                : null;
+            predictedIndex != null && bestIndex != null ? predictedIndex === bestIndex : null;
 
         return {
             predictedIndex,
@@ -176,8 +200,8 @@ export default function A4ResultsScreen({
     }, [best, draft]);
 
     const performanceFeedback = useMemo(() => {
-        return generatePerformanceFeedback("activity4", {
-            trials: measuredRows.filter(hasValidScore).map(row => ({
+        return generatePerformanceFeedback('activity4', {
+            trials: measuredRows.filter(hasValidScore).map((row) => ({
                 label: row.name,
                 movementScore: row.score,
             })),
@@ -189,65 +213,110 @@ export default function A4ResultsScreen({
     }, [averageMovementScore, best?.name, measuredRows, predictionInfo]);
 
     function onBackToMeasurements() {
-        navigation.navigate("A4Measurements", {activityId, runId});
+        navigation.navigate('A4Measurements', {activityId, runId});
     }
 
     function onContinueToComparison() {
         if (!draft) return;
 
         if (draft.session.designCount < 3) {
-            Alert.alert("Setup issue", "Activity 4 requires at least 3 designs.");
+            Alert.alert('Setup issue', 'Activity 4 requires at least 3 designs.');
             return;
         }
 
         if (measuredCount < draft.session.designCount) {
             Alert.alert(
-                "Not complete",
+                'Not complete',
                 `You tested ${measuredCount}/${draft.session.designCount} designs.\nPlease test all designs before submitting.`,
             );
             return;
         }
 
-        navigation.navigate("A4Comparison", {activityId, runId});
+        showToast(
+            'Results ready',
+            'success',
+            'Opening comparison dashboard.',
+        );
+
+        setTimeout(() => {
+            navigation.navigate('A4Comparison', {activityId, runId});
+        }, 700);
     }
 
     if (!user) return null;
 
     if (!draft || !predictionInfo) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={styles.loadingText}>Loading results…</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading results dashboard..."/>
+            </AppGradientScreen>
         );
     }
 
+    const ready = measuredCount >= draft.session.designCount;
+
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Results Dashboard</Text>
-            <Text style={styles.sub}>
-                Lower movement score means the structure absorbed vibration better.
-            </Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 4" tone="primary"/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Overall Summary</Text>
+                <AppText variant="title" style={styles.title}>
+                    Results Dashboard
+                </AppText>
 
-                <View style={styles.rowBetween}>
-                    <Text>Tested designs</Text>
-                    <Text style={styles.bold}>
-                        {measuredCount}/{draft.session.designCount}
-                    </Text>
-                </View>
-
-                <View style={styles.rowBetween}>
-                    <Text>Average movement score</Text>
-                    <Text style={styles.bold}>
-                        {averageMovementScore != null
-                            ? averageMovementScore.toFixed(2)
-                            : "—"}
-                    </Text>
-                </View>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Lower movement score means the structure absorbed vibration better.
+                </AppText>
             </View>
+
+            <View style={styles.heroCard}>
+                <View style={styles.heroTop}>
+                    <AppText variant="bodyStrong" color="inverseText">
+                        Most Stable Design
+                    </AppText>
+
+                    <AppBadge
+                        label={ready ? 'Ready' : 'Needs data'}
+                        tone={ready ? 'success' : 'warning'}
+                    />
+                </View>
+
+                <AppText variant="title" color="inverseText" style={styles.heroScore}>
+                    {best && hasValidScore(best) ? best.name : '—'}
+                </AppText>
+
+                <AppText variant="subtitle" color="inverseText" style={styles.heroMeta}>
+                    {best && hasValidScore(best)
+                        ? `${best.score.toFixed(2)} movement score`
+                        : 'No measured designs yet'}
+                </AppText>
+
+                <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                    The most stable design has the lowest movement score.
+                </AppText>
+            </View>
+
+            <AppSectionHeader
+                title="Overall Summary"
+                subtitle="Validated structure test results."
+            />
+
+            <AppCard>
+                <MetricRow
+                    label="Tested designs"
+                    value={`${measuredCount} / ${draft.session.designCount}`}
+                />
+
+                <MetricRow
+                    label="Average movement score"
+                    value={averageMovementScore != null ? averageMovementScore.toFixed(2) : '—'}
+                />
+
+                <MetricRow
+                    label="Best movement score"
+                    value={best && hasValidScore(best) ? best.score.toFixed(2) : '—'}
+                />
+            </AppCard>
 
             <ActivityBarChart
                 title="Structural Stability Chart"
@@ -260,313 +329,265 @@ export default function A4ResultsScreen({
 
             <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
-            <View style={[styles.card, styles.highlightCard]}>
-                <Text style={styles.cardTitle}>Most Stable Design</Text>
+            <AppSectionHeader
+                title="Prediction Evaluation"
+                subtitle="Compare your predicted most stable design with the measured result."
+            />
 
-                {best && hasValidScore(best) ? (
-                    <>
-                        <Text style={styles.bigText}>{best.name}</Text>
-                        <Text style={styles.bigScore}>{best.score.toFixed(2)}</Text>
-                        <Text style={styles.note}>
-                            This is the lowest movement score, so it represents the
-                            strongest earthquake-resistant performance.
-                        </Text>
-                    </>
-                ) : (
-                    <Text style={styles.muted}>
-                        No measured designs yet. Go back and run tests.
-                    </Text>
-                )}
-            </View>
+            <AppCard>
+                <MetricRow label="Your prediction" value={predictionInfo.predictedName}/>
+                <MetricRow label="Most stable design" value={best?.name ?? '—'}/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Prediction Evaluation</Text>
+                <View style={styles.predictionBox}>
+                    <View style={styles.predictionText}>
+                        <AppText variant="bodyStrong">Prediction result</AppText>
 
-                <View style={styles.infoBlock}>
-                    <Row label="Your prediction" value={predictionInfo.predictedName}/>
-                    <Row label="Most stable design" value={best?.name ?? "—"}/>
-                    <Row
-                        label="Prediction result"
-                        value={
+                        <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                            This checks whether your predicted best design matched the lowest
+                            movement score.
+                        </AppText>
+                    </View>
+
+                    <AppBadge
+                        label={
                             predictionInfo.correct == null
-                                ? "—"
+                                ? 'Not available'
                                 : predictionInfo.correct
-                                    ? "Correct"
-                                    : "Not correct"
+                                    ? 'Correct'
+                                    : 'Different'
+                        }
+                        tone={
+                            predictionInfo.correct == null
+                                ? 'warning'
+                                : predictionInfo.correct
+                                    ? 'success'
+                                    : 'info'
                         }
                     />
                 </View>
-            </View>
+            </AppCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Design Ranking</Text>
-                <Text style={styles.help}>
-                    Sorted by movement score. Lower score means better stability.
-                </Text>
+            <AppSectionHeader
+                title="Design Ranking"
+                subtitle="Sorted by movement score. Lower score means better stability."
+            />
 
-                <View style={styles.rankList}>
-                    {measuredRows.map((row, index) => (
-                        <View key={row.designIndex} style={styles.rankRow}>
-                            <Text style={styles.rank}>{rankLabel(index + 1)}</Text>
-
-                            <View style={styles.rankContent}>
-                                <Text style={styles.rankName} numberOfLines={1}>
-                                    {row.name}
-                                </Text>
-                                <Text style={styles.rankMeta}>
-                                    {hasValidScore(row)
-                                        ? `Movement score: ${row.score.toFixed(2)}`
-                                        : "Not tested yet"}
-                                </Text>
+            <View style={styles.rankList}>
+                {measuredRows.map((row, index) => (
+                    <AppCard key={row.designIndex}>
+                        <View style={styles.rankRow}>
+                            <View style={styles.rankBadge}>
+                                <AppText variant="caption" color="inverseText">
+                                    {rankLabel(index + 1)}
+                                </AppText>
                             </View>
 
-                            {row.hasScore ? (
-                                <View style={styles.pillOk}>
-                                    <Text style={styles.pillText}>Done</Text>
-                                </View>
-                            ) : (
-                                <View style={styles.pillNo}>
-                                    <Text style={styles.pillText}>Missing</Text>
-                                </View>
-                            )}
-                        </View>
-                    ))}
-                </View>
+                            <View style={styles.rankContent}>
+                                <AppText variant="bodyStrong" numberOfLines={1}>
+                                    {row.name}
+                                </AppText>
 
-                {measuredCount < draft.session.designCount ? (
-                    <Text style={styles.warn}>
-                        You still need to test{" "}
-                        {draft.session.designCount - measuredCount} design(s).
-                    </Text>
-                ) : null}
+                                <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                    {hasValidScore(row)
+                                        ? `Movement score: ${row.score.toFixed(2)}`
+                                        : 'Not tested yet'}
+                                </AppText>
+                            </View>
+
+                            <AppBadge
+                                label={row.hasScore ? 'Done' : 'Missing'}
+                                tone={row.hasScore ? 'success' : 'warning'}
+                            />
+                        </View>
+                    </AppCard>
+                ))}
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Submission Readiness</Text>
+            <AppSectionHeader
+                title="Submission Readiness"
+                subtitle="Final check before comparison and reflection."
+            />
 
-                {measuredCount >= draft.session.designCount ? (
-                    <Text style={styles.readyText}>Ready to continue</Text>
+            <AppCard>
+                {ready ? (
+                    <InfoBanner
+                        title="Ready to continue"
+                        message="All structure designs have been tested."
+                        tone="success"
+                    />
                 ) : (
-                    <Text style={styles.warn}>
-                        Complete all structure tests before comparison.
-                    </Text>
+                    <InfoBanner
+                        title="More testing needed"
+                        message={`You still need to test ${
+                            draft.session.designCount - measuredCount
+                        } design(s).`}
+                        tone="warning"
+                    />
                 )}
 
-                <Text style={styles.note}>
-                    Note: GPS and video evidence may be enforced during final
-                    submission.
-                </Text>
-            </View>
+                <AppText variant="caption" color="textMuted" style={styles.note}>
+                    Note: GPS and video evidence may be enforced during final submission.
+                </AppText>
+            </AppCard>
 
             <View style={styles.actions}>
-                <Pressable style={styles.secondaryBtn} onPress={onBackToMeasurements}>
-                    <Text style={styles.secondaryBtnText}>Back to Measurements</Text>
-                </Pressable>
+                <AppButton
+                    title="Back to Measurements"
+                    variant="outline"
+                    onPress={onBackToMeasurements}
+                />
 
-                <Pressable style={styles.primaryBtn} onPress={onContinueToComparison}>
-                    <Text style={styles.primaryBtnText}>Continue to Comparison</Text>
-                </Pressable>
+                <AppButton
+                    title="Continue to Comparison"
+                    onPress={onContinueToComparison}
+                />
             </View>
 
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+
             <View style={styles.bottomSpace}/>
-        </ScrollView>
+        </AppGradientScreen>
     );
 }
 
-function Row({label, value}: { label: string; value: string }): React.JSX.Element {
+type MetricRowProps = {
+    label: string;
+    value: string;
+};
+
+function MetricRow({label, value}: MetricRowProps): React.JSX.Element {
     return (
-        <View style={styles.rowBetween}>
-            <Text style={styles.rowLabel}>{label}</Text>
-            <Text style={styles.rowValue}>{value}</Text>
+        <View style={styles.metricRow}>
+            <AppText variant="bodyStrong" style={styles.metricLabel}>
+                {label}
+            </AppText>
+
+            <AppText variant="bodyStrong" align="right" style={styles.metricValue}>
+                {value}
+            </AppText>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#FFFFFF",
+    header: {
+        marginBottom: spacing.lg,
     },
-    center: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    loadingText: {
-        marginTop: 10,
-        opacity: 0.7,
-        color: "#344054",
-    },
+
     title: {
-        fontSize: 26,
-        fontWeight: "900",
-        marginTop: 6,
-        color: "#172033",
+        marginTop: spacing.md,
     },
-    sub: {
-        marginTop: 8,
-        opacity: 0.75,
-        lineHeight: 18,
-        color: "#344054",
+
+    subtitle: {
+        marginTop: spacing.sm,
     },
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FAFAFA",
-        borderRadius: 14,
-        padding: 14,
+
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
     },
-    highlightCard: {
-        borderColor: "#111827",
+
+    heroTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: "900",
-        color: "#172033",
+
+    heroScore: {
+        marginTop: spacing.md,
     },
-    rowBetween: {
-        marginTop: 8,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        gap: 12,
-    },
-    rowLabel: {
-        fontWeight: "900",
+
+    heroMeta: {
+        marginTop: spacing.xs,
         opacity: 0.9,
-        color: "#172033",
     },
-    rowValue: {
-        opacity: 0.85,
-        flexShrink: 1,
-        textAlign: "right",
-        color: "#344054",
+
+    heroHint: {
+        marginTop: spacing.md,
+        opacity: 0.75,
     },
-    bold: {
-        fontWeight: "900",
-        color: "#172033",
+
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
     },
-    bigText: {
-        marginTop: 10,
-        fontSize: 20,
-        fontWeight: "900",
-        color: "#172033",
+
+    metricLabel: {
+        flex: 1,
     },
-    bigScore: {
-        marginTop: 8,
-        fontSize: 30,
-        fontWeight: "900",
-        color: "#172033",
+
+    metricValue: {
+        flex: 1,
     },
-    note: {
-        marginTop: 8,
-        opacity: 0.7,
-        lineHeight: 18,
-        color: "#344054",
+
+    predictionBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    muted: {
-        marginTop: 8,
-        opacity: 0.65,
-        color: "#344054",
+
+    predictionText: {
+        flex: 1,
     },
-    infoBlock: {
-        marginTop: 10,
+
+    smallGap: {
+        marginTop: spacing.xs,
     },
-    help: {
-        marginTop: 6,
-        opacity: 0.7,
-        lineHeight: 18,
-        color: "#344054",
-    },
+
     rankList: {
-        marginTop: 12,
-        gap: 10,
+        gap: spacing.md,
     },
+
     rankRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FFFFFF",
-        borderRadius: 12,
-        padding: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
     },
-    rank: {
-        width: 40,
-        fontSize: 16,
-        fontWeight: "900",
-        color: "#172033",
+
+    rankBadge: {
+        width: 42,
+        height: 34,
+        borderRadius: radius.md,
+        backgroundColor: colors.primaryDark,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
+
     rankContent: {
         flex: 1,
     },
-    rankName: {
-        fontSize: 15,
-        fontWeight: "900",
-        color: "#172033",
+
+    note: {
+        marginTop: spacing.md,
     },
-    rankMeta: {
-        marginTop: 4,
-        opacity: 0.75,
-        color: "#344054",
-    },
-    pillOk: {
-        borderRadius: 999,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        backgroundColor: "#111827",
-    },
-    pillNo: {
-        borderRadius: 999,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        backgroundColor: "#777777",
-    },
-    pillText: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-    },
-    warn: {
-        marginTop: 12,
-        fontWeight: "900",
-        opacity: 0.85,
-        color: "#92400E",
-    },
-    readyText: {
-        marginTop: 8,
-        fontWeight: "900",
-        color: "#172033",
-    },
+
     actions: {
-        marginTop: 14,
-        gap: 10,
+        marginTop: spacing.lg,
+        gap: spacing.md,
     },
-    primaryBtn: {
-        backgroundColor: "#111827",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-        fontSize: 16,
-    },
-    secondaryBtn: {
-        backgroundColor: "#FFFFFF",
-        borderWidth: 1,
-        borderColor: "#111827",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    secondaryBtnText: {
-        fontWeight: "900",
-        color: "#111827",
-    },
+
     bottomSpace: {
-        height: 40,
+        height: spacing.xxl,
     },
 });

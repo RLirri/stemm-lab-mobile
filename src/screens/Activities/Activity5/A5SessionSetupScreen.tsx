@@ -1,21 +1,18 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 
 import {
     createActivity5RunDraft,
@@ -28,12 +25,27 @@ import {
     validateA5Session,
     type Activity5RunDraft,
     type A5ParticipantDraft,
-} from "../../../store/activity5RunDraftStore";
-import {confirmBatteryBeforeActivity} from "../../../services/battery";
+} from '../../../store/activity5RunDraftStore';
 
-/* =========================================================
-   Helpers
-========================================================= */
+import {confirmBatteryBeforeActivity} from '../../../services/battery';
+
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A5SessionSetup'>;
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
 
 function clampInt(n: number, min: number, max: number) {
     if (!Number.isFinite(n)) return min;
@@ -41,42 +53,54 @@ function clampInt(n: number, min: number, max: number) {
 }
 
 function digitsOnly(s: string) {
-    return s.replace(/[^\d]/g, "");
+    return s.replace(/[^\d]/g, '');
 }
 
 function isFiniteNumber(x: unknown): x is number {
-    return typeof x === "number" && Number.isFinite(x);
+    return typeof x === 'number' && Number.isFinite(x);
 }
 
 function trimOrEmpty(s: string) {
     return s.trim();
 }
 
-function formatGeoText(geo: Activity5RunDraft["session"]["geo"] | undefined): string {
-    if (!geo) return "No coordinate saved yet";
-    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) return "No coordinate saved yet";
+function formatGeoText(geo: Activity5RunDraft['session']['geo'] | undefined): string {
+    if (!geo) return 'No coordinate saved yet';
+    if (!isFiniteNumber(geo.lat) || !isFiniteNumber(geo.lng)) {
+        return 'No coordinate saved yet';
+    }
 
-    const accText = isFiniteNumber(geo.accuracyM) ? ` (±${Math.round(geo.accuracyM)}m)` : "";
+    const accText = isFiniteNumber(geo.accuracyM)
+        ? ` (±${Math.round(geo.accuracyM)}m)`
+        : '';
+
     const timeText = isFiniteNumber(geo.capturedAt)
         ? ` • ${new Date(geo.capturedAt).toLocaleString()}`
-        : "";
+        : '';
 
     return `${geo.lat.toFixed(5)}, ${geo.lng.toFixed(5)}${accText}${timeText}`;
 }
 
-async function requestGpsPermissionSafe(): Promise<"granted" | "denied"> {
+async function requestGpsPermissionSafe(): Promise<'granted' | 'denied'> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
         const res = await Location.requestForegroundPermissionsAsync();
-        return res.status === "granted" ? "granted" : "denied";
+        return res.status === 'granted' ? 'granted' : 'denied';
     } catch {
-        return "denied";
+        return 'denied';
     }
 }
 
-async function getCurrentGeoSafe(): Promise<{ lat: number; lng: number; accuracyM?: number } | null> {
+async function getCurrentGeoSafe(): Promise<
+    | {
+    lat: number;
+    lng: number;
+    accuracyM?: number;
+}
+    | null
+> {
     try {
-        const Location = await import("expo-location");
+        const Location = await import('expo-location');
 
         const servicesEnabled = await Location.hasServicesEnabledAsync();
         if (!servicesEnabled) return null;
@@ -91,23 +115,14 @@ async function getCurrentGeoSafe(): Promise<{ lat: number; lng: number; accuracy
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
         const acc = pos?.coords?.accuracy ?? undefined;
-        const accuracyM = typeof acc === "number" && Number.isFinite(acc) ? acc : undefined;
+        const accuracyM =
+            typeof acc === 'number' && Number.isFinite(acc) ? acc : undefined;
 
         return {lat, lng, accuracyM};
     } catch {
         return null;
     }
 }
-
-/* =========================================================
-   Types
-========================================================= */
-
-type Props = NativeStackScreenProps<AppStackParamList, "A5SessionSetup">;
-
-/* =========================================================
-   Screen
-========================================================= */
 
 export default function A5SessionSetupScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -119,20 +134,51 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
     const hasBootstrappedRef = useRef(false);
 
-    // UI buffers
-    const [sessionLabel, setSessionLabel] = useState("");
-    const [samplingHzRaw, setSamplingHzRaw] = useState("50");
-    const [movementDurationSecRaw, setMovementDurationSecRaw] = useState("20");
-    const [participantCountRaw, setParticipantCountRaw] = useState("1");
+    const [sessionLabel, setSessionLabel] = useState('');
+    const [samplingHzRaw, setSamplingHzRaw] = useState('50');
+    const [movementDurationSecRaw, setMovementDurationSecRaw] = useState('20');
+    const [participantCountRaw, setParticipantCountRaw] = useState('1');
     const [feedbackEnabled, setFeedbackEnabled] = useState(true);
 
-    // GPS
     const [gpsEnabled, setGpsEnabled] = useState(true);
-    const [gpsPermission, setGpsPermission] = useState<"unknown" | "granted" | "denied">("unknown");
+    const [gpsPermission, setGpsPermission] = useState<
+        'unknown' | 'granted' | 'denied'
+    >('unknown');
     const [capturingGps, setCapturingGps] = useState(false);
 
-    // participant add input
-    const [newParticipantName, setNewParticipantName] = useState("");
+    const [newParticipantName, setNewParticipantName] = useState('');
+
+    const [toast, setToast] = useState<{
+        visible: boolean;
+        title: string;
+        message?: string;
+        tone?: ToastTone;
+    }>({
+        visible: false,
+        title: '',
+    });
+
+    function showToast(title: string, message?: string, tone: ToastTone = 'info') {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
+    useEffect(() => {
+        if (!toast.visible) return;
+
+        const timer = setTimeout(() => {
+            setToast((prev) => ({
+                ...prev,
+                visible: false,
+            }));
+        }, 2500);
+
+        return () => clearTimeout(timer);
+    }, [toast.visible]);
 
     useEffect(() => {
         if (!user) return;
@@ -180,17 +226,20 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
                 if (recoverable) {
                     Alert.alert(
-                        "Resume previous draft?",
-                        "We found an unfinished Activity 5 draft. Would you like to continue it or start a new session?",
+                        'Resume previous draft?',
+                        'We found an unfinished Activity 5 draft. Would you like to continue it or start a new session?',
                         [
                             {
-                                text: "Start New",
-                                style: "destructive",
+                                text: 'Start New',
+                                style: 'destructive',
                                 onPress: async () => {
                                     try {
                                         await discardActivity5RunDraft(recoverable.runId);
                                     } catch (error) {
-                                        console.error("[A5SessionSetup] Failed to discard old draft", error);
+                                        console.error(
+                                            '[A5SessionSetup] Failed to discard old draft',
+                                            error,
+                                        );
                                     }
 
                                     const created = createActivity5RunDraft({
@@ -207,13 +256,13 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                                 },
                             },
                             {
-                                text: "Resume",
+                                text: 'Resume',
                                 onPress: () => {
                                     setDraft(recoverable);
                                     navigation.setParams({runId: recoverable.runId});
                                 },
                             },
-                        ]
+                        ],
                     );
                     return;
                 }
@@ -230,7 +279,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
                 setDraft(created);
                 navigation.setParams({runId: created.runId});
             } catch (error) {
-                console.error("[A5SessionSetup] Failed to bootstrap draft", error);
+                console.error('[A5SessionSetup] Failed to bootstrap draft', error);
 
                 const fallback = createActivity5RunDraft({
                     activityId,
@@ -254,7 +303,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
     useEffect(() => {
         if (!draft) return;
 
-        setSessionLabel(draft.session.sessionLabel ?? "");
+        setSessionLabel(draft.session.sessionLabel ?? '');
         setSamplingHzRaw(String(draft.session.samplingHz ?? 50));
         setMovementDurationSecRaw(String(draft.session.movementDurationSec ?? 20));
         setParticipantCountRaw(String(draft.session.participantCount ?? 1));
@@ -262,7 +311,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         setFeedbackEnabled(Boolean(draft.session.feedbackEnabled));
 
         setGpsEnabled(Boolean(draft.session.gpsEnabled));
-        setGpsPermission(draft.session.gpsPermission ?? "unknown");
+        setGpsPermission(draft.session.gpsPermission ?? 'unknown');
     }, [draft]);
 
     const participants = draft?.session.participants ?? [];
@@ -271,9 +320,13 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
     const sessionError = useMemo(() => {
         if (!draft) return null;
 
-        const samplingHz = clampInt(Number(samplingHzRaw || "50"), 10, 100);
-        const movementDurationSec = clampInt(Number(movementDurationSecRaw || "20"), 10, 60);
-        const participantCount = clampInt(Number(participantCountRaw || "1"), 1, 6);
+        const samplingHz = clampInt(Number(samplingHzRaw || '50'), 10, 100);
+        const movementDurationSec = clampInt(
+            Number(movementDurationSecRaw || '20'),
+            10,
+            60,
+        );
+        const participantCount = clampInt(Number(participantCountRaw || '1'), 1, 6);
 
         const shadow: Activity5RunDraft = {
             ...draft,
@@ -304,9 +357,13 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
     function persistSessionBase(): Activity5RunDraft | null {
         if (!draft) return null;
 
-        const samplingHz = clampInt(Number(samplingHzRaw || "50"), 10, 100);
-        const movementDurationSec = clampInt(Number(movementDurationSecRaw || "20"), 10, 60);
-        const participantCount = clampInt(Number(participantCountRaw || "1"), 1, 6);
+        const samplingHz = clampInt(Number(samplingHzRaw || '50'), 10, 100);
+        const movementDurationSec = clampInt(
+            Number(movementDurationSecRaw || '20'),
+            10,
+            60,
+        );
+        const participantCount = clampInt(Number(participantCountRaw || '1'), 1, 6);
 
         const next = updateActivity5Session(draft.runId, {
             sessionLabel: sessionLabel.trim() ? sessionLabel.trim() : undefined,
@@ -336,13 +393,13 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
         const name = trimOrEmpty(newParticipantName);
         if (!name) {
-            Alert.alert("Missing name", "Enter a participant name first.");
+            showToast('Missing name', 'Enter a participant name first.', 'warning');
             return;
         }
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount >= 6) {
-            Alert.alert("Limit reached", "Participant count cannot exceed 6.");
+            showToast('Limit reached', 'Participant count cannot exceed 6.', 'warning');
             return;
         }
 
@@ -350,18 +407,24 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             participantCount: currentCount + 1,
         });
 
-        const appended = afterCount.session.participants?.[afterCount.session.participants.length - 1];
+        const appended =
+            afterCount.session.participants?.[afterCount.session.participants.length - 1];
+
         if (!appended?.id) {
             setDraft(afterCount);
-            setNewParticipantName("");
+            setNewParticipantName('');
             return;
         }
 
-        const afterRename = updateActivity5Participant(afterCount.runId, appended.id, {name});
+        const afterRename = updateActivity5Participant(afterCount.runId, appended.id, {
+            name,
+        });
 
         setDraft(afterRename);
         setParticipantCountRaw(String(afterRename.session.participantCount));
-        setNewParticipantName("");
+        setNewParticipantName('');
+
+        showToast('Participant added', `${name} was added to this session.`, 'success');
     }
 
     function onRemoveParticipant(participantId: string) {
@@ -369,19 +432,19 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
         const currentCount = draft.session.participantCount ?? participants.length ?? 1;
         if (currentCount <= 1) {
-            Alert.alert("Not allowed", "At least 1 participant is required.");
+            showToast('Not allowed', 'At least 1 participant is required.', 'warning');
             return;
         }
 
-        Alert.alert("Remove participant?", "This will remove the participant from the session.", [
-            {text: "Cancel", style: "cancel"},
+        Alert.alert('Remove participant?', 'This will remove the participant from the session.', [
+            {text: 'Cancel', style: 'cancel'},
             {
-                text: "Remove",
-                style: "destructive",
+                text: 'Remove',
+                style: 'destructive',
                 onPress: () => {
-                    const filtered: A5ParticipantDraft[] = (draft.session.participants ?? []).filter(
-                        (p) => p.id !== participantId
-                    );
+                    const filtered: A5ParticipantDraft[] = (
+                        draft.session.participants ?? []
+                    ).filter((p) => p.id !== participantId);
 
                     const next = updateActivity5Session(draft.runId, {
                         participantCount: currentCount - 1,
@@ -390,6 +453,12 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
                     setDraft(next);
                     setParticipantCountRaw(String(next.session.participantCount));
+
+                    showToast(
+                        'Participant removed',
+                        'The participant was removed from this session.',
+                        'info',
+                    );
                 },
             },
         ]);
@@ -399,7 +468,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         if (!draft) return;
 
         if (!gpsEnabled) {
-            Alert.alert("GPS disabled", "Enable GPS first to capture coordinates.");
+            showToast('GPS disabled', 'Enable GPS first to capture coordinates.', 'warning');
             return;
         }
 
@@ -407,18 +476,20 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             setCapturingGps(true);
 
             let status = gpsPermission;
-            if (status === "unknown" || status === "denied") {
+            if (status === 'unknown' || status === 'denied') {
                 status = await requestGpsPermissionSafe();
                 setGpsPermission(status);
 
-                const nextPerm = updateActivity5Session(draft.runId, {gpsPermission: status});
+                const nextPerm = updateActivity5Session(draft.runId, {
+                    gpsPermission: status,
+                });
                 setDraft(nextPerm);
             }
 
-            if (status !== "granted") {
+            if (status !== 'granted') {
                 Alert.alert(
-                    "Permission denied",
-                    "Location permission is required for submission. Please enable it in device settings."
+                    'Permission denied',
+                    'Location permission is required for submission. Please enable it in device settings.',
                 );
                 return;
             }
@@ -426,15 +497,15 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             const g = await getCurrentGeoSafe();
             if (!g) {
                 Alert.alert(
-                    "Location unavailable",
-                    "Could not capture your location. Please ensure Location Services are ON and try again."
+                    'Location unavailable',
+                    'Could not capture your location. Please ensure Location Services are ON and try again.',
                 );
                 return;
             }
 
             const next = updateActivity5Session(draft.runId, {
                 gpsEnabled: true,
-                gpsPermission: "granted",
+                gpsPermission: 'granted',
                 geo: {
                     lat: g.lat,
                     lng: g.lng,
@@ -444,7 +515,12 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
             });
 
             setDraft(next);
-            Alert.alert("Location captured ✅", "GPS coordinate has been saved for submission.");
+
+            showToast(
+                'Location captured',
+                'GPS coordinate has been saved for submission.',
+                'success',
+            );
         } finally {
             setCapturingGps(false);
         }
@@ -461,20 +537,28 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         });
 
         setDraft(next);
+
+        if (!nextVal) {
+            showToast(
+                'GPS disabled',
+                'Location evidence will be removed until GPS is enabled again.',
+                'warning',
+            );
+        }
     }
 
     async function onContinue() {
         if (!user || !draft) return;
 
         if (sessionError) {
-            Alert.alert("Check setup", sessionError);
+            Alert.alert('Check setup', sessionError);
             return;
         }
 
         const canContinue = await confirmBatteryBeforeActivity({
             activityId,
-            activityTitle: "Activity 5: Human Performance",
-            intensity: "HIGH",
+            activityTitle: 'Activity 5: Human Performance',
+            intensity: 'HIGH',
         });
 
         if (!canContinue) return;
@@ -482,7 +566,7 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
         const next = persistSessionBase();
         if (!next) return;
 
-        navigation.navigate("A5Prediction", {
+        navigation.navigate('A5Prediction', {
             activityId,
             runId: next.runId,
         });
@@ -492,301 +576,429 @@ export default function A5SessionSetupScreen({route, navigation}: Props) {
 
     if (bootstrapping || !draft) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-                <Text style={styles.loadingText}>Loading session…</Text>
-                <Text style={{marginTop: 4, opacity: 0.6}}>Checking for unfinished session...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Checking for unfinished Activity 5 session..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <KeyboardAvoidingView style={{flex: 1}} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Session Setup</Text>
-                <Text style={styles.sub}>
-                    Configure participants and sensor settings. You must enter a prediction before any guided trials.
-                </Text>
+        <KeyboardAvoidingView
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 5" tone="success"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Session</Text>
+                    <AppText variant="title" style={styles.title}>
+                        Performance Setup
+                    </AppText>
 
-                    <Text style={styles.label}>Session label (optional)</Text>
-                    <TextInput
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Configure participants, movement settings, feedback mode, and GPS evidence before prediction.
+                    </AppText>
+                </View>
+
+                <InfoBanner
+                    title="Movement performance activity"
+                    message="Keep settings consistent across participants so movement smoothness and control can be compared fairly."
+                    tone="success"
+                />
+
+                <AppSectionHeader
+                    title="Session"
+                    subtitle="Add a meaningful label so the run is easier to identify later."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Session label"
                         value={sessionLabel}
                         onChangeText={setSessionLabel}
                         placeholder="e.g. Week 5 – Human Performance Lab"
-                        style={styles.input}
                     />
 
-                    <Text style={styles.note}>
+                    <AppText variant="caption" color="textMuted">
                         Tip: Use a clear label so your team can find the submission later.
-                    </Text>
-                </View>
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Sensor Settings</Text>
-                    <Text style={styles.help}>
-                        Keep these values consistent across participants for fair comparison.
-                    </Text>
+                <AppSectionHeader
+                    title="Sensor Settings"
+                    subtitle="Use consistent settings for fair comparison between participants."
+                />
 
-                    <Text style={styles.label}>Sampling rate (10–100 Hz)</Text>
-                    <TextInput
-                        value={samplingHzRaw}
-                        onChangeText={(t) => setSamplingHzRaw(digitsOnly(t))}
-                        placeholder="50"
-                        keyboardType="number-pad"
-                        style={styles.input}
-                        maxLength={3}
-                    />
+                <AppCard>
+                    <View style={styles.grid}>
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Sampling rate"
+                                value={samplingHzRaw}
+                                onChangeText={(t) => setSamplingHzRaw(digitsOnly(t))}
+                                placeholder="50"
+                                keyboardType="number-pad"
+                                maxLength={3}
+                            />
 
-                    <Text style={styles.label}>Movement duration guidance (10–60 sec)</Text>
-                    <TextInput
-                        value={movementDurationSecRaw}
-                        onChangeText={(t) => setMovementDurationSecRaw(digitsOnly(t))}
-                        placeholder="20"
-                        keyboardType="number-pad"
-                        style={styles.input}
-                        maxLength={2}
-                    />
+                            <AppText variant="caption" color="textMuted">
+                                10–100 Hz
+                            </AppText>
+                        </View>
 
-                    <View style={[styles.row, {marginTop: 12}]}>
-                        <Text style={[styles.label, {marginTop: 0}]}>Enable Feedback Mode</Text>
-                        <Switch value={feedbackEnabled} onValueChange={setFeedbackEnabled}/>
+                        <View style={styles.gridCol}>
+                            <AppInput
+                                label="Duration"
+                                value={movementDurationSecRaw}
+                                onChangeText={(t) => setMovementDurationSecRaw(digitsOnly(t))}
+                                placeholder="20"
+                                keyboardType="number-pad"
+                                maxLength={2}
+                            />
+
+                            <AppText variant="caption" color="textMuted">
+                                10–60 seconds
+                            </AppText>
+                        </View>
                     </View>
 
-                    <Text style={styles.note}>
-                        Feedback mode provides real-time guidance to encourage smoother movement.
-                    </Text>
-                </View>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Enable Feedback Mode</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Provides real-time guidance to encourage smoother movement.
+                            </AppText>
+                        </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Participants</Text>
-                    <Text style={styles.help}>
-                        Add team members who will perform trials. Each trial is linked to one participant.
-                    </Text>
+                        <Switch value={feedbackEnabled} onValueChange={setFeedbackEnabled}/>
+                    </View>
+                </AppCard>
 
-                    <Text style={styles.label}>Participant count (1–6)</Text>
-                    <TextInput
+                <AppSectionHeader
+                    title="Participants"
+                    subtitle="Each guided trial is linked to one participant."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Participant count (1–6)"
                         value={participantCountRaw}
                         onChangeText={(t) => setParticipantCountRaw(digitsOnly(t))}
                         placeholder="1"
                         keyboardType="number-pad"
-                        style={styles.input}
                         maxLength={1}
                         onBlur={() => {
                             if (!draft) return;
-                            const nextCount = clampInt(Number(participantCountRaw || "1"), 1, 6);
-                            const next = updateActivity5Session(draft.runId, {participantCount: nextCount});
+                            const nextCount = clampInt(Number(participantCountRaw || '1'), 1, 6);
+                            const next = updateActivity5Session(draft.runId, {
+                                participantCount: nextCount,
+                            });
                             setDraft(next);
                             setParticipantCountRaw(String(next.session.participantCount));
                         }}
                     />
 
                     <View style={styles.addRow}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Add participant (name)</Text>
-                            <TextInput
+                        <View style={styles.addInput}>
+                            <AppInput
+                                label="Add participant"
                                 value={newParticipantName}
                                 onChangeText={setNewParticipantName}
                                 placeholder="e.g. Ruixin"
-                                style={styles.input}
                             />
                         </View>
-                        <Pressable style={styles.smallBtn} onPress={onAddParticipant}>
-                            <Text style={styles.smallBtnText}>Add</Text>
-                        </Pressable>
+
+                        <AppButton
+                            title="Add"
+                            onPress={onAddParticipant}
+                            fullWidth={false}
+                            style={styles.addButton}
+                        />
                     </View>
 
                     {participants.length === 0 ? (
-                        <Text style={styles.muted}>No participants initialized.</Text>
+                        <InfoBanner
+                            title="No participants initialized"
+                            message="Add at least one participant before running trials."
+                            tone="warning"
+                        />
                     ) : (
-                        <View style={{marginTop: 10}}>
+                        <View style={styles.participantList}>
                             {participants.map((p, idx) => (
                                 <View key={p.id} style={styles.participantCard}>
-                                    <Text style={styles.participantHeader}>Participant {idx + 1}</Text>
+                                    <View style={styles.participantHeader}>
+                                        <AppBadge label={`Participant ${idx + 1}`} tone="info"/>
 
-                                    <TextInput
+                                        <Pressable
+                                            onPress={() => onRemoveParticipant(p.id)}
+                                            style={styles.removeButton}
+                                        >
+                                            <AppText variant="caption" color="danger">
+                                                Remove
+                                            </AppText>
+                                        </Pressable>
+                                    </View>
+
+                                    <AppInput
+                                        label="Name"
                                         value={p.name}
                                         onChangeText={(t) => onRenameParticipant(p.id, t)}
                                         placeholder={`Participant ${idx + 1}`}
-                                        style={styles.input}
                                     />
 
-                                    <View style={styles.participantFooter}>
-                                        <Text style={styles.participantMeta}>
-                                            Added • {new Date(p.createdAt).toLocaleString()}
-                                        </Text>
-
-                                        <Pressable onPress={() => onRemoveParticipant(p.id)} style={styles.removeBtn}>
-                                            <Text style={styles.removeBtnText}>Remove</Text>
-                                        </Pressable>
-                                    </View>
+                                    <AppText variant="caption" color="textMuted">
+                                        Added • {new Date(p.createdAt).toLocaleString()}
+                                    </AppText>
                                 </View>
                             ))}
                         </View>
                     )}
 
-                    <Text style={styles.note}>
+                    <AppText variant="caption" color="textMuted" style={styles.blockGap}>
                         At least 1 participant is required. You can run more trials per participant later.
-                    </Text>
-                </View>
+                    </AppText>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>GPS (Required for Submission)</Text>
-                    <Text style={styles.help}>
-                        You can run trials without GPS, but submission will be blocked until GPS is granted and a
-                        coordinate is captured.
-                    </Text>
+                <AppSectionHeader
+                    title="GPS Evidence"
+                    subtitle="Required before final submission."
+                />
 
-                    <View style={[styles.row, {marginTop: 10}]}>
-                        <Text style={[styles.label, {marginTop: 0}]}>Enable GPS</Text>
+                <AppCard>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Enable GPS</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Submission will be blocked until GPS is granted and a coordinate is captured.
+                            </AppText>
+                        </View>
+
                         <Switch value={gpsEnabled} onValueChange={onToggleGps}/>
                     </View>
 
-                    <View style={styles.geoRow}>
-                        <Text style={styles.geoText}>{formatGeoText(draft.session.geo)}</Text>
-                        <Pressable
-                            style={[styles.smallBtn, capturingGps && styles.smallBtnDisabled]}
-                            onPress={onCaptureGps}
-                            disabled={capturingGps}
-                        >
-                            <Text style={styles.smallBtnText}>{capturingGps ? "Capturing…" : "Capture"}</Text>
-                        </Pressable>
+                    <StatusRow
+                        label="Permission"
+                        value={
+                            gpsPermission === 'unknown'
+                                ? 'Not requested'
+                                : gpsPermission === 'granted'
+                                    ? 'Granted'
+                                    : 'Denied'
+                        }
+                        good={gpsPermission === 'granted'}
+                    />
+
+                    <StatusRow
+                        label="Coordinate"
+                        value={geoCaptured ? 'Captured' : gpsEnabled ? 'Not captured' : 'GPS off'}
+                        good={geoCaptured}
+                    />
+
+                    <View style={styles.coordinateBox}>
+                        <AppText variant="caption" color="textMuted">
+                            Saved coordinate
+                        </AppText>
+
+                        <AppText variant="bodyStrong" style={styles.coordinateText}>
+                            {formatGeoText(draft.session.geo)}
+                        </AppText>
                     </View>
 
-                    <Text style={styles.note}>
-                        Status: {gpsPermission.toUpperCase()} • Saved: {geoCaptured ? "YES" : "NO"}
-                    </Text>
-                </View>
+                    <AppButton
+                        title={capturingGps ? 'Capturing...' : 'Capture GPS Coordinate'}
+                        onPress={onCaptureGps}
+                        disabled={capturingGps || !gpsEnabled}
+                        variant="outline"
+                        style={styles.blockGap}
+                    />
 
-                <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue to Prediction</Text>
-                </Pressable>
+                    {capturingGps ? (
+                        <View style={styles.loadingInline}>
+                            <ActivityIndicator color={colors.primary}/>
+                            <AppText variant="caption" color="textMuted">
+                                Waiting for location response...
+                            </AppText>
+                        </View>
+                    ) : null}
+                </AppCard>
 
-                {sessionError ? <Text style={styles.errorText}>⚠️ {sessionError}</Text> : null}
+                {sessionError ? (
+                    <InfoBanner title="Fix before continuing" message={sessionError} tone="danger"/>
+                ) : null}
 
-                <View style={{height: 40}}/>
-            </ScrollView>
+                <AppButton title="Continue to Prediction" onPress={onContinue}/>
+
+                <View style={styles.bottomSpace}/>
+
+                <AppStatusToast
+                    visible={toast.visible}
+                    title={toast.title}
+                    message={toast.message}
+                    tone={toast.tone}
+                    onHide={() =>
+                        setToast((prev) => ({
+                            ...prev,
+                            visible: false,
+                        }))
+                    }
+                />
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
-/* =========================================================
-   Styles
-========================================================= */
+type StatusRowProps = {
+    label: string;
+    value: string;
+    good?: boolean;
+};
+
+function StatusRow({label, value, good = false}: StatusRowProps) {
+    return (
+        <View style={styles.statusRow}>
+            <AppText variant="bodyStrong">{label}</AppText>
+
+            <View
+                style={[
+                    styles.statusPill,
+                    good ? styles.statusPillGood : styles.statusPillBad,
+                ]}
+            >
+                <AppText variant="caption" color={good ? 'success' : 'danger'}>
+                    {value} {good ? '✓' : '!'}
+                </AppText>
+            </View>
+        </View>
+    );
+}
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#fff",
-    },
-    center: {
+    keyboard: {
         flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#fff",
     },
-    loadingText: {marginTop: 10, opacity: 0.7},
 
-    title: {fontSize: 24, fontWeight: "900"},
-    sub: {marginTop: 8, opacity: 0.7, lineHeight: 20},
-
-    card: {
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
+    header: {
+        marginBottom: spacing.lg,
     },
-    cardTitle: {fontSize: 16, fontWeight: "900", marginBottom: 8},
-    help: {opacity: 0.75, lineHeight: 18},
 
-    label: {marginTop: 10, fontWeight: "800"},
-    input: {
-        marginTop: 6,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
+    title: {
+        marginTop: spacing.md,
     },
-    note: {marginTop: 10, opacity: 0.65, lineHeight: 18},
-    muted: {marginTop: 10, opacity: 0.6},
 
-    row: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    grid: {
+        flexDirection: 'row',
+        gap: spacing.md,
+    },
+
+    gridCol: {
+        flex: 1,
+    },
+
+    settingRow: {
+        marginTop: spacing.lg,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    settingText: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    blockGap: {
+        marginTop: spacing.lg,
     },
 
     addRow: {
-        marginTop: 12,
-        flexDirection: "row",
-        alignItems: "flex-end",
-        gap: 10,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: spacing.md,
     },
 
-    smallBtn: {
-        marginTop: 24,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 12,
-        backgroundColor: "#111",
-        alignItems: "center",
-        justifyContent: "center",
+    addInput: {
+        flex: 1,
     },
-    smallBtnDisabled: {opacity: 0.6},
-    smallBtnText: {color: "white", fontWeight: "900"},
+
+    addButton: {
+        minWidth: 86,
+        marginBottom: spacing.md,
+    },
+
+    participantList: {
+        marginTop: spacing.md,
+        gap: spacing.md,
+    },
 
     participantCard: {
-        marginTop: 12,
         borderWidth: 1,
-        borderColor: "#eaeaea",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
     },
-    participantHeader: {fontWeight: "900"},
-    participantFooter: {
-        marginTop: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-    },
-    participantMeta: {opacity: 0.6, fontSize: 12},
-    removeBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "#fafafa",
-    },
-    removeBtnText: {fontWeight: "900", opacity: 0.85},
 
-    geoRow: {
-        marginTop: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
+    participantHeader: {
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    geoText: {flex: 1, opacity: 0.85, lineHeight: 18},
 
-    primaryBtn: {
-        marginTop: 20,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    removeButton: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    errorText: {marginTop: 12, color: "#b00020", fontWeight: "800"},
+    statusRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    statusPill: {
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+    },
+
+    statusPillGood: {
+        backgroundColor: colors.successSoft,
+    },
+
+    statusPillBad: {
+        backgroundColor: colors.dangerSoft,
+    },
+
+    coordinateBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    coordinateText: {
+        marginTop: spacing.xs,
+    },
+
+    loadingInline: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

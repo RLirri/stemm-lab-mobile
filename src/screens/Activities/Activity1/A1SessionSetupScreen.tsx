@@ -1,20 +1,17 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
     Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    ScrollView,
     StyleSheet,
     Switch,
-    Text,
-    TextInput,
     View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     createRunDraft,
     discardRunDraft,
@@ -24,11 +21,25 @@ import {
     updateSession,
     type ActivityRunDraft,
     type SessionDraft,
-} from "../../../store/activityRunDraftStore";
+} from '../../../store/activityRunDraftStore';
 
-import {confirmBatteryBeforeActivity} from "../../../services/battery";
+import {confirmBatteryBeforeActivity} from '../../../services/battery';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A1SessionSetup">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppSectionHeader,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A1SessionSetup'>;
 
 function toNumberOrUndefined(raw: string): number | undefined {
     const v = raw.trim();
@@ -40,8 +51,8 @@ function toNumberOrUndefined(raw: string): number | undefined {
 
 function formatMmSs(msLeft: number) {
     const totalSec = Math.max(0, Math.floor(msLeft / 1000));
-    const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
-    const ss = String(totalSec % 60).padStart(2, "0");
+    const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    const ss = String(totalSec % 60).padStart(2, '0');
     return `${mm}:${ss}`;
 }
 
@@ -55,21 +66,21 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
     const hasBootstrappedRef = useRef(false);
 
-    // Form fields (keep UI state as strings where needed)
-    const [dropHeightRaw, setDropHeightRaw] = useState<string>("");
+    const [dropHeightRaw, setDropHeightRaw] = useState<string>('');
     const [targetEnabled, setTargetEnabled] = useState<boolean>(false);
-    const [targetPreset, setTargetPreset] = useState<SessionDraft["targetPreset"]>("none");
-    const [environment, setEnvironment] = useState<SessionDraft["environment"]>("indoor");
-    const [payloadType, setPayloadType] = useState<string>("");
+    const [targetPreset, setTargetPreset] =
+        useState<SessionDraft['targetPreset']>('none');
+    const [environment, setEnvironment] =
+        useState<SessionDraft['environment']>('indoor');
+    const [payloadType, setPayloadType] = useState<string>('');
 
     const [massUnknown, setMassUnknown] = useState<boolean>(false);
-    const [payloadMassRaw, setPayloadMassRaw] = useState<string>("");
+    const [payloadMassRaw, setPayloadMassRaw] = useState<string>('');
 
     const [safetyStableSurface, setSafetyStableSurface] = useState<boolean>(false);
     const [safetyKeepAreaClear, setSafetyKeepAreaClear] = useState<boolean>(false);
     const [safetyDoNotThrow, setSafetyDoNotThrow] = useState<boolean>(false);
 
-    // Timer
     const [nowMs, setNowMs] = useState<number>(Date.now());
     const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -86,7 +97,6 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
                 const existingId = route.params.runId;
 
-                // Case 1: route already provides a runId
                 if (existingId) {
                     const existingMemory = getRunDraft(existingId);
                     if (existingMemory) {
@@ -110,7 +120,6 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
                     return;
                 }
 
-                // Case 2: no runId supplied -> check latest recoverable draft
                 const recoverable = await getLatestRecoverableRunDraft({
                     activityId,
                     createdBy: uid,
@@ -118,17 +127,20 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
                 if (recoverable) {
                     Alert.alert(
-                        "Resume previous draft?",
-                        "We found an unfinished Activity 1 draft. Would you like to continue it or start a new session?",
+                        'Resume previous draft?',
+                        'We found an unfinished Activity 1 draft. Would you like to continue it or start a new session?',
                         [
                             {
-                                text: "Start New",
-                                style: "destructive",
+                                text: 'Start New',
+                                style: 'destructive',
                                 onPress: async () => {
                                     try {
                                         await discardRunDraft(recoverable.runId);
                                     } catch (error) {
-                                        console.error("[A1SessionSetup] Failed to discard old draft", error);
+                                        console.error(
+                                            '[A1SessionSetup] Failed to discard old draft',
+                                            error,
+                                        );
                                     }
 
                                     const created = createRunDraft(activityId, uid);
@@ -138,25 +150,24 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
                                 },
                             },
                             {
-                                text: "Resume",
+                                text: 'Resume',
                                 onPress: () => {
                                     setRunId(recoverable.runId);
                                     setDraft(recoverable);
                                     navigation.setParams({runId: recoverable.runId});
                                 },
                             },
-                        ]
+                        ],
                     );
                     return;
                 }
 
-                // Case 3: nothing recoverable -> create new
                 const created = createRunDraft(activityId, uid);
                 setRunId(created.runId);
                 setDraft(created);
                 navigation.setParams({runId: created.runId});
             } catch (error) {
-                console.error("[A1SessionSetup] Failed to bootstrap draft", error);
+                console.error('[A1SessionSetup] Failed to bootstrap draft', error);
 
                 const fallback = createRunDraft(activityId, uid);
                 setRunId(fallback.runId);
@@ -187,14 +198,14 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
         const s = draft.session;
 
-        setDropHeightRaw(s.dropHeightM != null ? String(s.dropHeightM) : "");
+        setDropHeightRaw(s.dropHeightM != null ? String(s.dropHeightM) : '');
         setTargetEnabled(Boolean(s.targetZoneEnabled));
-        setTargetPreset(s.targetPreset ?? "none");
-        setEnvironment((s.environment ?? "indoor") as SessionDraft["environment"]);
-        setPayloadType(s.payloadType ?? "");
+        setTargetPreset(s.targetPreset ?? 'none');
+        setEnvironment((s.environment ?? 'indoor') as SessionDraft['environment']);
+        setPayloadType(s.payloadType ?? '');
 
         setMassUnknown(Boolean(s.payloadMassUnknown));
-        setPayloadMassRaw(s.payloadMassG != null ? String(s.payloadMassG) : "");
+        setPayloadMassRaw(s.payloadMassG != null ? String(s.payloadMassG) : '');
 
         setSafetyStableSurface(Boolean(s.safety?.stableSurface));
         setSafetyKeepAreaClear(Boolean(s.safety?.keepAreaClear));
@@ -207,15 +218,19 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
         const startedAt = s?.startedAt;
 
         if (!startedAt || !endsAt) {
-            return {status: "not_started" as const, label: "20:00", msLeft: 20 * 60 * 1000};
+            return {
+                status: 'not_started' as const,
+                label: '20:00',
+                msLeft: 20 * 60 * 1000,
+            };
         }
 
         const msLeft = endsAt - nowMs;
         if (msLeft <= 0) {
-            return {status: "ended" as const, label: "00:00", msLeft: 0};
+            return {status: 'ended' as const, label: '00:00', msLeft: 0};
         }
 
-        return {status: "running" as const, label: formatMmSs(msLeft), msLeft};
+        return {status: 'running' as const, label: formatMmSs(msLeft), msLeft};
     }, [draft?.session, nowMs]);
 
     function persistSessionPatch(patch: Partial<SessionDraft>) {
@@ -243,14 +258,15 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
     function validateBeforeContinue(): { ok: true } | { ok: false; message: string } {
         const h = toNumberOrUndefined(dropHeightRaw);
         if (h == null || h <= 0) {
-            return {ok: false, message: "Please enter Drop Height (m). It must be > 0."};
+            return {ok: false, message: 'Please enter Drop Height (m). It must be > 0.'};
         }
 
         if (targetEnabled) {
-            if (!targetPreset || targetPreset === "none") {
+            if (!targetPreset || targetPreset === 'none') {
                 return {
                     ok: false,
-                    message: "Target zone is enabled. Please choose a target preset (50cm or 1m).",
+                    message:
+                        'Target zone is enabled. Please choose a target preset (50cm or 1m).',
                 };
             }
         }
@@ -258,12 +274,15 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
         if (!massUnknown) {
             const m = toNumberOrUndefined(payloadMassRaw);
             if (m == null || m <= 0) {
-                return {ok: false, message: "Please enter Payload Mass (g), or toggle Unknown."};
+                return {
+                    ok: false,
+                    message: 'Please enter Payload Mass (g), or toggle Unknown.',
+                };
             }
         }
 
         if (!safetyStableSurface || !safetyKeepAreaClear || !safetyDoNotThrow) {
-            return {ok: false, message: "Please confirm all safety checklist items."};
+            return {ok: false, message: 'Please confirm all safety checklist items.'};
         }
 
         return {ok: true};
@@ -275,14 +294,14 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
 
         const v = validateBeforeContinue();
         if (!v.ok) {
-            Alert.alert("Check required fields", v.message);
+            Alert.alert('Check required fields', v.message);
             return;
         }
 
         const canContinue = await confirmBatteryBeforeActivity({
             activityId,
-            activityTitle: "Activity 1: Parachute Drop",
-            intensity: "MEDIUM",
+            activityTitle: 'Activity 1: Parachute Drop',
+            intensity: 'MEDIUM',
         });
 
         if (!canContinue) return;
@@ -293,7 +312,7 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
         persistSessionPatch({
             dropHeightM,
             targetZoneEnabled: targetEnabled,
-            targetPreset: targetEnabled ? (targetPreset ?? "none") : "none",
+            targetPreset: targetEnabled ? targetPreset ?? 'none' : 'none',
             environment,
             payloadType: payloadType.trim() ? payloadType.trim() : undefined,
             payloadMassUnknown: massUnknown,
@@ -305,285 +324,402 @@ export default function A1SessionSetupScreen({route, navigation}: Props) {
             },
         });
 
-        navigation.navigate("A1AttemptPlan", {activityId, runId, attemptIndex: 0});
+        navigation.navigate('A1AttemptPlan', {activityId, runId, attemptIndex: 0});
     }
 
     if (!user) return null;
 
     if (bootstrapping || !draft) {
         return (
-            <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
-                <Text style={{marginTop: 8, opacity: 0.7}}>Checking for unfinished session...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Checking for unfinished Activity 1 session..."/>
+            </AppGradientScreen>
         );
     }
 
+    const timerTone =
+        timer.status === 'running'
+            ? 'success'
+            : timer.status === 'ended'
+                ? 'danger'
+                : 'info';
+
     return (
         <KeyboardAvoidingView
-            style={{flex: 1}}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                <Text style={styles.title}>Session Setup</Text>
-                <Text style={styles.sub}>
-                    Configure the session first. You can start the 20-minute challenge timer anytime.
-                </Text>
+            <AppGradientScreen>
+                <View style={styles.header}>
+                    <AppBadge label="Activity 1" tone="primary"/>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Timed Challenge</Text>
-                    <Text style={styles.timer}>{timer.label}</Text>
-                    <Text style={styles.timerHint}>
-                        {timer.status === "not_started"
-                            ? "Not started yet"
-                            : timer.status === "running"
-                                ? "Running"
-                                : "Ended"}
-                    </Text>
+                    <AppText variant="title" style={styles.title}>
+                        Session Setup
+                    </AppText>
 
-                    <Pressable
-                        style={[
-                            styles.primaryBtn,
-                            (timer.status !== "not_started" || !draft) && {opacity: 0.5},
-                        ]}
-                        disabled={timer.status !== "not_started" || !draft}
-                        onPress={onStartChallenge}
-                    >
-                        <Text style={styles.primaryBtnText}>Start 20-minute Challenge</Text>
-                    </Pressable>
+                    <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                        Configure your parachute drop session before recording attempts.
+                    </AppText>
                 </View>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Required Inputs</Text>
+                <InfoBanner
+                    title="Before you begin"
+                    message="Start the 20-minute challenge timer when your team is ready. Required fields must be completed before continuing."
+                    tone="info"
+                />
 
-                    <Text style={styles.label}>Drop Height (m)</Text>
-                    <TextInput
+                <AppCard>
+                    <View style={styles.cardHeader}>
+                        <View>
+                            <AppText variant="sectionTitle">Timed Challenge</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Activity working window
+                            </AppText>
+                        </View>
+
+                        <AppBadge
+                            label={
+                                timer.status === 'not_started'
+                                    ? 'Not started'
+                                    : timer.status === 'running'
+                                        ? 'Running'
+                                        : 'Ended'
+                            }
+                            tone={timerTone}
+                        />
+                    </View>
+
+                    <View style={styles.timerBox}>
+                        <AppText variant="title" align="center" style={styles.timerText}>
+                            {timer.label}
+                        </AppText>
+                    </View>
+
+                    <AppButton
+                        title="Start 20-minute Challenge"
+                        onPress={onStartChallenge}
+                        disabled={timer.status !== 'not_started' || !draft}
+                        style={styles.sectionGap}
+                    />
+                </AppCard>
+
+                <AppSectionHeader
+                    title="Required Inputs"
+                    subtitle="These values help calculate and compare your experiment results."
+                />
+
+                <AppCard>
+                    <AppInput
+                        label="Drop Height (m)"
                         value={dropHeightRaw}
                         onChangeText={setDropHeightRaw}
                         placeholder="e.g. 1.5"
                         keyboardType="decimal-pad"
-                        style={styles.input}
                     />
-                    <Text style={styles.help}>
-                        You may “measure later”, but it must be filled before attempts are saved.
-                    </Text>
 
-                    <View style={styles.rowBetween}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Landing Target Zone</Text>
-                            <Text style={styles.help}>Enable if you want accuracy scoring.</Text>
+                    <AppText variant="caption" color="textMuted" style={styles.helpText}>
+                        You may measure later, but it must be filled before attempts are saved.
+                    </AppText>
+
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Landing Target Zone</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                Enable if you want accuracy scoring.
+                            </AppText>
                         </View>
+
                         <Switch value={targetEnabled} onValueChange={setTargetEnabled}/>
                     </View>
 
                     {targetEnabled ? (
-                        <View style={{marginTop: 10}}>
-                            <Text style={styles.label}>Target preset</Text>
+                        <View style={styles.blockGap}>
+                            <AppText variant="bodyStrong">Target preset</AppText>
 
                             <View style={styles.segment}>
-                                <Pressable
-                                    style={[
-                                        styles.segmentBtn,
-                                        targetPreset === "50cm_circle" && styles.segmentBtnActive,
-                                    ]}
-                                    onPress={() => setTargetPreset("50cm_circle")}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.segmentText,
-                                            targetPreset === "50cm_circle" && styles.segmentTextActive,
-                                        ]}
-                                    >
-                                        Within 50cm circle
-                                    </Text>
-                                </Pressable>
+                                <SegmentButton
+                                    label="Within 50cm"
+                                    active={targetPreset === '50cm_circle'}
+                                    onPress={() => setTargetPreset('50cm_circle')}
+                                />
 
-                                <Pressable
-                                    style={[
-                                        styles.segmentBtn,
-                                        targetPreset === "1m_circle" && styles.segmentBtnActive,
-                                    ]}
-                                    onPress={() => setTargetPreset("1m_circle")}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.segmentText,
-                                            targetPreset === "1m_circle" && styles.segmentTextActive,
-                                        ]}
-                                    >
-                                        Within 1m circle
-                                    </Text>
-                                </Pressable>
+                                <SegmentButton
+                                    label="Within 1m"
+                                    active={targetPreset === '1m_circle'}
+                                    onPress={() => setTargetPreset('1m_circle')}
+                                />
                             </View>
                         </View>
                     ) : null}
 
-                    <View style={{marginTop: 14}}>
-                        <Text style={styles.label}>Environment</Text>
-                        <View style={styles.segment}>
-                            <Pressable
-                                style={[styles.segmentBtn, environment === "indoor" && styles.segmentBtnActive]}
-                                onPress={() => setEnvironment("indoor")}
-                            >
-                                <Text
-                                    style={[
-                                        styles.segmentText,
-                                        environment === "indoor" && styles.segmentTextActive,
-                                    ]}
-                                >
-                                    Indoor
-                                </Text>
-                            </Pressable>
+                    <View style={styles.blockGap}>
+                        <AppText variant="bodyStrong">Environment</AppText>
 
-                            <Pressable
-                                style={[styles.segmentBtn, environment === "outdoor" && styles.segmentBtnActive]}
-                                onPress={() => setEnvironment("outdoor")}
-                            >
-                                <Text
-                                    style={[
-                                        styles.segmentText,
-                                        environment === "outdoor" && styles.segmentTextActive,
-                                    ]}
-                                >
-                                    Outdoor
-                                </Text>
-                            </Pressable>
+                        <View style={styles.segment}>
+                            <SegmentButton
+                                label="Indoor"
+                                active={environment === 'indoor'}
+                                onPress={() => setEnvironment('indoor')}
+                            />
+
+                            <SegmentButton
+                                label="Outdoor"
+                                active={environment === 'outdoor'}
+                                onPress={() => setEnvironment('outdoor')}
+                            />
                         </View>
                     </View>
 
-                    <Text style={[styles.label, {marginTop: 14}]}>Payload (toy type)</Text>
-                    <TextInput
+                    <AppInput
+                        label="Payload / toy type"
                         value={payloadType}
                         onChangeText={setPayloadType}
                         placeholder="e.g. toy soldier"
-                        style={styles.input}
                     />
 
-                    <View style={[styles.rowBetween, {marginTop: 10}]}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Payload Mass (g)</Text>
-                            <Text style={styles.help}>If unknown, calculations will be limited.</Text>
+                    <View style={styles.settingRow}>
+                        <View style={styles.settingText}>
+                            <AppText variant="bodyStrong">Payload Mass (g)</AppText>
+                            <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                If unknown, calculations will be limited.
+                            </AppText>
                         </View>
-                        <View style={styles.row}>
-                            <Text style={{marginRight: 8, opacity: 0.8}}>Unknown</Text>
+
+                        <View style={styles.switchInline}>
+                            <AppText variant="caption" color="textMuted">
+                                Unknown
+                            </AppText>
                             <Switch value={massUnknown} onValueChange={setMassUnknown}/>
                         </View>
                     </View>
 
-                    <TextInput
+                    <AppInput
                         value={payloadMassRaw}
                         onChangeText={setPayloadMassRaw}
                         placeholder="e.g. 20"
                         keyboardType="number-pad"
-                        style={[styles.input, massUnknown && {opacity: 0.5}]}
                         editable={!massUnknown}
+                        style={massUnknown ? styles.disabledInput : undefined}
                     />
-                </View>
+                </AppCard>
 
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Safety Checklist</Text>
+                <AppSectionHeader
+                    title="Safety Checklist"
+                    subtitle="Confirm all items before continuing."
+                />
 
-                    <Pressable style={styles.checkRow} onPress={() => setSafetyStableSurface((v) => !v)}>
-                        <View style={[styles.checkbox, safetyStableSurface && styles.checkboxOn]}/>
-                        <Text style={styles.checkText}>Drop from stable surface</Text>
-                    </Pressable>
+                <AppCard>
+                    <ChecklistRow
+                        checked={safetyStableSurface}
+                        label="Drop from stable surface"
+                        onPress={() => setSafetyStableSurface((v) => !v)}
+                    />
 
-                    <Pressable style={styles.checkRow} onPress={() => setSafetyKeepAreaClear((v) => !v)}>
-                        <View style={[styles.checkbox, safetyKeepAreaClear && styles.checkboxOn]}/>
-                        <Text style={styles.checkText}>Keep area clear</Text>
-                    </Pressable>
+                    <ChecklistRow
+                        checked={safetyKeepAreaClear}
+                        label="Keep area clear"
+                        onPress={() => setSafetyKeepAreaClear((v) => !v)}
+                    />
 
-                    <Pressable style={styles.checkRow} onPress={() => setSafetyDoNotThrow((v) => !v)}>
-                        <View style={[styles.checkbox, safetyDoNotThrow && styles.checkboxOn]}/>
-                        <Text style={styles.checkText}>Do not throw the toy</Text>
-                    </Pressable>
-                </View>
+                    <ChecklistRow
+                        checked={safetyDoNotThrow}
+                        label="Do not throw the toy"
+                        onPress={() => setSafetyDoNotThrow((v) => !v)}
+                    />
+                </AppCard>
 
-                <Pressable style={styles.primaryBtn} onPress={onContinue}>
-                    <Text style={styles.primaryBtnText}>Continue</Text>
-                </Pressable>
+                <AppButton title="Continue" onPress={onContinue} style={styles.continueButton}/>
 
-                <Text style={styles.footerHint}>
-                    Next: Baseline attempt plan → record video → measurements → results. You can run up to 3
-                    prototypes within the timer.
-                </Text>
+                <AppText variant="caption" color="textMuted" style={styles.footerHint}>
+                    Next: baseline attempt plan → record video → measurements → results. You can
+                    run up to 3 prototypes within the timer.
+                </AppText>
 
-                <View style={{height: 30}}/>
-            </ScrollView>
+                <View style={styles.bottomSpace}/>
+            </AppGradientScreen>
         </KeyboardAvoidingView>
     );
 }
 
+type SegmentButtonProps = {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+};
+
+function SegmentButton({label, active, onPress}: SegmentButtonProps) {
+    return (
+        <Pressable
+            onPress={onPress}
+            style={[styles.segmentButton, active && styles.segmentButtonActive]}
+        >
+            <AppText
+                variant="caption"
+                color={active ? 'inverseText' : 'text'}
+                align="center"
+            >
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
+type ChecklistRowProps = {
+    checked: boolean;
+    label: string;
+    onPress: () => void;
+};
+
+function ChecklistRow({checked, label, onPress}: ChecklistRowProps) {
+    return (
+        <Pressable onPress={onPress} style={styles.checkRow}>
+            <View style={[styles.checkbox, checked && styles.checkboxOn]}>
+                {checked ? (
+                    <AppText variant="caption" color="inverseText">
+                        ✓
+                    </AppText>
+                ) : null}
+            </View>
+
+            <AppText variant="bodyStrong" style={styles.checkText}>
+                {label}
+            </AppText>
+        </Pressable>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-
-    label: {marginTop: 12, fontWeight: "800"},
-    help: {marginTop: 6, opacity: 0.7, lineHeight: 18},
-
-    input: {
-        marginTop: 8,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: Platform.OS === "ios" ? 12 : 10,
+    keyboard: {
+        flex: 1,
     },
 
-    row: {flexDirection: "row", alignItems: "center"},
-    rowBetween: {flexDirection: "row", alignItems: "center", justifyContent: "space-between"},
+    header: {
+        marginBottom: spacing.lg,
+    },
+
+    title: {
+        marginTop: spacing.md,
+    },
+
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    sectionGap: {
+        marginTop: spacing.lg,
+    },
+
+    blockGap: {
+        marginTop: spacing.lg,
+    },
+
+    timerBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.xl,
+        backgroundColor: colors.accentSoft,
+        paddingVertical: spacing.xl,
+        alignItems: 'center',
+    },
+
+    timerText: {
+        letterSpacing: 1,
+    },
+
+    helpText: {
+        marginTop: -spacing.sm,
+        marginBottom: spacing.md,
+    },
+
+    settingRow: {
+        marginTop: spacing.lg,
+        marginBottom: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
+    settingText: {
+        flex: 1,
+    },
+
+    switchInline: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
 
     segment: {
-        marginTop: 8,
-        flexDirection: "row",
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        borderRadius: 12,
-        overflow: "hidden",
-        backgroundColor: "white",
+        marginTop: spacing.sm,
+        flexDirection: 'row',
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.xs,
+        gap: spacing.xs,
     },
-    segmentBtn: {flex: 1, paddingVertical: 10, alignItems: "center"},
-    segmentBtnActive: {backgroundColor: "#111"},
-    segmentText: {fontWeight: "800", opacity: 0.85},
-    segmentTextActive: {color: "white", opacity: 1},
 
-    timer: {marginTop: 10, fontSize: 34, fontWeight: "900", letterSpacing: 1},
-    timerHint: {marginTop: 6, opacity: 0.7},
-
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    segmentButton: {
+        flex: 1,
+        minHeight: 42,
+        borderRadius: radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.sm,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    checkRow: {flexDirection: "row", alignItems: "center", paddingVertical: 10},
+    segmentButtonActive: {
+        backgroundColor: colors.primary,
+    },
+
+    disabledInput: {
+        opacity: 0.5,
+    },
+
+    checkRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+    },
+
     checkbox: {
-        width: 18,
-        height: 18,
-        borderRadius: 5,
+        width: 26,
+        height: 26,
+        borderRadius: 8,
         borderWidth: 2,
-        borderColor: "#111",
-        marginRight: 10,
-        backgroundColor: "transparent",
+        borderColor: colors.primary,
+        marginRight: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.surface,
     },
-    checkboxOn: {backgroundColor: "#111"},
-    checkText: {fontWeight: "700"},
 
-    footerHint: {marginTop: 10, opacity: 0.7, lineHeight: 18},
+    checkboxOn: {
+        backgroundColor: colors.primary,
+    },
+
+    checkText: {
+        flex: 1,
+    },
+
+    continueButton: {
+        marginTop: spacing.lg,
+    },
+
+    footerHint: {
+        marginTop: spacing.md,
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

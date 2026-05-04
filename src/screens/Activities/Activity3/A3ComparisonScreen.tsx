@@ -1,29 +1,56 @@
-import React, {useEffect, useMemo, useState} from "react";
-import {Alert, Pressable, ScrollView, StyleSheet, Text, View} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+// src/screens/Activities/Activity3/A3ComparisonScreen.tsx
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getActivity3RunDraft,
     type Activity3RunDraft,
     type FanDistanceCm,
     type FanMaterial,
-} from "../../../store/activity3RunDraftStore";
+} from '../../../store/activity3RunDraftStore';
 import {
     A3_DISTANCES,
     A3_MATERIALS,
     validateAndDeriveMeasurement,
-} from "../../../services/activity3PhysicsService";
+} from '../../../services/activity3PhysicsService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A3Comparison">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    EmptyState,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
 
-type CondTag = "Best";
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A3Comparison'>;
+
+type CondTag = 'Best';
+
 type CondRow = {
     label: string;
     avgDeg: number;
     count: number;
     tag?: CondTag;
+};
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
 };
 
 function round(n: number, dp = 1) {
@@ -37,29 +64,70 @@ export default function A3ComparisonScreen({route, navigation}: Props) {
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity3RunDraft(runId);
+
         if (!d) {
-            Alert.alert("Session expired", "Your draft session was reset. Please start again.", [
-                {text: "OK", onPress: () => navigation.replace("A3SessionSetup", {activityId})},
-            ]);
+            Alert.alert(
+                'Session expired',
+                'Your draft session was reset. Please start again.',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.replace('A3SessionSetup', {activityId}),
+                    },
+                ],
+            );
             return;
         }
+
         setDraft(d);
     }, [activityId, navigation, runId, user]);
 
-    // Validated angle rows (only valid measurements contribute)
     const validAngles = useMemo(() => {
-        if (!draft) return [] as Array<{ material: FanMaterial; distanceCm: FanDistanceCm; angle: number }>;
-        const rows: Array<{ material: FanMaterial; distanceCm: FanDistanceCm; angle: number }> = [];
+        if (!draft) {
+            return [] as Array<{
+                material: FanMaterial;
+                distanceCm: FanDistanceCm;
+                angle: number;
+            }>;
+        }
+
+        const rows: Array<{
+            material: FanMaterial;
+            distanceCm: FanDistanceCm;
+            angle: number;
+        }> = [];
 
         for (const m of draft.measurements) {
             const r = validateAndDeriveMeasurement({draft, m});
+
             if (!r.isValid) continue;
-            if (typeof m.bendAngleDeg !== "number") continue;
-            rows.push({material: m.material, distanceCm: m.distanceCm, angle: m.bendAngleDeg});
+            if (typeof m.bendAngleDeg !== 'number') continue;
+
+            rows.push({
+                material: m.material,
+                distanceCm: m.distanceCm,
+                angle: m.bendAngleDeg,
+            });
         }
 
         return rows;
@@ -67,8 +135,13 @@ export default function A3ComparisonScreen({route, navigation}: Props) {
 
     const overall = useMemo(() => {
         if (!validAngles.length) return null;
+
         const avg = validAngles.reduce((a, b) => a + b.angle, 0) / validAngles.length;
-        return {avgDeg: avg, count: validAngles.length};
+
+        return {
+            avgDeg: avg,
+            count: validAngles.length,
+        };
     }, [validAngles]);
 
     const materialRows = useMemo<CondRow[]>(() => {
@@ -84,27 +157,28 @@ export default function A3ComparisonScreen({route, navigation}: Props) {
             acc[r.material].count += 1;
         }
 
-        const baseRows: CondRow[] = (A3_MATERIALS as FanMaterial[])
-            .map((mat) => {
-                const v = acc[mat];
-                if (!v.count) return null;
-                const row: CondRow = {
-                    label: mat, // NOTE: label is string to avoid FanMaterial vs string predicate issues
+        const baseRows: CondRow[] = [];
+
+        for (const mat of A3_MATERIALS as FanMaterial[]) {
+            const v = acc[mat];
+
+            if (v.count > 0) {
+                baseRows.push({
+                    label: mat,
                     avgDeg: v.sum / v.count,
                     count: v.count,
-                };
-                return row;
-            })
-            .filter((x): x is CondRow => x !== null);
+                });
+            }
+        }
 
         const best = baseRows.reduce(
             (b, r) => (b == null || r.avgDeg > b.avgDeg ? r : b),
-            null as CondRow | null
+            null as CondRow | null,
         );
 
         return baseRows.map((r) => ({
             ...r,
-            tag: best && r.label === best.label ? ("Best" as const) : undefined,
+            tag: best && r.label === best.label ? 'Best' : undefined,
         }));
     }, [draft, validAngles]);
 
@@ -122,198 +196,321 @@ export default function A3ComparisonScreen({route, navigation}: Props) {
             acc[r.distanceCm].count += 1;
         }
 
-        const baseRows: CondRow[] = (A3_DISTANCES as FanDistanceCm[])
-            .map((dcm) => {
-                const v = acc[dcm];
-                if (!v.count) return null;
-                const row: CondRow = {
+        const baseRows: CondRow[] = [];
+
+        for (const dcm of A3_DISTANCES as FanDistanceCm[]) {
+            const v = acc[dcm];
+
+            if (v.count > 0) {
+                baseRows.push({
                     label: `${dcm} cm`,
                     avgDeg: v.sum / v.count,
                     count: v.count,
-                };
-                return row;
-            })
-            .filter((x): x is CondRow => x !== null);
+                });
+            }
+        }
 
         const best = baseRows.reduce(
             (b, r) => (b == null || r.avgDeg > b.avgDeg ? r : b),
-            null as CondRow | null
+            null as CondRow | null,
         );
 
         return baseRows.map((r) => ({
             ...r,
-            tag: best && r.label === best.label ? ("Best" as const) : undefined,
+            tag: best && r.label === best.label ? 'Best' : undefined,
         }));
     }, [draft, validAngles]);
 
     const insights = useMemo(() => {
         if (!materialRows.length && !distanceRows.length) return null;
-        const bestMat = materialRows.find((r) => r.tag === "Best");
-        const bestDist = distanceRows.find((r) => r.tag === "Best");
-        return {bestMaterial: bestMat?.label, bestDistance: bestDist?.label};
+
+        const bestMat = materialRows.find((r) => r.tag === 'Best');
+        const bestDist = distanceRows.find((r) => r.tag === 'Best');
+
+        return {
+            bestMaterial: bestMat?.label,
+            bestDistance: bestDist?.label,
+        };
     }, [materialRows, distanceRows]);
 
     function onProceed() {
-        navigation.navigate("A3ReflectionSubmit", {activityId, runId});
+        showToast(
+            'Comparison saved',
+            'success',
+            'Opening reflection and submission.',
+        );
+
+        setTimeout(() => {
+            navigation.navigate('A3ReflectionSubmit', {activityId, runId});
+        }, 700);
     }
 
     if (!user) return null;
 
     if (!draft) {
         return (
-            <View style={styles.center}>
-                <Text style={{fontWeight: "900"}}>Loading draft...</Text>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading scientific comparison..."/>
+            </AppGradientScreen>
         );
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Scientific Comparison</Text>
-            <Text style={styles.sub}>Compare conditions using your measured bend angles (valid data only).</Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 3" tone="primary"/>
+
+                <AppText variant="title" style={styles.title}>
+                    Scientific Comparison
+                </AppText>
+
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Compare conditions using measured bend angles. Only valid measurements
+                    contribute to the comparison.
+                </AppText>
+            </View>
 
             {overall ? (
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Overall</Text>
-                    <View style={styles.rowBetween}>
-                        <Text style={styles.k}>Average bend angle</Text>
-                        <Text style={styles.v}>{round(overall.avgDeg, 1)}°</Text>
+                <>
+                    <View style={styles.heroCard}>
+                        <AppText variant="bodyStrong" color="inverseText">
+                            Overall Average Bend Angle
+                        </AppText>
+
+                        <AppText variant="title" color="inverseText" style={styles.heroValue}>
+                            {round(overall.avgDeg, 1)}°
+                        </AppText>
+
+                        <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                            Based on {overall.count} valid measurement
+                            {overall.count > 1 ? 's' : ''}.
+                        </AppText>
                     </View>
-                    <Text style={styles.note}>Based on {overall.count} valid
-                        measurement{overall.count > 1 ? "s" : ""}.</Text>
-                </View>
+
+                    <InfoBanner
+                        title="Interpretation"
+                        message="A larger bend angle suggests stronger airflow impact on the tested material under the current setup."
+                        tone="info"
+                    />
+                </>
             ) : (
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>No valid measurements yet</Text>
-                    <Text style={styles.note}>Record measurements first, then return here to compare conditions.</Text>
-                    <Pressable
-                        style={[styles.secondaryBtn, {marginTop: 12}]}
-                        onPress={() => navigation.navigate("A3Measurements", {activityId, runId})}
-                    >
-                        <Text style={styles.secondaryBtnText}>Go to Measurements</Text>
-                    </Pressable>
-                </View>
+                <EmptyState
+                    title="No valid measurements yet"
+                    message="Record measurements first, then return here to compare fan conditions."
+                    actionLabel="Go to Measurements"
+                    onAction={() => navigation.navigate('A3Measurements', {activityId, runId})}
+                />
             )}
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Material Comparison</Text>
-                {!materialRows.length ? (
-                    <Text style={styles.note}>No valid material data yet.</Text>
-                ) : (
-                    materialRows.map((r) => (
-                        <View key={r.label} style={styles.tableBlock}>
-                            <View style={styles.rowBetween}>
-                                <Text style={styles.v}>{r.label}</Text>
-                                <Text style={styles.v}>{round(r.avgDeg, 1)}°</Text>
-                            </View>
-                            <View style={[styles.rowBetween, {marginTop: 6}]}>
-                                <Text style={styles.note}>n = {r.count}</Text>
-                                {r.tag ? <Text style={styles.tag}>{r.tag}</Text> : <Text/>}
-                            </View>
-                        </View>
-                    ))
-                )}
-            </View>
+            <AppSectionHeader
+                title="Material Comparison"
+                subtitle="Average bend angle grouped by material."
+            />
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Distance Comparison</Text>
-                {!distanceRows.length ? (
-                    <Text style={styles.note}>No valid distance data yet.</Text>
+            <AppCard>
+                {!materialRows.length ? (
+                    <AppText variant="body" color="textMuted">
+                        No valid material data yet.
+                    </AppText>
                 ) : (
-                    distanceRows.map((r) => (
-                        <View key={r.label} style={styles.tableBlock}>
-                            <View style={styles.rowBetween}>
-                                <Text style={styles.v}>{r.label}</Text>
-                                <Text style={styles.v}>{round(r.avgDeg, 1)}°</Text>
-                            </View>
-                            <View style={[styles.rowBetween, {marginTop: 6}]}>
-                                <Text style={styles.note}>n = {r.count}</Text>
-                                {r.tag ? <Text style={styles.tag}>{r.tag}</Text> : <Text/>}
-                            </View>
-                        </View>
-                    ))
+                    <View style={styles.rowList}>
+                        {materialRows.map((r) => (
+                            <ComparisonRow key={r.label} row={r}/>
+                        ))}
+                    </View>
                 )}
-            </View>
+            </AppCard>
+
+            <AppSectionHeader
+                title="Distance Comparison"
+                subtitle="Average bend angle grouped by fan distance."
+            />
+
+            <AppCard>
+                {!distanceRows.length ? (
+                    <AppText variant="body" color="textMuted">
+                        No valid distance data yet.
+                    </AppText>
+                ) : (
+                    <View style={styles.rowList}>
+                        {distanceRows.map((r) => (
+                            <ComparisonRow key={r.label} row={r}/>
+                        ))}
+                    </View>
+                )}
+            </AppCard>
 
             {insights ? (
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Quick Insight</Text>
-                    <Text style={{marginTop: 8, lineHeight: 18}}>
-                        Best material so far: <Text style={{fontWeight: "900"}}>{insights.bestMaterial ?? "—"}</Text>
-                        {"\n"}
-                        Best distance so far: <Text style={{fontWeight: "900"}}>{insights.bestDistance ?? "—"}</Text>
-                    </Text>
-                    <Text style={styles.note}>This is based on averages; more trials improve reliability.</Text>
-                </View>
+                <>
+                    <AppSectionHeader
+                        title="Quick Insight"
+                        subtitle="Highest average condition so far."
+                    />
+
+                    <AppCard>
+                        <View style={styles.insightGrid}>
+                            <InsightTile
+                                label="Best material"
+                                value={insights.bestMaterial ?? '—'}
+                            />
+
+                            <InsightTile
+                                label="Best distance"
+                                value={insights.bestDistance ?? '—'}
+                            />
+                        </View>
+
+                        <InfoBanner
+                            title="Reliability note"
+                            message="This is based on averages. More repeated trials improve confidence."
+                            tone="info"
+                        />
+                    </AppCard>
+                </>
             ) : null}
 
-            <Pressable style={styles.primaryBtn} onPress={onProceed}>
-                <Text style={styles.primaryBtnText}>Proceed to Reflection & Submit</Text>
-            </Pressable>
+            <AppButton
+                title="Proceed to Reflection & Submit"
+                onPress={onProceed}
+                disabled={!overall}
+            />
 
-            <View style={{height: 30}}/>
-        </ScrollView>
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
+
+            <View style={styles.bottomSpace}/>
+        </AppGradientScreen>
+    );
+}
+
+function ComparisonRow({row}: { row: CondRow }) {
+    return (
+        <View style={styles.comparisonRow}>
+            <View style={styles.rowMain}>
+                <View style={styles.rowText}>
+                    <AppText variant="bodyStrong">{row.label}</AppText>
+
+                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                        n = {row.count}
+                    </AppText>
+                </View>
+
+                <AppText variant="subtitle">{round(row.avgDeg, 1)}°</AppText>
+            </View>
+
+            {row.tag ? (
+                <View style={styles.tagRow}>
+                    <AppBadge label={row.tag} tone="success"/>
+                </View>
+            ) : null}
+        </View>
+    );
+}
+
+function InsightTile({label, value}: { label: string; value: string }) {
+    return (
+        <View style={styles.insightTile}>
+            <AppText variant="caption" color="textMuted">
+                {label}
+            </AppText>
+
+            <AppText variant="bodyStrong" style={styles.insightValue}>
+                {value}
+            </AppText>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {flexGrow: 1, padding: 20},
-    center: {flex: 1, alignItems: "center", justifyContent: "center"},
+    header: {
+        marginBottom: spacing.lg,
+    },
 
-    title: {fontSize: 26, fontWeight: "900", marginTop: 6},
-    sub: {marginTop: 8, opacity: 0.75, lineHeight: 18},
+    title: {
+        marginTop: spacing.md,
+    },
 
-    card: {
-        marginTop: 14,
+    subtitle: {
+        marginTop: spacing.sm,
+    },
+
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
+    },
+
+    heroValue: {
+        marginTop: spacing.sm,
+    },
+
+    heroHint: {
+        marginTop: spacing.md,
+        opacity: 0.75,
+    },
+
+    rowList: {
+        gap: spacing.md,
+    },
+
+    comparisonRow: {
         borderWidth: 1,
-        borderColor: "#eee",
-        backgroundColor: "#fafafa",
-        borderRadius: 14,
-        padding: 14,
-    },
-    cardTitle: {fontSize: 16, fontWeight: "900"},
-
-    rowBetween: {flexDirection: "row", justifyContent: "space-between", marginTop: 10, gap: 12},
-    k: {flex: 1, fontWeight: "800", opacity: 0.9},
-    v: {fontWeight: "900"},
-
-    note: {marginTop: 8, opacity: 0.75, lineHeight: 18},
-
-    tableBlock: {
-        marginTop: 12,
-        borderWidth: 1,
-        borderColor: "#e5e5e5",
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 12,
+        borderColor: colors.border,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
+        padding: spacing.md,
     },
 
-    tag: {
-        backgroundColor: "#111",
-        color: "white",
-        fontWeight: "900",
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 999,
-        overflow: "hidden",
+    rowMain: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: spacing.md,
     },
 
-    primaryBtn: {
-        marginTop: 14,
-        backgroundColor: "#111",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
+    rowText: {
+        flex: 1,
     },
-    primaryBtnText: {color: "white", fontWeight: "900", fontSize: 16},
 
-    secondaryBtn: {
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: "#111",
-        paddingVertical: 12,
-        borderRadius: 14,
-        alignItems: "center",
+    smallGap: {
+        marginTop: spacing.xs,
     },
-    secondaryBtnText: {fontWeight: "900"},
+
+    tagRow: {
+        marginTop: spacing.md,
+        flexDirection: 'row',
+    },
+
+    insightGrid: {
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginBottom: spacing.md,
+    },
+
+    insightTile: {
+        flex: 1,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+    },
+
+    insightValue: {
+        marginTop: spacing.xs,
+        textTransform: 'capitalize',
+    },
+
+    bottomSpace: {
+        height: spacing.xxl,
+    },
 });

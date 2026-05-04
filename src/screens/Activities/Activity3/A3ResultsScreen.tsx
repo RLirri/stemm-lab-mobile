@@ -1,23 +1,15 @@
 // src/screens/Activities/Activity3/A3ResultsScreen.tsx
 
-import React, {useEffect, useMemo, useState} from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
-import type {NativeStackScreenProps} from "@react-navigation/native-stack";
+import React, {useEffect, useMemo, useState} from 'react';
+import {Alert, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
-import type {AppStackParamList} from "../../../navigation/AppStack";
-import {auth} from "../../../services/firebase";
+import type {AppStackParamList} from '../../../navigation/AppStack';
+import {auth} from '../../../services/firebase';
 import {
     getActivity3RunDraft,
     type Activity3RunDraft,
-} from "../../../store/activity3RunDraftStore";
+} from '../../../store/activity3RunDraftStore';
 
 import {
     A3_DISTANCES,
@@ -25,18 +17,51 @@ import {
     computeSummary,
     getSubmissionGate,
     validateAllMeasurements,
-} from "../../../services/activity3PhysicsService";
+} from '../../../services/activity3PhysicsService';
 
-import ActivityBarChart from "../../../components/charts/ActivityBarChart";
-import ResultsInsightCard from "../../../components/insights/ResultsInsightCard";
-import PerformanceFeedbackCard from "../../../components/feedback/PerformanceFeedbackCard";
+import ActivityBarChart from '../../../components/charts/ActivityBarChart';
+import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
+import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
     buildA3Visualization,
     type A3VisualizationTrial,
-} from "../../../services/resultInsights/activity3VisualizationService";
-import {generatePerformanceFeedback} from "../../../services/performanceFeedback/performanceFeedbackService";
+} from '../../../services/resultInsights/activity3VisualizationService';
+import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 
-type Props = NativeStackScreenProps<AppStackParamList, "A3Results">;
+import {
+    AppBadge,
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppSectionHeader,
+    AppStatusToast,
+    AppText,
+    InfoBanner,
+    LoadingState,
+} from '../../../components/ui';
+
+import {colors, radius, spacing} from '../../../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'A3Results'>;
+
+type ToastTone = 'success' | 'info' | 'warning' | 'danger';
+
+type ToastState = {
+    visible: boolean;
+    title: string;
+    message?: string;
+    tone: ToastTone;
+};
+
+function formatDeg(value: number | undefined, digits = 1): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+    return `${value.toFixed(digits)}°`;
+}
+
+function formatText(value: string | undefined): string {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : '—';
+}
 
 export default function A3ResultsScreen({route, navigation}: Props) {
     const user = auth.currentUser;
@@ -44,17 +69,35 @@ export default function A3ResultsScreen({route, navigation}: Props) {
 
     const [draft, setDraft] = useState<Activity3RunDraft | null>(null);
 
+    const [toast, setToast] = useState<ToastState>({
+        visible: false,
+        title: '',
+        message: undefined,
+        tone: 'success',
+    });
+
+    function showToast(title: string, tone: ToastTone = 'success', message?: string) {
+        setToast({
+            visible: true,
+            title,
+            message,
+            tone,
+        });
+    }
+
     useEffect(() => {
         if (!user) return;
 
         const d = getActivity3RunDraft(runId);
 
         if (!d) {
-            Alert.alert("Session expired", "Please restart Activity 3.", [
+            Alert.alert('Session expired', 'Please restart Activity 3.', [
                 {
-                    text: "OK",
+                    text: 'OK',
                     onPress: () =>
-                        navigation.replace("A3SessionSetup", {activityId}),
+                        navigation.replace('A3SessionSetup', {
+                            activityId,
+                        }),
                 },
             ]);
             return;
@@ -86,9 +129,14 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         for (const m of validatedDraft.measurements) {
             if (!m.isValid || m.bendAngleDeg == null) continue;
 
-            const current = byDesign.get(m.designIndex) ?? {sum: 0, count: 0};
+            const current = byDesign.get(m.designIndex) ?? {
+                sum: 0,
+                count: 0,
+            };
+
             current.sum += m.bendAngleDeg;
             current.count += 1;
+
             byDesign.set(m.designIndex, current);
         }
 
@@ -104,7 +152,7 @@ export default function A3ResultsScreen({route, navigation}: Props) {
     }, [validatedDraft]);
 
     const visualization = useMemo(() => {
-        const trials: A3VisualizationTrial[] = designAverages.map(item => ({
+        const trials: A3VisualizationTrial[] = designAverages.map((item) => ({
             label: `Design ${item.designIndex + 1}`,
             averageBendAngleDeg: item.avg,
         }));
@@ -116,8 +164,8 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         const best = designAverages[0];
         const worst = designAverages[designAverages.length - 1];
 
-        return generatePerformanceFeedback("activity3", {
-            trials: designAverages.map(item => ({
+        return generatePerformanceFeedback('activity3', {
+            trials: designAverages.map((item) => ({
                 label: `Design ${item.designIndex + 1}`,
                 value: item.avg,
             })),
@@ -131,27 +179,50 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         return Number(summary.bestDesignAvgDeg.toFixed(2));
     }, [summary]);
 
+    const predictedDesignLabel =
+        typeof validatedDraft?.prediction?.predictedBestDesignIndex === 'number'
+            ? `Design ${validatedDraft.prediction.predictedBestDesignIndex + 1}`
+            : undefined;
+
+    const predictedDistanceLabel =
+        typeof validatedDraft?.prediction?.predictedBestDistanceCm === 'number'
+            ? `${validatedDraft.prediction.predictedBestDistanceCm} cm`
+            : undefined;
+
+    const bestDesignLabel =
+        summary?.bestDesignIndex != null
+            ? `Design ${Number(summary.bestDesignIndex) + 1}`
+            : '—';
+
+    const isReadyToSubmit = Boolean(
+        submissionGate && !submissionGate.reasons?.length,
+    );
+
     function onContinueToReflection() {
         if (!validatedDraft || !submissionGate) return;
 
         const blocking: string[] = [];
 
         if (!submissionGate.hasPrediction) {
-            blocking.push("Prediction is missing.");
+            blocking.push('Prediction is missing.');
         }
 
         if (
             submissionGate.validCount <
             Math.max(3, validatedDraft.session.fanDesignCount)
         ) {
-            blocking.push("Not enough valid measurements.");
+            blocking.push('Not enough valid measurements.');
         }
 
         const perDesign = new Map<number, number>();
 
         for (const m of validatedDraft.measurements) {
             if (!m.isValid) continue;
-            perDesign.set(m.designIndex, (perDesign.get(m.designIndex) ?? 0) + 1);
+
+            perDesign.set(
+                m.designIndex,
+                (perDesign.get(m.designIndex) ?? 0) + 1,
+            );
         }
 
         for (let i = 0; i < validatedDraft.session.fanDesignCount; i += 1) {
@@ -161,54 +232,92 @@ export default function A3ResultsScreen({route, navigation}: Props) {
         }
 
         if (blocking.length > 0) {
-            Alert.alert("Incomplete data", blocking.join("\n"));
+            Alert.alert('Incomplete data', blocking.join('\n'));
             return;
         }
 
-        navigation.navigate("A3ReflectionSubmit", {activityId, runId});
+        showToast(
+            'Results ready',
+            'success',
+            'Opening reflection and submission.',
+        );
+
+        setTimeout(() => {
+            navigation.navigate('A3ReflectionSubmit', {activityId, runId});
+        }, 700);
     }
 
     if (!user) return null;
 
     if (!validatedDraft || !summary) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator/>
-            </View>
+            <AppGradientScreen scroll={false}>
+                <LoadingState message="Loading results dashboard..."/>
+            </AppGradientScreen>
         );
     }
 
-    const predictedDesignLabel =
-        typeof validatedDraft.prediction?.predictedBestDesignIndex === "number"
-            ? `Design ${validatedDraft.prediction.predictedBestDesignIndex + 1}`
-            : undefined;
-
-    const predictedDistanceLabel =
-        typeof validatedDraft.prediction?.predictedBestDistanceCm === "number"
-            ? `${validatedDraft.prediction.predictedBestDistanceCm} cm`
-            : undefined;
-
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Results Dashboard</Text>
-            <Text style={styles.sub}>
-                Leaderboard score = highest average bend angle from valid measurements
-                only.
-            </Text>
+        <AppGradientScreen>
+            <View style={styles.header}>
+                <AppBadge label="Activity 3" tone="primary"/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Overall Summary</Text>
+                <AppText variant="title" style={styles.title}>
+                    Results Dashboard
+                </AppText>
 
-                <View style={styles.rowBetween}>
-                    <Text>Valid measurements</Text>
-                    <Text style={styles.bold}>{summary.validCount}</Text>
-                </View>
-
-                <View style={styles.rowBetween}>
-                    <Text>Average angle overall</Text>
-                    <Text style={styles.bold}>{summary.avgAngleDeg.toFixed(2)}°</Text>
-                </View>
+                <AppText variant="body" color="textMuted" style={styles.subtitle}>
+                    Review fan design performance, prediction accuracy, and submission
+                    readiness.
+                </AppText>
             </View>
+
+            <View style={styles.heroCard}>
+                <View style={styles.heroTop}>
+                    <AppText variant="bodyStrong" color="inverseText">
+                        Best Performing Design
+                    </AppText>
+
+                    <AppBadge
+                        label={isReadyToSubmit ? 'Ready' : 'Needs review'}
+                        tone={isReadyToSubmit ? 'success' : 'warning'}
+                    />
+                </View>
+
+                <AppText variant="title" color="inverseText" style={styles.heroScore}>
+                    {bestDesignLabel}
+                </AppText>
+
+                <AppText variant="subtitle" color="inverseText" style={styles.heroMeta}>
+                    {summary.bestDesignAvgDeg != null
+                        ? `${leaderboardScore}° average`
+                        : 'No valid best design yet'}
+                </AppText>
+
+                <AppText variant="caption" color="inverseText" style={styles.heroHint}>
+                    Leaderboard score is based on the highest average bend angle from valid
+                    measurements only.
+                </AppText>
+            </View>
+
+            <AppSectionHeader
+                title="Overall Summary"
+                subtitle="Validated measurement statistics."
+            />
+
+            <AppCard>
+                <MetricRow label="Valid measurements" value={String(summary.validCount)}/>
+
+                <MetricRow
+                    label="Average angle overall"
+                    value={formatDeg(summary.avgAngleDeg, 2)}
+                />
+
+                <MetricRow
+                    label="Leaderboard score"
+                    value={summary.bestDesignAvgDeg != null ? `${leaderboardScore}°` : '—'}
+                />
+            </AppCard>
 
             <ActivityBarChart
                 title="Design Performance Chart"
@@ -221,234 +330,414 @@ export default function A3ResultsScreen({route, navigation}: Props) {
 
             <PerformanceFeedbackCard feedback={performanceFeedback}/>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Design Ranking</Text>
+            <AppSectionHeader
+                title="Design Ranking"
+                subtitle="Ranked by average valid bend angle."
+            />
 
+            <AppCard>
                 {designAverages.length === 0 ? (
-                    <Text style={styles.muted}>No valid measurements recorded.</Text>
+                    <AppText variant="body" color="textMuted">
+                        No valid measurements recorded.
+                    </AppText>
                 ) : (
-                    designAverages.map(item => (
-                        <View key={item.designIndex} style={styles.rowBetween}>
-                            <Text>Design {item.designIndex + 1}</Text>
-                            <Text style={styles.bold}>
-                                {item.avg.toFixed(1)}° ({item.count} valid)
-                            </Text>
-                        </View>
-                    ))
+                    <View style={styles.rankList}>
+                        {designAverages.map((item, index) => (
+                            <View key={item.designIndex} style={styles.rankRow}>
+                                <View style={styles.rankBadge}>
+                                    <AppText variant="caption" color="inverseText">
+                                        #{index + 1}
+                                    </AppText>
+                                </View>
+
+                                <View style={styles.rankContent}>
+                                    <AppText variant="bodyStrong">
+                                        Design {item.designIndex + 1}
+                                    </AppText>
+
+                                    <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                                        {item.count} valid measurement{item.count > 1 ? 's' : ''}
+                                    </AppText>
+                                </View>
+
+                                <AppText variant="subtitle">{formatDeg(item.avg, 1)}</AppText>
+                            </View>
+                        ))}
+                    </View>
                 )}
-            </View>
+            </AppCard>
 
             {summary.bestDesignIndex != null && summary.bestDesignAvgDeg != null ? (
-                <View style={[styles.card, styles.highlightCard]}>
-                    <Text style={styles.cardTitle}>Best Performing Design</Text>
-                    <Text style={styles.bigText}>
-                        Design {Number(summary.bestDesignIndex) + 1}
-                    </Text>
-                    <Text style={styles.bigScore}>{leaderboardScore}° average</Text>
-                    <Text style={styles.note}>
-                        This value is used as the leaderboard score.
-                    </Text>
-                </View>
+                <>
+                    <AppSectionHeader
+                        title="Leaderboard Result"
+                        subtitle="The score that will be used for team ranking."
+                    />
+
+                    <AppCard>
+                        <View style={styles.scoreBox}>
+                            <AppBadge label="Best design" tone="success"/>
+
+                            <AppText variant="title" style={styles.scoreTitle}>
+                                Design {Number(summary.bestDesignIndex) + 1}
+                            </AppText>
+
+                            <AppText variant="subtitle" color="primary">
+                                {leaderboardScore}° average
+                            </AppText>
+
+                            <AppText variant="body" color="textMuted" style={styles.note}>
+                                This value is calculated from valid measurements only.
+                            </AppText>
+                        </View>
+                    </AppCard>
+                </>
             ) : null}
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Breakdown</Text>
+            <AppSectionHeader
+                title="Breakdown"
+                subtitle="Average bend angle by distance and material."
+            />
 
-                <Text style={styles.sectionLabel}>By distance</Text>
-                {A3_DISTANCES.map(distance => (
-                    <View key={distance} style={styles.rowBetween}>
-                        <Text>{distance} cm</Text>
-                        <Text style={styles.bold}>
-                            {summary.byDistance[distance] != null
-                                ? `${summary.byDistance[distance]!.toFixed(2)}°`
-                                : "—"}
-                        </Text>
+            <AppCard>
+                <AppText variant="sectionTitle">By distance</AppText>
+
+                <View style={styles.breakdownList}>
+                    {A3_DISTANCES.map((distance) => (
+                        <MetricRow
+                            key={distance}
+                            label={`${distance} cm`}
+                            value={
+                                summary.byDistance[distance] != null
+                                    ? formatDeg(summary.byDistance[distance], 2)
+                                    : '—'
+                            }
+                        />
+                    ))}
+                </View>
+
+                <View style={styles.divider}/>
+
+                <AppText variant="sectionTitle">By material</AppText>
+
+                <View style={styles.breakdownList}>
+                    {A3_MATERIALS.map((material) => (
+                        <MetricRow
+                            key={material}
+                            label={material}
+                            value={
+                                summary.byMaterial[material] != null
+                                    ? formatDeg(summary.byMaterial[material], 2)
+                                    : '—'
+                            }
+                            capitalizeLabel
+                        />
+                    ))}
+                </View>
+            </AppCard>
+
+            <AppSectionHeader
+                title="Prediction Evaluation"
+                subtitle="Compare your hypothesis with the measured best result."
+            />
+
+            <AppCard>
+                <MetricRow
+                    label="Predicted design"
+                    value={formatText(predictedDesignLabel)}
+                />
+
+                <MetricRow
+                    label="Predicted distance"
+                    value={formatText(predictedDistanceLabel)}
+                />
+
+                <View style={styles.predictionBox}>
+                    <View style={styles.predictionText}>
+                        <AppText variant="bodyStrong">Prediction result</AppText>
+
+                        <AppText variant="caption" color="textMuted" style={styles.smallGap}>
+                            The result checks whether your predicted best design matched the
+                            measured best design.
+                        </AppText>
                     </View>
-                ))}
 
-                <Text style={styles.sectionLabel}>By material</Text>
-                {A3_MATERIALS.map(material => (
-                    <View key={material} style={styles.rowBetween}>
-                        <Text style={styles.capitalize}>{material}</Text>
-                        <Text style={styles.bold}>
-                            {summary.byMaterial[material] != null
-                                ? `${summary.byMaterial[material]!.toFixed(2)}°`
-                                : "—"}
-                        </Text>
-                    </View>
-                ))}
-            </View>
+                    <AppBadge
+                        label={
+                            summary.wasPredictionCorrect == null
+                                ? 'Not recorded'
+                                : summary.wasPredictionCorrect
+                                    ? 'Correct'
+                                    : 'Different'
+                        }
+                        tone={
+                            summary.wasPredictionCorrect == null
+                                ? 'warning'
+                                : summary.wasPredictionCorrect
+                                    ? 'success'
+                                    : 'info'
+                        }
+                    />
+                </View>
+            </AppCard>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Prediction Evaluation</Text>
+            <AppSectionHeader
+                title="Submission Readiness"
+                subtitle="Final checks before reflection and submission."
+            />
 
-                <Text style={styles.predictionText}>
-                    Your prediction: {predictedDesignLabel ?? "—"} at{" "}
-                    {predictedDistanceLabel ?? "—"}
-                </Text>
-
-                {summary.wasPredictionCorrect != null ? (
-                    <Text style={styles.predictionResult}>
-                        {summary.wasPredictionCorrect
-                            ? "Your best-design prediction was correct."
-                            : "Your best-design prediction was not correct."}
-                    </Text>
-                ) : (
-                    <Text style={styles.muted}>Prediction not recorded.</Text>
-                )}
-            </View>
-
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>Submission Readiness</Text>
-
+            <AppCard>
                 {submissionGate?.reasons?.length ? (
                     <>
-                        <Text style={styles.missingTitle}>Missing:</Text>
-                        {submissionGate.reasons.map((reason, index) => (
-                            <Text key={`${reason}-${index}`} style={styles.reasonText}>
-                                • {reason}
-                            </Text>
-                        ))}
+                        <InfoBanner
+                            title="Incomplete data"
+                            message="Some requirements still need attention before submission."
+                            tone="warning"
+                        />
+
+                        <View style={styles.reasonList}>
+                            {submissionGate.reasons.map((reason, index) => (
+                                <View key={`${reason}-${index}`} style={styles.reasonRow}>
+                                    <View style={styles.reasonDot}/>
+
+                                    <AppText variant="body" color="textMuted" style={styles.reasonText}>
+                                        {reason}
+                                    </AppText>
+                                </View>
+                            ))}
+                        </View>
                     </>
                 ) : (
-                    <Text style={styles.readyText}>Ready to submit data</Text>
+                    <InfoBanner
+                        title="Ready to submit"
+                        message="Your data is ready for reflection and final submission."
+                        tone="success"
+                    />
                 )}
 
-                <Text style={styles.note}>
-                    Note: GPS and video evidence may be enforced during final submission.
-                </Text>
-            </View>
+                <AppText variant="caption" color="textMuted" style={styles.note}>
+                    Note: GPS and video evidence may still be checked during final
+                    submission.
+                </AppText>
+            </AppCard>
 
-            <Pressable style={styles.primaryBtn} onPress={onContinueToReflection}>
-                <Text style={styles.primaryBtnText}>
-                    Continue to Reflection & Submit
-                </Text>
-            </Pressable>
+            <AppButton
+                title="Continue to Reflection & Submit"
+                onPress={onContinueToReflection}
+            />
+
+            <AppButton
+                title="Back to Measurements"
+                variant="outline"
+                onPress={() =>
+                    navigation.navigate('A3Measurements', {
+                        activityId,
+                        runId,
+                    })
+                }
+                style={styles.backButton}
+            />
+
+            <AppStatusToast
+                visible={toast.visible}
+                title={toast.title}
+                message={toast.message}
+                tone={toast.tone}
+                onHide={() =>
+                    setToast((prev) => ({
+                        ...prev,
+                        visible: false,
+                    }))
+                }
+            />
 
             <View style={styles.bottomSpace}/>
-        </ScrollView>
+        </AppGradientScreen>
+    );
+}
+
+type MetricRowProps = {
+    label: string;
+    value: string;
+    capitalizeLabel?: boolean;
+};
+
+function MetricRow({label, value, capitalizeLabel = false}: MetricRowProps) {
+    return (
+        <View style={styles.metricRow}>
+            <AppText
+                variant="bodyStrong"
+                style={[styles.metricLabel, capitalizeLabel && styles.capitalize]}
+            >
+                {label}
+            </AppText>
+
+            <AppText variant="bodyStrong" align="right" style={styles.metricValue}>
+                {value}
+            </AppText>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        padding: 20,
-        backgroundColor: "#FFFFFF",
+    header: {
+        marginBottom: spacing.lg,
     },
-    center: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-    },
+
     title: {
-        fontSize: 26,
-        fontWeight: "900",
-        marginTop: 6,
-        color: "#172033",
+        marginTop: spacing.md,
     },
-    sub: {
-        marginTop: 8,
-        opacity: 0.75,
-        lineHeight: 18,
-        color: "#344054",
+
+    subtitle: {
+        marginTop: spacing.sm,
     },
-    card: {
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-        backgroundColor: "#FAFAFA",
-        borderRadius: 14,
-        padding: 14,
+
+    heroCard: {
+        borderRadius: radius.xl,
+        backgroundColor: colors.primaryDark,
+        padding: spacing.xl,
+        marginBottom: spacing.lg,
     },
-    highlightCard: {
-        borderColor: "#111827",
+
+    heroTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
     },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: "900",
-        color: "#172033",
+
+    heroScore: {
+        marginTop: spacing.md,
     },
-    sectionLabel: {
-        marginTop: 12,
-        fontWeight: "900",
+
+    heroMeta: {
+        marginTop: spacing.xs,
         opacity: 0.9,
-        color: "#172033",
     },
-    rowBetween: {
-        marginTop: 8,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        gap: 12,
+
+    heroHint: {
+        marginTop: spacing.md,
+        opacity: 0.75,
     },
-    bold: {
-        fontWeight: "900",
-        color: "#172033",
+
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: spacing.sm,
     },
-    bigText: {
-        marginTop: 10,
-        fontSize: 20,
-        fontWeight: "900",
-        color: "#172033",
+
+    metricLabel: {
+        flex: 1,
     },
-    bigScore: {
-        marginTop: 8,
-        fontSize: 28,
-        fontWeight: "900",
-        color: "#172033",
+
+    metricValue: {
+        flex: 1,
     },
+
+    rankList: {
+        gap: spacing.md,
+    },
+
+    rankRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+        borderRadius: radius.lg,
+        padding: spacing.md,
+    },
+
+    rankBadge: {
+        width: 42,
+        height: 34,
+        borderRadius: radius.md,
+        backgroundColor: colors.primaryDark,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    rankContent: {
+        flex: 1,
+    },
+
+    smallGap: {
+        marginTop: spacing.xs,
+    },
+
+    scoreBox: {
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.lg,
+    },
+
+    scoreTitle: {
+        marginTop: spacing.md,
+    },
+
     note: {
-        marginTop: 8,
-        opacity: 0.7,
-        lineHeight: 18,
-        color: "#344054",
+        marginTop: spacing.md,
     },
-    muted: {
-        marginTop: 8,
-        opacity: 0.6,
-        color: "#344054",
+
+    breakdownList: {
+        marginTop: spacing.sm,
     },
+
+    divider: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: colors.divider,
+        marginVertical: spacing.md,
+    },
+
     capitalize: {
-        textTransform: "capitalize",
+        textTransform: 'capitalize',
     },
+
+    predictionBox: {
+        marginTop: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surfaceMuted,
+        padding: spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+    },
+
     predictionText: {
-        marginTop: 8,
-        opacity: 0.8,
-        color: "#344054",
+        flex: 1,
     },
-    predictionResult: {
-        marginTop: 10,
-        fontWeight: "900",
-        color: "#172033",
+
+    reasonList: {
+        marginTop: spacing.md,
+        gap: spacing.sm,
     },
-    missingTitle: {
-        marginTop: 8,
-        fontWeight: "900",
-        color: "#172033",
+
+    reasonRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.sm,
     },
+
+    reasonDot: {
+        width: 7,
+        height: 7,
+        borderRadius: radius.pill,
+        backgroundColor: colors.warning,
+        marginTop: 7,
+    },
+
     reasonText: {
-        marginTop: 6,
-        opacity: 0.85,
-        color: "#344054",
+        flex: 1,
     },
-    readyText: {
-        marginTop: 8,
-        fontWeight: "900",
-        color: "#172033",
+
+    backButton: {
+        marginTop: spacing.md,
     },
-    primaryBtn: {
-        marginTop: 16,
-        backgroundColor: "#111827",
-        paddingVertical: 14,
-        borderRadius: 14,
-        alignItems: "center",
-    },
-    primaryBtnText: {
-        color: "#FFFFFF",
-        fontWeight: "900",
-        fontSize: 16,
-    },
+
     bottomSpace: {
-        height: 30,
+        height: spacing.xxl,
     },
 });
