@@ -4,8 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "expo-background-task": "~1.0.10",
     "expo-battery": "~10.0.8",
     "expo-clipboard": "~8.0.8",
+    "expo-dev-client": "~6.0.21",
     "expo-device": "^55.0.9",
     "expo-file-system": "~19.0.21",
     "expo-image-picker": "~17.0.10",
@@ -37,6 +38,7 @@
     "react-hook-form": "^7.71.1",
     "react-native": "0.81.5",
     "react-native-gifted-charts": "^1.4.76",
+    "react-native-google-mobile-ads": "^16.3.3",
     "react-native-maps": "1.20.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
