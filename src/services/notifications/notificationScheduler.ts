@@ -1,4 +1,4 @@
-import * as Notifications from 'expo-notifications';
+import {getNotificationsModule, isExpoGoAndroid} from './notificationRuntime';
 import type {
     StemNotificationResult,
     UnfinishedActivityReminderOptions,
@@ -8,9 +8,20 @@ import {
     getNotificationPermissionStatus,
 } from './notificationPermission';
 
-const UNFINISHED_ACTIVITY_REMINDER_KEY = 'stemm-lab-unfinished-activity-reminder';
+const UNFINISHED_ACTIVITY_REMINDER_KEY =
+    'stemm-lab-unfinished-activity-reminder';
 
 async function cancelReminderByKey(reminderKey: string): Promise<void> {
+    if (isExpoGoAndroid()) {
+        return;
+    }
+
+    const Notifications = await getNotificationsModule();
+
+    if (!Notifications) {
+        return;
+    }
+
     const scheduledNotifications =
         await Notifications.getAllScheduledNotificationsAsync();
 
@@ -35,6 +46,23 @@ export async function scheduleUnfinishedActivityReminder(
     options: UnfinishedActivityReminderOptions
 ): Promise<StemNotificationResult> {
     try {
+        if (isExpoGoAndroid()) {
+            return {
+                success: false,
+                reason:
+                    'Reminder notifications are skipped in Expo Go on Android. Use a development build for full notification testing.',
+            };
+        }
+
+        const Notifications = await getNotificationsModule();
+
+        if (!Notifications) {
+            return {
+                success: false,
+                reason: 'Notifications module is not available.',
+            };
+        }
+
         await configureNotificationChannel();
 
         const permissionStatus = await getNotificationPermissionStatus();

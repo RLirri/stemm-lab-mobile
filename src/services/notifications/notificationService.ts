@@ -1,4 +1,9 @@
-import * as Notifications from 'expo-notifications';
+import {
+    configureForegroundNotificationHandler,
+    getNotificationsModule,
+    isExpoGoAndroid,
+} from './notificationRuntime';
+
 import type {
     StemNotificationCooldown,
     StemNotificationPayload,
@@ -9,14 +14,6 @@ import {
     getNotificationPermissionStatus,
 } from './notificationPermission';
 
-Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-    }),
-});
 
 const lastNotificationTimeByKey = new Map<string, number>();
 
@@ -47,6 +44,23 @@ export async function triggerLocalNotification(
     cooldown?: StemNotificationCooldown
 ): Promise<StemNotificationResult> {
     try {
+        if (isExpoGoAndroid()) {
+            return {
+                success: false,
+                reason: 'Notifications are skipped in Expo Go on Android. Use a development build for notification testing.',
+            };
+        }
+
+        const Notifications = await getNotificationsModule();
+
+        if (!Notifications) {
+            return {
+                success: false,
+                reason: 'Notifications module is not available.',
+            };
+        }
+
+        await configureForegroundNotificationHandler();
         await configureNotificationChannel();
 
         const permissionStatus = await getNotificationPermissionStatus();

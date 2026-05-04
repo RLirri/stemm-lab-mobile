@@ -1,11 +1,17 @@
-import * as Notifications from 'expo-notifications';
 import {Platform} from 'react-native';
+import {getNotificationsModule, isExpoGoAndroid} from './notificationRuntime';
 import type {StemNotificationPermissionStatus} from '../../types/notification';
 
 const DEFAULT_ANDROID_CHANNEL_ID = 'stemm-lab-default';
 
 export async function configureNotificationChannel(): Promise<void> {
-    if (Platform.OS !== 'android') {
+    if (Platform.OS !== 'android' || isExpoGoAndroid()) {
+        return;
+    }
+
+    const Notifications = await getNotificationsModule();
+
+    if (!Notifications) {
         return;
     }
 
@@ -19,6 +25,16 @@ export async function configureNotificationChannel(): Promise<void> {
 }
 
 export async function getNotificationPermissionStatus(): Promise<StemNotificationPermissionStatus> {
+    if (isExpoGoAndroid()) {
+        return 'undetermined';
+    }
+
+    const Notifications = await getNotificationsModule();
+
+    if (!Notifications) {
+        return 'undetermined';
+    }
+
     const permission = await Notifications.getPermissionsAsync();
 
     if (permission.status === 'granted') {
@@ -33,12 +49,22 @@ export async function getNotificationPermissionStatus(): Promise<StemNotificatio
 }
 
 export async function requestNotificationPermission(): Promise<StemNotificationPermissionStatus> {
+    if (isExpoGoAndroid()) {
+        return 'undetermined';
+    }
+
     await configureNotificationChannel();
 
     const existingStatus = await getNotificationPermissionStatus();
 
     if (existingStatus === 'granted') {
         return 'granted';
+    }
+
+    const Notifications = await getNotificationsModule();
+
+    if (!Notifications) {
+        return 'undetermined';
     }
 
     const requested = await Notifications.requestPermissionsAsync();
