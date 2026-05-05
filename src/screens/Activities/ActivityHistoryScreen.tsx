@@ -19,6 +19,8 @@ import {
 } from '../../components/ui';
 
 import {colors, spacing} from '../../theme';
+import {AppAdBanner} from '../../components/ads';
+
 
 function getActivityTitle(activityId: string): string {
     const activity = activityCatalog.find((item) => item.id === activityId);
@@ -194,6 +196,13 @@ export default function ActivityHistoryScreen() {
                     ))}
                 </View>
             )}
+            <AppAdBanner placement="history"/>
+
+            {refreshing ? (
+                <AppText variant="caption" color="textMuted" style={styles.refreshingText}>
+                    Refreshing history...
+                </AppText>
+            ) : null}
 
             {refreshing ? (
                 <AppText variant="caption" color="textMuted" style={styles.refreshingText}>

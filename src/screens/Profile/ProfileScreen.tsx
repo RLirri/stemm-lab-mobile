@@ -9,6 +9,8 @@ import {submitOfflineToFirebase} from '../../services/offlineSubmissionSyncAdapt
 
 import {BatteryStatusCard} from '../../components/battery/BatteryStatusCard';
 
+import {AppAdBanner} from '../../components/ads';
+
 import {
     AppBadge,
     AppButton,
@@ -334,6 +336,7 @@ export default function ProfileScreen() {
                     style={styles.cardButton}
                 />
             </AppCard>
+            <AppAdBanner placement="profile"/>
 
             <AppButton
                 title="Logout"
@@ -341,6 +344,7 @@ export default function ProfileScreen() {
                 onPress={() => setLogoutDialogVisible(true)}
                 style={styles.logoutButton}
             />
+            
 
             <AppConfirmDialog
                 visible={logoutDialogVisible}
