@@ -1,6 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {StyleSheet, View} from 'react-native';
+import {Pressable, StyleSheet, View} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
+import type {AppStackParamList} from '../../navigation/AppStack';
 import {
     ActivityHistoryItem,
     getUserActivityHistory,
@@ -21,6 +23,7 @@ import {
 import {colors, spacing} from '../../theme';
 import {AppAdBanner} from '../../components/ads';
 
+type Props = NativeStackScreenProps<AppStackParamList, 'ActivityHistory'>;
 
 function getActivityTitle(activityId: string): string {
     const activity = activityCatalog.find((item) => item.id === activityId);
@@ -45,7 +48,7 @@ function formatStatus(status?: string): string {
     return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-export default function ActivityHistoryScreen() {
+export default function ActivityHistoryScreen({navigation}: Props) {
     const [history, setHistory] = useState<ActivityHistoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -138,7 +141,7 @@ export default function ActivityHistoryScreen() {
 
             <AppSectionHeader
                 title="Submitted activities"
-                subtitle="Your most recent submissions are shown first."
+                subtitle="Tap a submission card to view its details."
             />
 
             {history.length === 0 ? (
@@ -149,60 +152,72 @@ export default function ActivityHistoryScreen() {
             ) : (
                 <View style={styles.list}>
                     {history.map((item) => (
-                        <AppCard key={item.id} style={styles.historyCard}>
-                            <View style={styles.historyHeader}>
-                                <View style={styles.historyTextArea}>
-                                    <AppText variant="subtitle">
-                                        {getActivityTitle(item.activityId)}
-                                    </AppText>
+                        <Pressable
+                            key={item.id}
+                            onPress={() =>
+                                navigation.navigate('ActivityHistoryDetail', {
+                                    historyItem: item,
+                                })
+                            }
+                            style={({pressed}) => [
+                                styles.pressableCard,
+                                pressed && styles.pressedCard,
+                            ]}
+                        >
+                            <AppCard style={styles.historyCard}>
+                                <View style={styles.historyHeader}>
+                                    <View style={styles.historyTextArea}>
+                                        <AppText variant="subtitle">
+                                            {getActivityTitle(item.activityId)}
+                                        </AppText>
 
-                                    <View style={styles.badgeRow}>
-                                        <AppBadge
-                                            label={getActivityCategory(item.activityId)}
-                                            tone="info"
-                                        />
-                                        <AppBadge
-                                            label={getActivityDifficulty(item.activityId)}
-                                            tone="warning"
-                                        />
+                                        <View style={styles.badgeRow}>
+                                            <AppBadge
+                                                label={getActivityCategory(item.activityId)}
+                                                tone="info"
+                                            />
+                                            <AppBadge
+                                                label={getActivityDifficulty(item.activityId)}
+                                                tone="warning"
+                                            />
+                                        </View>
+                                    </View>
+
+                                    <AppBadge label={formatStatus(item.status)} tone="success"/>
+                                </View>
+
+                                <View style={styles.metaRow}>
+                                    <View style={styles.metaItem}>
+                                        <AppText variant="caption" color="textMuted">
+                                            Score
+                                        </AppText>
+
+                                        <AppText variant="bodyStrong" style={styles.metaValue}>
+                                            {Number.isFinite(item.score) ? item.score : '-'}
+                                        </AppText>
+                                    </View>
+
+                                    <View style={styles.metaItem}>
+                                        <AppText variant="caption" color="textMuted">
+                                            Team
+                                        </AppText>
+
+                                        <AppText variant="bodyStrong" style={styles.metaValue}>
+                                            {item.teamId ?? 'Individual'}
+                                        </AppText>
                                     </View>
                                 </View>
 
-                                <AppBadge label={formatStatus(item.status)} tone="success"/>
-                            </View>
-
-                            <View style={styles.metaRow}>
-                                <View style={styles.metaItem}>
-                                    <AppText variant="caption" color="textMuted">
-                                        Score
-                                    </AppText>
-
-                                    <AppText variant="bodyStrong" style={styles.metaValue}>
-                                        {Number.isFinite(item.score) ? item.score : '-'}
-                                    </AppText>
-                                </View>
-
-                                <View style={styles.metaItem}>
-                                    <AppText variant="caption" color="textMuted">
-                                        Team
-                                    </AppText>
-
-                                    <AppText variant="bodyStrong" style={styles.metaValue}>
-                                        {item.teamId ?? 'Individual'}
-                                    </AppText>
-                                </View>
-                            </View>
-                        </AppCard>
+                                <AppText variant="caption" color="textMuted" style={styles.tapHint}>
+                                    Tap to view submission details
+                                </AppText>
+                            </AppCard>
+                        </Pressable>
                     ))}
                 </View>
             )}
-            <AppAdBanner placement="history"/>
 
-            {refreshing ? (
-                <AppText variant="caption" color="textMuted" style={styles.refreshingText}>
-                    Refreshing history...
-                </AppText>
-            ) : null}
+            <AppAdBanner placement="history"/>
 
             {refreshing ? (
                 <AppText variant="caption" color="textMuted" style={styles.refreshingText}>
@@ -247,6 +262,15 @@ const styles = StyleSheet.create({
         gap: spacing.md,
     },
 
+    pressableCard: {
+        borderRadius: 20,
+    },
+
+    pressedCard: {
+        opacity: 0.86,
+        transform: [{scale: 0.99}],
+    },
+
     historyCard: {
         gap: spacing.md,
     },
@@ -279,6 +303,10 @@ const styles = StyleSheet.create({
     },
 
     metaValue: {
+        marginTop: spacing.xs,
+    },
+
+    tapHint: {
         marginTop: spacing.xs,
     },
 

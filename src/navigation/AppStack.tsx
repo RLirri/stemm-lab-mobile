@@ -10,6 +10,8 @@ import LeaderboardScreen from "../screens/Leaderboard/LeaderboardScreen";
 import ActivitiesListScreen from "../screens/Activities/ActivitiesListScreen";
 import ActivityDetailScreen from "../screens/Activities/ActivityDetailScreen";
 import ActivityHistoryScreen from '../screens/Activities/ActivityHistoryScreen';
+import ActivityHistoryDetailScreen from '../screens/Activities/ActivityHistoryDetailScreen';
+import type {ActivityHistoryItem} from '../services/activityHistoryService';
 
 /* ============================
    Activity 1 (Parachute Drop)
@@ -96,6 +98,9 @@ export type AppStackParamList = {
     Activities: undefined;
     ActivityDetail: { activityId: string };
     ActivityHistory: undefined;
+    ActivityHistoryDetail: {
+        historyItem: ActivityHistoryItem;
+    };
 
     /* ============================
        Activity 1 Flow
@@ -188,6 +193,11 @@ export default function AppStack() {
             <Stack.Screen
                 name="ActivityHistory"
                 component={ActivityHistoryScreen}
+            />
+            <Stack.Screen
+                name="ActivityHistoryDetail"
+                component={ActivityHistoryDetailScreen}
+                options={{title: 'Submission Details'}}
             />
 
             {/* Activity 1 */}
