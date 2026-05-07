@@ -1,12 +1,10 @@
-import React, {useState} from 'react';
-import {Alert, StyleSheet, View} from 'react-native';
+import React from 'react';
+import {StyleSheet, View} from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import {AppStackParamList} from '../../navigation/AppStack';
 import {auth} from '../../services/firebase';
-import {backfillTeamStats} from '../../services/teamMigrationService';
-import {seedActivities} from '../../services/activityAdminService';
-import {activityCatalog} from '../../features/activities/activityCatalog';
+import {isAdminUser} from '../../services/admin/adminAccessService';
 
 import {
     AppBadge,
@@ -26,46 +24,15 @@ type Props = NativeStackScreenProps<AppStackParamList, 'Home'>;
 
 export default function HomeScreen({navigation}: Props) {
     const user = auth.currentUser;
-    const [migrating, setMigrating] = useState(false);
-
-    const ADMIN_UIDS = ['U9Uicg91tbVUTBQvyFpmB3rXtI92'];
-    const isAdmin = !!user?.uid && ADMIN_UIDS.includes(user.uid);
+    const isAdmin = isAdminUser(user?.uid);
 
     const displayName = user?.displayName ?? user?.email ?? 'STEMM Lab learner';
 
-    const smartHint =
-        user?.displayName || user?.email
+    const smartHint = isAdmin
+        ? 'Admin mode is enabled. Review project activity, submissions, teams, and maintenance tools.'
+        : user?.displayName || user?.email
             ? 'Continue your latest experiment, manage your team, or review your learning progress.'
             : 'Start your first STEMM activity and explore prediction, measurement, and reflection.';
-
-    const handleBackfill = async () => {
-        try {
-            setMigrating(true);
-            const result = await backfillTeamStats();
-
-            Alert.alert(
-                'Backfill Complete ✅',
-                `Scanned: ${result.scanned}\nUpdated: ${result.updated}`,
-            );
-        } catch (error: any) {
-            Alert.alert('Error ❌', error?.message ?? 'Unknown error');
-        } finally {
-            setMigrating(false);
-        }
-    };
-
-    const handleSeedActivities = async () => {
-        try {
-            setMigrating(true);
-            const res = await seedActivities(activityCatalog);
-
-            Alert.alert('Seed Complete ✅', `Upserted: ${res.upserted}`);
-        } catch (error: any) {
-            Alert.alert('Error ❌', error?.message ?? 'Unknown error');
-        } finally {
-            setMigrating(false);
-        }
-    };
 
     return (
         <AppGradientScreen>
@@ -87,25 +54,58 @@ export default function HomeScreen({navigation}: Props) {
                     {displayName}
                 </AppText>
 
-                <AppText
-                    variant="body"
-                    color="textMuted"
-                    style={styles.heroSubtitle}
-                >
-                    What would you like to explore today?
+                <AppText variant="body" color="textMuted" style={styles.heroSubtitle}>
+                    {isAdmin
+                        ? 'What would you like to manage today?'
+                        : 'What would you like to explore today?'}
                 </AppText>
             </View>
 
             <InfoBanner
-                title="STEMM Lab is ready"
+                title={isAdmin ? 'Admin mode is ready' : 'STEMM Lab is ready'}
                 message={smartHint}
                 tone="info"
             />
 
-            <AppSectionHeader
-                title="Main actions"
-                subtitle="Quick access to your learning workflow"
-            />
+            {isAdmin ? (
+                <>
+                    <AppSectionHeader
+                        title="Administration"
+                        subtitle="Restricted project monitoring and maintenance tools"
+                    />
+
+                    <AppCard onPress={() => navigation.navigate('AdminDashboard')}>
+                        <View style={styles.cardHeader}>
+                            <AppBadge label="Admin" tone="success"/>
+                        </View>
+
+                        <AppText variant="subtitle" style={styles.cardTitle}>
+                            Open Admin Dashboard
+                        </AppText>
+
+                        <AppText variant="body" color="textMuted" style={styles.cardText}>
+                            Review activity catalog status, Firebase analytics, student submissions, team records,
+                            and controlled maintenance tools.
+                        </AppText>
+
+                        <AppButton
+                            title="Open Admin Dashboard"
+                            onPress={() => navigation.navigate('AdminDashboard')}
+                            style={styles.cardButton}
+                        />
+                    </AppCard>
+
+                    <AppSectionHeader
+                        title="Student workflow"
+                        subtitle="Access the normal learner experience when needed"
+                    />
+                </>
+            ) : (
+                <AppSectionHeader
+                    title="Main actions"
+                    subtitle="Quick access to your learning workflow"
+                />
+            )}
 
             <AppCard>
                 <View style={styles.cardHeader}>
@@ -155,28 +155,6 @@ export default function HomeScreen({navigation}: Props) {
                     Compare scores and learning progress.
                 </AppText>
             </AppCard>
-
-            {__DEV__ && isAdmin ? (
-                <>
-                    <AppSectionHeader title="Developer tools"/>
-
-                    <AppButton
-                        title={migrating ? 'DEV: Migrating...' : 'DEV: Backfill team stats'}
-                        onPress={handleBackfill}
-                        disabled={migrating}
-                        variant="outline"
-                        style={styles.devButton}
-                    />
-
-                    <AppButton
-                        title={migrating ? 'DEV: Seeding...' : 'DEV: Seed activities'}
-                        onPress={handleSeedActivities}
-                        disabled={migrating}
-                        variant="outline"
-                        style={styles.devButton}
-                    />
-                </>
-            ) : null}
 
             <AppBottomNavBar
                 items={[
@@ -249,9 +227,5 @@ const styles = StyleSheet.create({
 
     gridText: {
         marginTop: spacing.sm,
-    },
-
-    devButton: {
-        marginBottom: spacing.md,
     },
 });

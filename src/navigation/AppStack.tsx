@@ -12,6 +12,10 @@ import ActivityDetailScreen from "../screens/Activities/ActivityDetailScreen";
 import ActivityHistoryScreen from '../screens/Activities/ActivityHistoryScreen';
 import ActivityHistoryDetailScreen from '../screens/Activities/ActivityHistoryDetailScreen';
 import type {ActivityHistoryItem} from '../services/activityHistoryService';
+import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
+import AdminSubmissionListScreen from '../screens/Admin/AdminSubmissionListScreen';
+import AdminTeamListScreen from '../screens/Admin/AdminTeamListScreen';
+import AdminTeamDetailScreen from '../screens/Admin/AdminTeamDetailScreen';
 
 /* ============================
    Activity 1 (Parachute Drop)
@@ -100,6 +104,19 @@ export type AppStackParamList = {
     ActivityHistory: undefined;
     ActivityHistoryDetail: {
         historyItem: ActivityHistoryItem;
+    };
+    AdminDashboard: undefined;
+    AdminSubmissionList: undefined;
+
+    AdminSubmissionDetail: {
+        submissionId: string;
+        submissionItem: unknown;
+    };
+    AdminTeamList: undefined;
+
+    AdminTeamDetail: {
+        teamId: string;
+        teamItem: unknown;
     };
 
     /* ============================
@@ -198,6 +215,27 @@ export default function AppStack() {
                 name="ActivityHistoryDetail"
                 component={ActivityHistoryDetailScreen}
                 options={{title: 'Submission Details'}}
+            />
+            <Stack.Screen
+                name="AdminDashboard"
+                component={AdminDashboardScreen}
+                options={{title: 'Admin Dashboard'}}
+            />
+            <Stack.Screen
+                name="AdminSubmissionList"
+                component={AdminSubmissionListScreen}
+                options={{title: 'Recent Submissions'}}
+            />
+            <Stack.Screen
+                name="AdminTeamList"
+                component={AdminTeamListScreen}
+                options={{title: 'Team Records'}}
+            />
+
+            <Stack.Screen
+                name="AdminTeamDetail"
+                component={AdminTeamDetailScreen}
+                options={{title: 'Team Detail'}}
             />
 
             {/* Activity 1 */}
