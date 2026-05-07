@@ -1,31 +1,33 @@
 {
   "expo": {
-    "name": "stemm-lab",
+    "name": "STEMM Lab",
     "slug": "stemm-lab",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/branding/app-icon-abstract.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "stemmlab",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/images/branding/logo-light.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8FAFC"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ruixinhuang.stemmlab"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/branding/app-icon-abstract.png",
+        "backgroundColor": "#FFFFFF"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.stemmlab"
+      "package": "com.ruixinhuang.stemmlab"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/images/branding/app-icon-abstract.png"
     },
     "plugins": [
       "expo-web-browser",
