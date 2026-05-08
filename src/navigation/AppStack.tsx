@@ -16,6 +16,7 @@ import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
 import AdminSubmissionListScreen from '../screens/Admin/AdminSubmissionListScreen';
 import AdminTeamListScreen from '../screens/Admin/AdminTeamListScreen';
 import AdminTeamDetailScreen from '../screens/Admin/AdminTeamDetailScreen';
+import AdminSubmissionDetailScreen from '../screens/Admin/AdminSubmissionDetailScreen';
 
 /* ============================
    Activity 1 (Parachute Drop)
@@ -237,6 +238,11 @@ export default function AppStack() {
                 component={AdminTeamDetailScreen}
                 options={{title: 'Team Detail'}}
             />
+            <Stack.Screen
+                name="AdminSubmissionDetail"
+                component={AdminSubmissionDetailScreen}
+            />
+
 
             {/* Activity 1 */}
             <Stack.Screen name="A1SessionSetup" component={A1SessionSetupScreen} options={{title: "Session Setup"}}/>
