@@ -24,7 +24,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.ruixinhuang.stemmlab"
+      "package": "com.ruixinhuang.stemmlab",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAOyqafO_j7bHHK7kustPlMZbYnYricTng"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/images/branding/app-icon-abstract.png"
