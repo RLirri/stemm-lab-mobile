@@ -6,10 +6,7 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
-import {
-    getActivity3RunDraft,
-    type Activity3RunDraft,
-} from '../../../store/activity3RunDraftStore';
+import {type Activity3RunDraft, getActivity3RunDraft,} from '../../../store/activity3RunDraftStore';
 
 import {
     A3_DISTANCES,
@@ -23,8 +20,8 @@ import ActivityBarChart from '../../../components/charts/ActivityBarChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
-    buildA3Visualization,
     type A3VisualizationTrial,
+    buildA3Visualization,
 } from '../../../services/resultInsights/activity3VisualizationService';
 import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 

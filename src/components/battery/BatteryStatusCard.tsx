@@ -1,11 +1,5 @@
 import React, {useCallback, useEffect, useState} from 'react';
-import {
-    ActivityIndicator,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
+import {ActivityIndicator, Pressable, StyleSheet, Text, View,} from 'react-native';
 import type {BatteryPolicy, BatteryStatus} from '../../types/battery';
 import {computeBatteryPolicy, getBatteryStatus} from '../../services/battery';
 

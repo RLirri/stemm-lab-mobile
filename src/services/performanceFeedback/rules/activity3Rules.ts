@@ -1,10 +1,7 @@
 // src/services/performanceFeedback/rules/activity3Rules.ts
 
 import {max, mean, min, standardDeviation} from "simple-statistics";
-import type {
-    FeedbackItem,
-    FeedbackResult,
-} from "../../../types/performanceFeedback";
+import type {FeedbackItem, FeedbackResult,} from "../../../types/performanceFeedback";
 
 type A3FeedbackTrial = {
     label: string;

@@ -1,15 +1,15 @@
 // src/screens/Activities/Activity4/A4PredictionScreen.tsx
 
 import React, {useEffect, useMemo, useState} from 'react';
-import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
+    type Activity4RunDraft,
     getActivity4RunDraft,
     setActivity4Prediction,
-    type Activity4RunDraft,
 } from '../../../store/activity4RunDraftStore';
 
 import {

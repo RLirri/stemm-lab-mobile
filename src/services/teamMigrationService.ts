@@ -1,11 +1,4 @@
-import {
-    collection,
-    doc,
-    getDocs,
-    serverTimestamp,
-    writeBatch,
-    type DocumentData,
-} from "firebase/firestore";
+import {collection, doc, type DocumentData, getDocs, serverTimestamp, writeBatch,} from "firebase/firestore";
 import {db} from "./firebase";
 
 function safeNum(x: unknown, fallback = 0): number {

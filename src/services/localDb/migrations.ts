@@ -1,9 +1,5 @@
 import type {SQLiteDatabase} from "expo-sqlite";
-import {
-    LOCAL_DB_KEYS,
-    LOCAL_DB_SCHEMA_VERSION,
-    LOCAL_DB_TABLES,
-} from "./schema";
+import {LOCAL_DB_KEYS, LOCAL_DB_SCHEMA_VERSION, LOCAL_DB_TABLES,} from "./schema";
 
 async function createMetaTable(db: SQLiteDatabase): Promise<void> {
     await db.execAsync(`

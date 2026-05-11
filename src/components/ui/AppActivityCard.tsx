@@ -1,15 +1,8 @@
 import React from 'react';
 
-import {
-    StyleSheet,
-    View,
-    ViewStyle,
-} from 'react-native';
+import {StyleSheet, View, ViewStyle,} from 'react-native';
 
-import {
-    colors,
-    spacing,
-} from '../../theme';
+import {colors, spacing,} from '../../theme';
 
 import {AppBadge} from './AppBadge';
 import {AppButton} from './AppButton';

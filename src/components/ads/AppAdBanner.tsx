@@ -1,10 +1,6 @@
 import React from 'react';
 import {Platform, StyleSheet, View} from 'react-native';
-import {
-    BannerAd,
-    BannerAdSize,
-    TestIds,
-} from 'react-native-google-mobile-ads';
+import {BannerAd, BannerAdSize, TestIds,} from 'react-native-google-mobile-ads';
 
 import {AppText} from '../ui';
 import {colors, spacing} from '../../theme';

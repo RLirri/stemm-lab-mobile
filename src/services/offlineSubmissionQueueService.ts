@@ -2,10 +2,7 @@ import {
     getOfflineSubmissionByRunId,
     upsertOfflineSubmission,
 } from "./localDb/repositories/offlineSubmissionRepository";
-import type {
-    OfflineSubmissionRecord,
-    OfflineSubmissionStatus,
-} from "../types/offlineSubmission";
+import type {OfflineSubmissionRecord, OfflineSubmissionStatus,} from "../types/offlineSubmission";
 
 export interface QueueFinalSubmissionInput<TPayload = unknown> {
     runId: string;

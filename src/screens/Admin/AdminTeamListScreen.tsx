@@ -3,10 +3,7 @@ import {Pressable, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../navigation/AppStack';
-import {
-    getAdminTeams,
-    type AdminTeamItem,
-} from '../../services/admin/adminReviewService';
+import {type AdminTeamItem, getAdminTeams,} from '../../services/admin/adminReviewService';
 
 import {
     AppBadge,

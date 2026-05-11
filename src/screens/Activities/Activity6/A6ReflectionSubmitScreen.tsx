@@ -1,15 +1,7 @@
 // src/screens/Activities/Activity6/A6ReflectionSubmitScreen.tsx
 
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View,} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useFocusEffect} from '@react-navigation/native';
 import {doc, getDoc} from 'firebase/firestore';
@@ -18,14 +10,14 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth, db} from '../../../services/firebase';
 import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {
+    type Activity6RunDraft,
     clearActivity6RunDraft,
+    getA6LeaderboardMetrics,
     getActivity6RunDraft,
+    isA6LeaderboardEligible,
     setActivity6Reflection,
     setActivity6SessionVideo,
     validateA6Submission,
-    isA6LeaderboardEligible,
-    getA6LeaderboardMetrics,
-    type Activity6RunDraft,
 } from '../../../store/activity6RunDraftStore';
 import {pickVideoFromLibrary, recordVideoWithCamera} from '../../../services/evidenceService';
 import {submitActivity6} from '../../../services/activitySubmissionService';

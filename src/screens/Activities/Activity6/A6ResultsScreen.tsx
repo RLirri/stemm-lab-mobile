@@ -8,19 +8,19 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
-    getActivity6RunDraft,
-    validateA6Submission,
-    isA6LeaderboardEligible,
-    getA6LeaderboardMetrics,
-    type Activity6RunDraft,
     type A6ParticipantSummary,
+    type Activity6RunDraft,
+    getA6LeaderboardMetrics,
+    getActivity6RunDraft,
+    isA6LeaderboardEligible,
+    validateA6Submission,
 } from '../../../store/activity6RunDraftStore';
 
 import ActivityBarChart from '../../../components/charts/ActivityBarChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import {
-    buildA6Visualization,
     type A6VisualizationParticipant,
+    buildA6Visualization,
 } from '../../../services/resultInsights/activity6VisualizationService';
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';

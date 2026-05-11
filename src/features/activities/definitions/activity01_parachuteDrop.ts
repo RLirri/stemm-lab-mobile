@@ -4,7 +4,7 @@ export const activity01_parachuteDrop: ActivityDefinition = {
     id: "act_parachute_drop_v1",
     slug: "parachute-drop",
     startRoute: "A1SessionSetup",
-    
+
     title: "Parachute Drop Challenge",
     shortDescription: "Design a parachute to slow a falling object using everyday materials.",
     description:

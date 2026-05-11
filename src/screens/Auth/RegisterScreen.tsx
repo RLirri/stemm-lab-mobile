@@ -10,14 +10,7 @@ import {AuthStackParamList} from '../../navigation/AuthStack';
 import {registerWithEmail} from '../../services/authService';
 import {friendlyAuthError} from '../../utils/firebaseErrors';
 
-import {
-    AppButton,
-    AppCard,
-    AppGradientScreen,
-    AppInput,
-    AppStatusToast,
-    AppText,
-} from '../../components/ui';
+import {AppButton, AppCard, AppGradientScreen, AppInput, AppStatusToast, AppText,} from '../../components/ui';
 
 import {spacing} from '../../theme';
 

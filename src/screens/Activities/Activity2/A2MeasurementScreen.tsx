@@ -1,15 +1,7 @@
 // src/screens/Activities/Activity2/A2MeasurementScreen.tsx
 
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View,} from 'react-native';
 import * as Location from 'expo-location';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
@@ -17,20 +9,16 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A2GpsPoint,
+    type Activity2RunDraft,
     addA2Measurement,
     getActivity2RunDraft,
     removeA2Measurement,
     setA2Computed,
     updateA2Measurement,
-    type A2GpsPoint,
-    type Activity2RunDraft,
 } from '../../../store/activity2RunDraftStore';
 
-import {
-    classifySoundRisk,
-    isValidDbReading,
-    scoreActivity2AverageDb,
-} from '../../../services/scoringService';
+import {classifySoundRisk, isValidDbReading, scoreActivity2AverageDb,} from '../../../services/scoringService';
 import {measureSoundLevel} from '../../../services/microphoneService';
 
 import {

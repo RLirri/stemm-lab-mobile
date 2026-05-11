@@ -9,13 +9,13 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A5AccelDataset,
+    type A5MovementSpec,
+    type A5TrialMode,
+    type Activity5RunDraft,
     getActivity5RunDraft,
     upsertActivity5Trial,
     validateA5Prediction,
-    type Activity5RunDraft,
-    type A5MovementSpec,
-    type A5TrialMode,
-    type A5AccelDataset,
 } from '../../../store/activity5RunDraftStore';
 
 import {startMovementTrial} from '../../../services/activity5BiomechanicsService';

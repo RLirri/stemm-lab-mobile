@@ -1,6 +1,6 @@
 // src/services/performanceFeedback/rules/activity6Rules.ts
 
-import {mean, standardDeviation, min, max} from "simple-statistics";
+import {max, mean, min, standardDeviation} from "simple-statistics";
 import type {FeedbackItem, FeedbackResult} from "../../../types/performanceFeedback";
 
 type A6Trial = {

@@ -13,10 +13,10 @@ import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQu
 import {checkReflectionQuality} from '../../../services/reflectionQualityService';
 
 import {
+    type Activity3RunDraft,
     clearActivity3RunDraft,
     getActivity3RunDraft,
     setActivity3Reflection,
-    type Activity3RunDraft,
 } from '../../../store/activity3RunDraftStore';
 
 import {

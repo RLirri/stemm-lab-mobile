@@ -1,14 +1,8 @@
 import React from 'react';
 
-import {
-    StyleSheet,
-    View,
-} from 'react-native';
+import {StyleSheet, View,} from 'react-native';
 
-import {
-    colors,
-    spacing,
-} from '../../theme';
+import {colors, spacing,} from '../../theme';
 
 export function AppDivider() {
     return <View style={styles.divider}/>;

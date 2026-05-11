@@ -16,14 +16,13 @@ import {stripUndefinedDeep} from "./firestoreSanitize";
 import {uploadVideoToStorage} from "./evidenceService";
 
 import type {ActivityRunDraft} from "../store/activityRunDraftStore";
+import {markRunDraftSubmittedInLocalDb} from "../store/activityRunDraftStore";
 import type {Activity2RunDraft} from "../store/activity2RunDraftStore";
 import type {Activity3RunDraft} from "../store/activity3RunDraftStore";
 import type {Activity4RunDraft} from "../store/activity4RunDraftStore";
 import type {Activity5RunDraft} from "../store/activity5RunDraftStore";
 import type {Activity6RunDraft} from "../store/activity6RunDraftStore";
 import type {Activity7RunDraft} from "../store/activity7RunDraftStore";
-
-import {markRunDraftSubmittedInLocalDb} from "../store/activityRunDraftStore";
 
 import {notifyActivityCompleted} from "./notifications/notificationService";
 

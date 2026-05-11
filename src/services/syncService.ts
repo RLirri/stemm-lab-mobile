@@ -4,14 +4,8 @@ import {
     markOfflineSubmissionSynced,
     markOfflineSubmissionSyncing,
 } from "./localDb/repositories/offlineSubmissionRepository";
-import type {
-    OfflineSubmissionRecord,
-    OfflineSubmissionSyncResult,
-} from "../types/offlineSubmission";
-import {
-    notifySyncFailed,
-    notifySyncSuccess,
-} from "./notifications/notificationService";
+import type {OfflineSubmissionRecord, OfflineSubmissionSyncResult,} from "../types/offlineSubmission";
+import {notifySyncFailed, notifySyncSuccess,} from "./notifications/notificationService";
 
 export interface SyncQueuedSubmissionHandler<TPayload = unknown> {
     (

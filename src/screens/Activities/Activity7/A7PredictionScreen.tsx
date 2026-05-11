@@ -7,11 +7,11 @@ import {useFocusEffect} from '@react-navigation/native';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {
+    type A7MeasurementPhase,
+    type Activity7RunDraft,
     getActivity7RunDraft,
     setActivity7Prediction,
     validateA7Prediction,
-    type Activity7RunDraft,
-    type A7MeasurementPhase,
 } from '../../../store/activity7RunDraftStore';
 
 import {

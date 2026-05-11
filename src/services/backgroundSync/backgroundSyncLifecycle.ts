@@ -3,10 +3,7 @@
 import {AppState, type AppStateStatus} from 'react-native';
 import * as Network from 'expo-network';
 
-import {
-    registerBackgroundSyncTask,
-    runBackgroundSyncSafely,
-} from './backgroundSyncService';
+import {registerBackgroundSyncTask, runBackgroundSyncSafely,} from './backgroundSyncService';
 
 let appStateSubscription: { remove: () => void } | null = null;
 let networkSubscription: { remove: () => void } | null = null;

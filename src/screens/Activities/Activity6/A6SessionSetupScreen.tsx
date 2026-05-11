@@ -15,6 +15,9 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A6ParticipantDraft,
+    type A6TracingPathType,
+    type Activity6RunDraft,
     createActivity6RunDraft,
     discardActivity6RunDraft,
     getActivity6RunDraft,
@@ -23,9 +26,6 @@ import {
     updateActivity6Participant,
     updateActivity6Session,
     validateA6Session,
-    type Activity6RunDraft,
-    type A6ParticipantDraft,
-    type A6TracingPathType,
 } from '../../../store/activity6RunDraftStore';
 
 import {confirmBatteryBeforeActivity} from '../../../services/battery';

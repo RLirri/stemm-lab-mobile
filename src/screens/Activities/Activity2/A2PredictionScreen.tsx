@@ -1,22 +1,15 @@
 // src/screens/Activities/Activity2/A2PredictionScreen.tsx
 
 import React, {useEffect, useMemo, useState} from 'react';
-import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View,} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
+    type Activity2RunDraft,
     getActivity2RunDraft,
     updateActivity2Session,
-    type Activity2RunDraft,
 } from '../../../store/activity2RunDraftStore';
 
 import {

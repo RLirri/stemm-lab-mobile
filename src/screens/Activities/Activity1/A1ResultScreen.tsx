@@ -7,20 +7,20 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
-    getRunDraft,
-    updateAttempt,
     type ActivityRunDraft,
     type AttemptComputedDraft,
     type AttemptDraft,
+    getRunDraft,
+    updateAttempt,
 } from '../../../store/activityRunDraftStore';
 
 import A1PredictedActualChart from '../../../components/charts/A1PredictedActualChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
+    type A1PredictionPoint,
     buildA1Visualization,
     theoreticalDropTimeSec,
-    type A1PredictionPoint,
 } from '../../../services/resultInsights/activity1VisualizationService';
 import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 

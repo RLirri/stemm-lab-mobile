@@ -1,24 +1,17 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Switch,
-    View,
-} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, StyleSheet, Switch, View,} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
+    type Activity2RunDraft,
     createActivity2RunDraft,
     discardActivity2RunDraft,
     getActivity2RunDraft,
     getLatestRecoverableActivity2RunDraft,
     hydrateActivity2RunDraftFromLocalDb,
     updateActivity2Session,
-    type Activity2RunDraft,
 } from '../../../store/activity2RunDraftStore';
 import {confirmBatteryBeforeActivity} from '../../../services/battery';
 

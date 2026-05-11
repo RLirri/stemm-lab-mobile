@@ -1,5 +1,5 @@
-import * as SQLite from "expo-sqlite";
 import type {SQLiteDatabase} from "expo-sqlite";
+import * as SQLite from "expo-sqlite";
 import {runMigrations} from "./migrations";
 import {LOCAL_DB_NAME} from "./schema";
 

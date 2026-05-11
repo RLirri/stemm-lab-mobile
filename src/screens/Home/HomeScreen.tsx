@@ -8,6 +8,7 @@ import {isAdminUser} from '../../services/admin/adminAccessService';
 
 import {
     AppBadge,
+    AppBottomNavBar,
     AppButton,
     AppCard,
     AppGradientScreen,
@@ -15,7 +16,6 @@ import {
     AppSectionHeader,
     AppText,
     InfoBanner,
-    AppBottomNavBar,
 } from '../../components/ui';
 
 import {spacing} from '../../theme';

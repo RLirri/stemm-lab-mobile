@@ -1,25 +1,18 @@
 // src/screens/Activities/Activity1/A1AttemptPlanScreen.tsx
 
 import React, {useEffect, useMemo, useState} from 'react';
-import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View,} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
-    getRunDraft,
-    updateAttempt,
     type ActivityRunDraft,
     type AttemptDraft,
     type AttemptPlanDraft,
+    getRunDraft,
     type SessionDraft,
+    updateAttempt,
 } from '../../../store/activityRunDraftStore';
 
 import {

@@ -1,12 +1,6 @@
 import {getNotificationsModule, isExpoGoAndroid} from './notificationRuntime';
-import type {
-    StemNotificationResult,
-    UnfinishedActivityReminderOptions,
-} from '../../types/notification';
-import {
-    configureNotificationChannel,
-    getNotificationPermissionStatus,
-} from './notificationPermission';
+import type {StemNotificationResult, UnfinishedActivityReminderOptions,} from '../../types/notification';
+import {configureNotificationChannel, getNotificationPermissionStatus,} from './notificationPermission';
 
 const UNFINISHED_ACTIVITY_REMINDER_KEY =
     'stemm-lab-unfinished-activity-reminder';

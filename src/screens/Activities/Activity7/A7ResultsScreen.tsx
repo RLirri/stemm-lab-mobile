@@ -8,19 +8,19 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
-    getActivity7RunDraft,
-    validateA7Submission,
-    isA7LeaderboardEligible,
-    getA7LeaderboardMetrics,
-    type Activity7RunDraft,
     type A7ParticipantSummary,
+    type Activity7RunDraft,
+    getA7LeaderboardMetrics,
+    getActivity7RunDraft,
+    isA7LeaderboardEligible,
+    validateA7Submission,
 } from '../../../store/activity7RunDraftStore';
 
 import ActivityBarChart from '../../../components/charts/ActivityBarChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import {
-    buildA7Visualization,
     type A7RecoveryParticipant,
+    buildA7Visualization,
 } from '../../../services/resultInsights/activity7VisualizationService';
 
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';

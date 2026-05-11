@@ -15,16 +15,16 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A5ParticipantDraft,
+    type Activity5RunDraft,
     createActivity5RunDraft,
     discardActivity5RunDraft,
     getActivity5RunDraft,
     getLatestRecoverableActivity5RunDraft,
     hydrateActivity5RunDraftFromLocalDb,
-    updateActivity5Session,
     updateActivity5Participant,
+    updateActivity5Session,
     validateA5Session,
-    type Activity5RunDraft,
-    type A5ParticipantDraft,
 } from '../../../store/activity5RunDraftStore';
 
 import {confirmBatteryBeforeActivity} from '../../../services/battery';

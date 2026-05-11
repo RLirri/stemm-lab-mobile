@@ -1,10 +1,6 @@
 import {getLocalDb} from "../sqlite";
 import {LOCAL_DB_TABLES} from "../schema";
-import type {
-    OfflineDraftDbRow,
-    OfflineDraftRecord,
-    OfflineDraftStatus,
-} from "../../../types/offlineDraft";
+import type {OfflineDraftDbRow, OfflineDraftRecord, OfflineDraftStatus,} from "../../../types/offlineDraft";
 
 function mapRowToRecord<TPayload>(
     row: OfflineDraftDbRow

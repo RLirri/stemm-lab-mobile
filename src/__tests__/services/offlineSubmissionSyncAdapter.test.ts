@@ -1,10 +1,6 @@
 import {submitOfflineToFirebase} from '../../services/offlineSubmissionSyncAdapter';
 
-import {
-    submitActivity1,
-    submitActivity2,
-    submitActivity7,
-} from '../../services/activitySubmissionService';
+import {submitActivity1, submitActivity2, submitActivity7,} from '../../services/activitySubmissionService';
 
 jest.mock('../../services/activitySubmissionService', () => ({
     submitActivity1: jest.fn(),

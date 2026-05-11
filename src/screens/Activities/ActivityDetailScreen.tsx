@@ -19,13 +19,12 @@ import {createActivity7RunDraft} from '../../store/activity7RunDraftStore';
 import {
     AppBadge,
     AppButton,
-    AppCard,
+    AppExpandableCard,
     AppGradientScreen,
+    AppStepList,
     AppText,
     InfoBanner,
     LoadingState,
-    AppExpandableCard,
-    AppStepList,
 } from '../../components/ui';
 
 import {spacing} from '../../theme';

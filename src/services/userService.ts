@@ -1,6 +1,6 @@
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
-import { User } from "firebase/auth";
-import { db } from "./firebase";
+import {doc, getDoc, serverTimestamp, setDoc, updateDoc} from "firebase/firestore";
+import {User} from "firebase/auth";
+import {db} from "./firebase";
 
 function detectProvider(user: User): "password" | "google" | "unknown" {
     const ids = user.providerData?.map((p) => p.providerId) ?? [];
@@ -32,7 +32,7 @@ export async function ensureUserProfile(user: User) {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
         });
-        return { created: true };
+        return {created: true};
     }
 
     // Keep profile in sync (safe update)
@@ -43,5 +43,5 @@ export async function ensureUserProfile(user: User) {
         updatedAt: serverTimestamp(),
     });
 
-    return { created: false };
+    return {created: false};
 }

@@ -1,15 +1,7 @@
 import React from 'react';
-import {
-    StyleSheet,
-    Text,
-    TextProps,
-    TextStyle,
-} from 'react-native';
+import {StyleSheet, Text, TextProps, TextStyle,} from 'react-native';
 
-import {
-    colors,
-    typography,
-} from '../../theme';
+import {colors, typography,} from '../../theme';
 
 type AppTextVariant =
     | 'title'

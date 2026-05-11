@@ -2,12 +2,7 @@ import React from 'react';
 import {Pressable, StyleSheet, View} from 'react-native';
 import {Feather} from '@expo/vector-icons';
 
-import {
-    colors,
-    radius,
-    shadows,
-    spacing,
-} from '../../theme';
+import {colors, radius, shadows, spacing,} from '../../theme';
 
 import {AppText} from './AppText';
 

@@ -5,9 +5,9 @@ import {
     onSnapshot,
     orderBy,
     query,
-    where,
-    type Unsubscribe,
     type Timestamp,
+    type Unsubscribe,
+    where,
 } from "firebase/firestore";
 
 import {db} from "./firebase";

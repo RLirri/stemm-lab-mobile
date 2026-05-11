@@ -6,10 +6,10 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {
-    getActivity3RunDraft,
-    setActivity3Prediction,
     type Activity3RunDraft,
     type FanDistanceCm,
+    getActivity3RunDraft,
+    setActivity3Prediction,
 } from '../../../store/activity3RunDraftStore';
 
 import {

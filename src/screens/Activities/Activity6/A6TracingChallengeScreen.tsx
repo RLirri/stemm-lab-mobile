@@ -1,24 +1,24 @@
 // src/screens/Activities/Activity6/A6TracingChallengeScreen.tsx
 
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A6TracePoint,
+    type A6TracingPathType,
+    type Activity6RunDraft,
     getActivity6RunDraft,
     upsertActivity6TracingResult,
-    type Activity6RunDraft,
-    type A6TracingPathType,
-    type A6TracePoint,
 } from '../../../store/activity6RunDraftStore';
 
 import {
-    computeTracingDeviation,
-    computeTracingAccuracyScore,
     A6_RECOMMENDED_MAX_DEV_PX,
+    computeTracingAccuracyScore,
+    computeTracingDeviation,
 } from '../../../services/activity6ReactionBoardService';
 
 import {

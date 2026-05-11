@@ -1,19 +1,8 @@
 import React from 'react';
 
-import {
-    StyleSheet,
-    TextInput,
-    TextInputProps,
-    View,
-} from 'react-native';
+import {StyleSheet, TextInput, TextInputProps, View,} from 'react-native';
 
-import {
-    colors,
-    radius,
-    shadows,
-    spacing,
-    typography,
-} from '../../theme';
+import {colors, radius, shadows, spacing, typography,} from '../../theme';
 
 type Props = TextInputProps;
 

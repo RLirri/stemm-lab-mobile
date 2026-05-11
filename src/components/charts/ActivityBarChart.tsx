@@ -1,7 +1,7 @@
 // src/components/charts/ActivityBarChart.tsx
 
 import React from 'react';
-import {StyleSheet, Text, View, useWindowDimensions} from 'react-native';
+import {StyleSheet, Text, useWindowDimensions, View} from 'react-native';
 import {BarChart} from 'react-native-gifted-charts';
 import type {ChartPoint} from '../../types/visualization';
 

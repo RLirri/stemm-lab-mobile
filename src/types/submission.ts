@@ -1,5 +1,5 @@
 import type {Timestamp} from "firebase/firestore";
-import type {SessionDraft, AttemptDraft} from "../store/activityRunDraftStore";
+import type {AttemptDraft, SessionDraft} from "../store/activityRunDraftStore";
 
 export type SubmissionStatus = "submitted" | "flagged" | "rejected";
 export type ActivityScoreBreakdown = Record<string, number>;

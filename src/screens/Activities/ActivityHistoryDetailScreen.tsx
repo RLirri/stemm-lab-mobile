@@ -4,10 +4,7 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../navigation/AppStack';
 import {activityCatalog} from '../../features/activities/activityCatalog';
-import {
-    getActivityHistoryDetail,
-    type ActivityHistoryDetail,
-} from '../../services/activityHistoryService';
+import {type ActivityHistoryDetail, getActivityHistoryDetail,} from '../../services/activityHistoryService';
 
 import {
     AppBadge,
@@ -624,7 +621,7 @@ const styles = StyleSheet.create({
         marginTop: spacing.xl,
         marginBottom: spacing.lg,
     },
-    
+
     samplePreviewBox: {
         marginTop: spacing.md,
         gap: spacing.sm,

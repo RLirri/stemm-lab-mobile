@@ -1,18 +1,11 @@
-import {
-    configureForegroundNotificationHandler,
-    getNotificationsModule,
-    isExpoGoAndroid,
-} from './notificationRuntime';
+import {configureForegroundNotificationHandler, getNotificationsModule, isExpoGoAndroid,} from './notificationRuntime';
 
 import type {
     StemNotificationCooldown,
     StemNotificationPayload,
     StemNotificationResult,
 } from '../../types/notification';
-import {
-    configureNotificationChannel,
-    getNotificationPermissionStatus,
-} from './notificationPermission';
+import {configureNotificationChannel, getNotificationPermissionStatus,} from './notificationPermission';
 
 
 const lastNotificationTimeByKey = new Map<string, number>();

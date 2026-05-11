@@ -7,12 +7,12 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
+    type A5MovementSpec,
+    type Activity5RunDraft,
     createActivity5RunDraft,
     getActivity5RunDraft,
     setActivity5Prediction,
     validateA5Prediction,
-    type Activity5RunDraft,
-    type A5MovementSpec,
 } from '../../../store/activity5RunDraftStore';
 
 import {

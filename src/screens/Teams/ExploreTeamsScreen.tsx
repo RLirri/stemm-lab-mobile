@@ -15,8 +15,8 @@ import {
     AppStatusToast,
     AppText,
     EmptyState,
-    LoadingState,
     InfoBanner,
+    LoadingState,
 } from '../../components/ui';
 
 import {spacing} from '../../theme';

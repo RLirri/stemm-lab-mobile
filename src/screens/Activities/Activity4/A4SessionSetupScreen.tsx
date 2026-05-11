@@ -15,16 +15,16 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A4MaterialContext,
+    type Activity4RunDraft,
     createActivity4RunDraft,
     discardActivity4RunDraft,
     getActivity4RunDraft,
     getLatestRecoverableActivity4RunDraft,
     hydrateActivity4RunDraftFromLocalDb,
-    updateActivity4Session,
     updateActivity4Design,
+    updateActivity4Session,
     validateA4Session,
-    type Activity4RunDraft,
-    type A4MaterialContext,
 } from '../../../store/activity4RunDraftStore';
 import {confirmBatteryBeforeActivity} from '../../../services/battery';
 

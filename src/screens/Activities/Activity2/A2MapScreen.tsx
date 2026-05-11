@@ -1,29 +1,14 @@
 // src/screens/Activities/Activity2/A2MapScreen.tsx
 
-import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState,} from 'react';
 
-import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {Alert, Pressable, StyleSheet, View,} from 'react-native';
 
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import {useFocusEffect} from '@react-navigation/native';
 
-import MapView, {
-    Marker,
-    PROVIDER_DEFAULT,
-    type Region,
-} from 'react-native-maps';
+import MapView, {Marker, PROVIDER_DEFAULT, type Region,} from 'react-native-maps';
 
 import * as Location from 'expo-location';
 
@@ -31,16 +16,9 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 
 import {auth} from '../../../services/firebase';
 
-import {
-    getActivity2RunDraft,
-    type A2GpsPoint,
-    type Activity2RunDraft,
-} from '../../../store/activity2RunDraftStore';
+import {type A2GpsPoint, type Activity2RunDraft, getActivity2RunDraft,} from '../../../store/activity2RunDraftStore';
 
-import {
-    SOUND_RISK_BANDS,
-    type SoundRiskCategory,
-} from '../../../services/scoringService';
+import {SOUND_RISK_BANDS, type SoundRiskCategory,} from '../../../services/scoringService';
 
 import {
     AppBadge,

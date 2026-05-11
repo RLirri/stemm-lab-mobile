@@ -8,12 +8,12 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
-    getActivity5RunDraft,
-    type Activity5RunDraft,
     type A5MovementSpec,
     type A5MovementType,
     type A5TrialDraft,
     type A5TrialMode,
+    type Activity5RunDraft,
+    getActivity5RunDraft,
 } from '../../../store/activity5RunDraftStore';
 
 import A5SmoothnessComparisonChart, {

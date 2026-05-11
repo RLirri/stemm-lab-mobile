@@ -19,14 +19,14 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
-    getActivity3RunDraft,
-    removeActivity3Measurement,
-    upsertActivity3Measurement,
-    updateActivity3FanDesign,
     type Activity3RunDraft,
     type FanDistanceCm,
     type FanFoldType,
     type FanMaterial,
+    getActivity3RunDraft,
+    removeActivity3Measurement,
+    updateActivity3FanDesign,
+    upsertActivity3Measurement,
 } from '../../../store/activity3RunDraftStore';
 
 import {
@@ -36,10 +36,7 @@ import {
     validateAndDeriveMeasurement,
 } from '../../../services/activity3PhysicsService';
 
-import {
-    pickVideoFromLibrary,
-    recordVideoWithCamera,
-} from '../../../services/evidenceService';
+import {pickVideoFromLibrary, recordVideoWithCamera,} from '../../../services/evidenceService';
 
 import {
     AppBadge,

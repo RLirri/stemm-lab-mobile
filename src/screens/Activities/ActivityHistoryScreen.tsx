@@ -3,16 +3,14 @@ import {Pressable, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../navigation/AppStack';
-import {
-    ActivityHistoryItem,
-    getUserActivityHistory,
-} from '../../services/activityHistoryService';
+import {ActivityHistoryItem, getUserActivityHistory,} from '../../services/activityHistoryService';
 import {activityCatalog} from '../../features/activities/activityCatalog';
 
 import {
     AppBadge,
     AppButton,
     AppCard,
+    AppExpandableCard,
     AppGradientScreen,
     AppSearchBar,
     AppSectionHeader,
@@ -20,7 +18,6 @@ import {
     EmptyState,
     InfoBanner,
     LoadingState,
-    AppExpandableCard,
 } from '../../components/ui';
 
 import {colors, spacing} from '../../theme';

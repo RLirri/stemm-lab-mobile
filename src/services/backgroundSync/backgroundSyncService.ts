@@ -6,15 +6,9 @@ import * as TaskManager from 'expo-task-manager';
 
 import {submitOfflineToFirebase} from '../offlineSubmissionSyncAdapter';
 import {syncQueuedSubmissions} from '../syncService';
-import {
-    BACKGROUND_SYNC_CONFIG,
-    BACKGROUND_SYNC_TASK_NAME,
-} from './backgroundSyncConfig';
+import {BACKGROUND_SYNC_CONFIG, BACKGROUND_SYNC_TASK_NAME,} from './backgroundSyncConfig';
 
-import type {
-    BackgroundSyncResult,
-    BackgroundSyncTrigger,
-} from '../../types/backgroundSync';
+import type {BackgroundSyncResult, BackgroundSyncTrigger,} from '../../types/backgroundSync';
 
 import {canRunNonUrgentBackgroundSync, measureAsyncOperation} from '../battery';
 

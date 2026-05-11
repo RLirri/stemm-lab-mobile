@@ -1,15 +1,15 @@
 // src/screens/Activities/Activity4/A4MeasurementsScreen.tsx
 
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, Alert, StyleSheet, View} from 'react-native';
+import {Alert, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
+    type Activity4RunDraft,
     getActivity4RunDraft,
     upsertActivity4Measurement,
-    type Activity4RunDraft,
 } from '../../../store/activity4RunDraftStore';
 import {startEarthquakeMeasurement} from '../../../services/activity4PhysicsService';
 

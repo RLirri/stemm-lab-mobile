@@ -1,25 +1,25 @@
 // src/screens/Activities/Activity6/A6ReactionTrialScreen.tsx
 
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
+import {Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A6HandType,
+    type Activity6RunDraft,
     getActivity6RunDraft,
     upsertActivity6ReactionTrial,
     validateA6Prediction,
-    type Activity6RunDraft,
-    type A6HandType,
 } from '../../../store/activity6RunDraftStore';
 
 import {
+    type A6TargetPresentation,
+    buildReactionRecord,
     planNextTarget,
     waitAndActivateTarget,
-    buildReactionRecord,
-    type A6TargetPresentation,
 } from '../../../services/activity6ReactionBoardService';
 
 import {

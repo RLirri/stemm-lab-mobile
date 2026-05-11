@@ -15,24 +15,21 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type Activity3RunDraft,
     createActivity3RunDraft,
     discardActivity3RunDraft,
+    type FanFoldType,
     getActivity3RunDraft,
     getLatestRecoverableActivity3RunDraft,
     hydrateActivity3RunDraftFromLocalDb,
-    updateActivity3Session,
-    updateActivity3FanDesign,
     setActivity3SessionVideo,
-    validateA3Session,
-    type Activity3RunDraft,
-    type FanFoldType,
     type SurfaceContext,
+    updateActivity3FanDesign,
+    updateActivity3Session,
+    validateA3Session,
 } from '../../../store/activity3RunDraftStore';
 
-import {
-    pickVideoFromLibrary,
-    recordVideoWithCamera,
-} from '../../../services/evidenceService';
+import {pickVideoFromLibrary, recordVideoWithCamera,} from '../../../services/evidenceService';
 import {confirmBatteryBeforeActivity} from '../../../services/battery';
 
 import {

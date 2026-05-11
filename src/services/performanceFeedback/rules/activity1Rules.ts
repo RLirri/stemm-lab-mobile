@@ -1,7 +1,7 @@
 // src/services/performanceFeedback/rules/activity1Rules.ts
 
-import {mean, standardDeviation, min, max} from "simple-statistics";
-import type {FeedbackResult, FeedbackItem} from "../../../types/performanceFeedback";
+import {max, mean, min, standardDeviation} from "simple-statistics";
+import type {FeedbackItem, FeedbackResult} from "../../../types/performanceFeedback";
 import type {A1PredictionPoint} from "../../resultInsights/activity1VisualizationService";
 
 export function generateActivity1Feedback(points: A1PredictionPoint[]): FeedbackResult {

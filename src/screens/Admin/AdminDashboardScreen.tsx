@@ -8,10 +8,7 @@ import {activityCatalog} from '../../features/activities/activityCatalog';
 import {seedActivities} from '../../services/activityAdminService';
 import {backfillTeamStats} from '../../services/teamMigrationService';
 import {isAdminUser} from '../../services/admin/adminAccessService';
-import {
-    getAdminAnalyticsSnapshot,
-    type AdminAnalyticsSnapshot,
-} from '../../services/admin/adminAnalyticsService';
+import {type AdminAnalyticsSnapshot, getAdminAnalyticsSnapshot,} from '../../services/admin/adminAnalyticsService';
 
 import {
     AppBadge,

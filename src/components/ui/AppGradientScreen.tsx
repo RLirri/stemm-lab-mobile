@@ -1,17 +1,9 @@
 import React from 'react';
-import {
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    View,
-    ViewStyle,
-} from 'react-native';
+import {SafeAreaView, ScrollView, StyleSheet, View, ViewStyle,} from 'react-native';
 
 import {LinearGradient} from 'expo-linear-gradient';
 
-import {
-    spacing,
-} from '../../theme';
+import {spacing,} from '../../theme';
 
 type Props = {
     children: React.ReactNode;

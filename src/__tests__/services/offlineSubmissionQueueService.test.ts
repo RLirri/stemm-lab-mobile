@@ -1,7 +1,4 @@
-import {
-    getQueuedSubmissionStatus,
-    queueFinalSubmission,
-} from '../../services/offlineSubmissionQueueService';
+import {getQueuedSubmissionStatus, queueFinalSubmission,} from '../../services/offlineSubmissionQueueService';
 
 import {
     getOfflineSubmissionByRunId,

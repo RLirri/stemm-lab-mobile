@@ -15,6 +15,8 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
+    type A7ParticipantDraft,
+    type Activity7RunDraft,
     createActivity7RunDraft,
     discardActivity7RunDraft,
     getActivity7RunDraft,
@@ -23,8 +25,6 @@ import {
     updateActivity7Participant,
     updateActivity7Session,
     validateA7Session,
-    type Activity7RunDraft,
-    type A7ParticipantDraft,
 } from '../../../store/activity7RunDraftStore';
 
 import {confirmBatteryBeforeActivity} from '../../../services/battery';

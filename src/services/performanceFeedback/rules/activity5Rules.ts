@@ -1,10 +1,7 @@
 // src/services/performanceFeedback/rules/activity5Rules.ts
 
-import {mean, standardDeviation, min, max} from "simple-statistics";
-import type {
-    FeedbackItem,
-    FeedbackResult,
-} from "../../../types/performanceFeedback";
+import {max, mean, min, standardDeviation} from "simple-statistics";
+import type {FeedbackItem, FeedbackResult,} from "../../../types/performanceFeedback";
 
 type A5Trial = {
     label: string;

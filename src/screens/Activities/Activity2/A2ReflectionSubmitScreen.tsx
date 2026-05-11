@@ -10,14 +10,11 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth, db} from '../../../services/firebase';
 import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {
+    type Activity2RunDraft,
     getActivity2RunDraft,
     updateActivity2Session,
-    type Activity2RunDraft,
 } from '../../../store/activity2RunDraftStore';
-import {
-    pickVideoFromLibrary,
-    recordVideoWithCamera,
-} from '../../../services/evidenceService';
+import {pickVideoFromLibrary, recordVideoWithCamera,} from '../../../services/evidenceService';
 import {submitActivity2} from '../../../services/activitySubmissionService';
 import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQualityCard';
 import {checkReflectionQuality} from '../../../services/reflectionQualityService';

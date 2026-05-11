@@ -1,8 +1,4 @@
-import {
-    OFFLINE_DRAFT_SCHEMA_VERSION,
-    type OfflineDraftRecord,
-    type OfflineDraftStatus,
-} from "../types/offlineDraft";
+import {OFFLINE_DRAFT_SCHEMA_VERSION, type OfflineDraftRecord, type OfflineDraftStatus,} from "../types/offlineDraft";
 import {offlineDraftRepository} from "./localDb/repositories/offlineDraftRepository";
 
 export interface SaveOfflineDraftInput<TPayload> {

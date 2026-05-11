@@ -26,6 +26,7 @@ import {
 } from '../../components/ui';
 
 import {colors, spacing} from '../../theme';
+import {useNavigation} from '@react-navigation/native';
 
 type UserProfileDoc = {
     uid: string;
@@ -61,8 +62,6 @@ function formatMemberSince(createdAt?: any): string {
         year: 'numeric',
     })}`;
 }
-
-import {useNavigation} from '@react-navigation/native';
 
 export default function ProfileScreen() {
     const navigation = useNavigation<any>();
@@ -344,7 +343,7 @@ export default function ProfileScreen() {
                 onPress={() => setLogoutDialogVisible(true)}
                 style={styles.logoutButton}
             />
-            
+
 
             <AppConfirmDialog
                 visible={logoutDialogVisible}

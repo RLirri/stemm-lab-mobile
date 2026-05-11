@@ -16,14 +16,7 @@ import {loginWithEmail} from '../../services/authService';
 import {friendlyAuthError} from '../../utils/firebaseErrors';
 import {auth} from '../../services/firebase';
 
-import {
-    AppButton,
-    AppCard,
-    AppGradientScreen,
-    AppInput,
-    AppStatusToast,
-    AppText,
-} from '../../components/ui';
+import {AppButton, AppCard, AppGradientScreen, AppInput, AppStatusToast, AppText,} from '../../components/ui';
 
 import {colors, spacing} from '../../theme';
 

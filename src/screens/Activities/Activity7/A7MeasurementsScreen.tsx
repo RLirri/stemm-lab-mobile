@@ -8,8 +8,8 @@ import {
     Platform,
     Pressable,
     StyleSheet,
-    View,
     Vibration,
+    View,
 } from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {Accelerometer} from 'expo-sensors';
@@ -18,14 +18,14 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
 import {
-    getActivity7RunDraft,
+    type A7MeasurementPhase,
+    type A7SensorSample,
+    type Activity7RunDraft,
     getA7NextMeasurementSlot,
     getA7ParticipantPhaseCompletion,
     getA7PhaseLabel as getStoreA7PhaseLabel,
+    getActivity7RunDraft,
     upsertActivity7Measurement,
-    type Activity7RunDraft,
-    type A7MeasurementPhase,
-    type A7SensorSample,
 } from '../../../store/activity7RunDraftStore';
 
 import {

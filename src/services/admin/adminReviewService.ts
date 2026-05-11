@@ -1,12 +1,4 @@
-import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    limit,
-    orderBy,
-    query,
-} from 'firebase/firestore';
+import {collection, doc, getDoc, getDocs, limit, orderBy, query,} from 'firebase/firestore';
 
 import {db} from '../firebase';
 import type {SubmissionDoc} from '../../types/submission';

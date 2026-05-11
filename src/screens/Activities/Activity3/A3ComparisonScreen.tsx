@@ -7,16 +7,12 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
-    getActivity3RunDraft,
     type Activity3RunDraft,
     type FanDistanceCm,
     type FanMaterial,
+    getActivity3RunDraft,
 } from '../../../store/activity3RunDraftStore';
-import {
-    A3_DISTANCES,
-    A3_MATERIALS,
-    validateAndDeriveMeasurement,
-} from '../../../services/activity3PhysicsService';
+import {A3_DISTANCES, A3_MATERIALS, validateAndDeriveMeasurement,} from '../../../services/activity3PhysicsService';
 
 import {
     AppBadge,

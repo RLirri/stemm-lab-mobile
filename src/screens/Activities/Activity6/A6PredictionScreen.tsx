@@ -7,10 +7,10 @@ import {useFocusEffect} from '@react-navigation/native';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {
+    type A6PredictionDraft,
+    type Activity6RunDraft,
     getActivity6RunDraft,
     setActivity6Prediction,
-    type Activity6RunDraft,
-    type A6PredictionDraft,
 } from '../../../store/activity6RunDraftStore';
 
 import {

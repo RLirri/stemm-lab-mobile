@@ -16,17 +16,14 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 import {
-    getRunDraft,
-    updateAttempt,
     type ActivityRunDraft,
     type AttemptDraft,
     type AttemptMeasurementsDraft,
+    getRunDraft,
+    updateAttempt,
 } from '../../../store/activityRunDraftStore';
 
-import {
-    pickVideoFromLibrary,
-    recordVideoWithCamera,
-} from '../../../services/evidenceService';
+import {pickVideoFromLibrary, recordVideoWithCamera,} from '../../../services/evidenceService';
 
 import {
     AppBadge,

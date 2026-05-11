@@ -10,14 +10,14 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth, db} from '../../../services/firebase';
 import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {
+    type Activity7RunDraft,
     clearActivity7RunDraft,
+    getA7LeaderboardMetrics,
     getActivity7RunDraft,
+    isA7LeaderboardEligible,
     setActivity7Reflection,
     setActivity7SessionVideo,
     validateA7Submission,
-    getA7LeaderboardMetrics,
-    isA7LeaderboardEligible,
-    type Activity7RunDraft,
 } from '../../../store/activity7RunDraftStore';
 import {pickVideoFromLibrary, recordVideoWithCamera} from '../../../services/evidenceService';
 import {submitActivity7} from '../../../services/activitySubmissionService';

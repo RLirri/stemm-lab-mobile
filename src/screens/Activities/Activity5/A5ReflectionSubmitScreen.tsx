@@ -10,14 +10,14 @@ import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth, db} from '../../../services/firebase';
 import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {
+    type A5MovementType,
+    type Activity5RunDraft,
     clearActivity5RunDraft,
+    getA5BestImprovement,
     getActivity5RunDraft,
     setActivity5Reflection,
     setActivity5SessionVideo,
     validateA5Submission,
-    getA5BestImprovement,
-    type Activity5RunDraft,
-    type A5MovementType,
 } from '../../../store/activity5RunDraftStore';
 import {pickVideoFromLibrary, recordVideoWithCamera} from '../../../services/evidenceService';
 import {submitActivity5} from '../../../services/activitySubmissionService';

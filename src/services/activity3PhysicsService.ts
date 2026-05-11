@@ -1,10 +1,5 @@
 // src/services/activity3PhysicsService.ts
-import type {
-    Activity3RunDraft,
-    FanDistanceCm,
-    FanMaterial,
-    A3MeasurementDraft,
-} from "../store/activity3RunDraftStore";
+import type {A3MeasurementDraft, Activity3RunDraft, FanDistanceCm, FanMaterial,} from "../store/activity3RunDraftStore";
 
 /* =========================================================
    Constants

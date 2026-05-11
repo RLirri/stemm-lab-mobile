@@ -1,9 +1,5 @@
 import {Profanity} from '@2toad/profanity';
-import {
-    ReflectionQualityIssue,
-    ReflectionQualityResult,
-    ReflectionQualityStatus,
-} from '../types/reflectionQuality';
+import {ReflectionQualityIssue, ReflectionQualityResult, ReflectionQualityStatus,} from '../types/reflectionQuality';
 
 const MIN_WORD_COUNT = 12;
 const STRONG_WORD_COUNT = 45;

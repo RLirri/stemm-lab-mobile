@@ -1,18 +1,14 @@
 // src/screens/Activities/Activity2/A2ResultsScreen.tsx
 
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {Alert, Pressable, StyleSheet, View} from 'react-native';
+import {Alert, StyleSheet, View} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useFocusEffect} from '@react-navigation/native';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
 
-import {
-    getActivity2RunDraft,
-    setA2Computed,
-    type Activity2RunDraft,
-} from '../../../store/activity2RunDraftStore';
+import {type Activity2RunDraft, getActivity2RunDraft, setA2Computed,} from '../../../store/activity2RunDraftStore';
 
 import {
     classifySoundRisk,
@@ -25,8 +21,8 @@ import ActivityBarChart from '../../../components/charts/ActivityBarChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
-    buildA2Visualization,
     type A2VisualizationTrial,
+    buildA2Visualization,
 } from '../../../services/resultInsights/activity2VisualizationService';
 import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 

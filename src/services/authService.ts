@@ -1,9 +1,4 @@
-import {
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-    updateProfile,
-} from "firebase/auth";
+import {createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile,} from "firebase/auth";
 import {auth} from "./firebase";
 
 export async function registerWithEmail(

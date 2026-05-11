@@ -1,13 +1,6 @@
 // src/screens/Leaderboard/LeaderboardScreen.tsx
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {
-    Animated,
-    FlatList,
-    Pressable,
-    RefreshControl,
-    StyleSheet,
-    View,
-} from 'react-native';
+import {Animated, FlatList, Pressable, RefreshControl, StyleSheet, View,} from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../navigation/AppStack';

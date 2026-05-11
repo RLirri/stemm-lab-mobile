@@ -7,7 +7,7 @@ import {doc, getDoc} from 'firebase/firestore';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth, db} from '../../../services/firebase';
-import {getRunDraft, type ActivityRunDraft} from '../../../store/activityRunDraftStore';
+import {type ActivityRunDraft, getRunDraft} from '../../../store/activityRunDraftStore';
 import {submitActivity1} from '../../../services/activitySubmissionService';
 import {queueFinalSubmission} from '../../../services/offlineSubmissionQueueService';
 import {ReflectionQualityCard} from '../../../components/reflection/ReflectionQualityCard';

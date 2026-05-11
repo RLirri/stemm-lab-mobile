@@ -6,17 +6,14 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
-import {
-    getActivity4RunDraft,
-    type Activity4RunDraft,
-} from '../../../store/activity4RunDraftStore';
+import {type Activity4RunDraft, getActivity4RunDraft,} from '../../../store/activity4RunDraftStore';
 
 import ActivityBarChart from '../../../components/charts/ActivityBarChart';
 import ResultsInsightCard from '../../../components/insights/ResultsInsightCard';
 import PerformanceFeedbackCard from '../../../components/feedback/PerformanceFeedbackCard';
 import {
-    buildA4Visualization,
     type A4VisualizationTrial,
+    buildA4Visualization,
 } from '../../../services/resultInsights/activity4VisualizationService';
 import {generatePerformanceFeedback} from '../../../services/performanceFeedback/performanceFeedbackService';
 

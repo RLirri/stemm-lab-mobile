@@ -1,4 +1,4 @@
-import {collection, getCountFromServer, getDocs, query, where} from 'firebase/firestore';
+import {collection, getCountFromServer, query, where} from 'firebase/firestore';
 
 import {db} from '../firebase';
 import {activityCatalog} from '../../features/activities/activityCatalog';

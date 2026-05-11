@@ -6,10 +6,7 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 
 import type {AppStackParamList} from '../../../navigation/AppStack';
 import {auth} from '../../../services/firebase';
-import {
-    getRunDraft,
-    type ActivityRunDraft,
-} from '../../../store/activityRunDraftStore';
+import {type ActivityRunDraft, getRunDraft,} from '../../../store/activityRunDraftStore';
 
 import {
     AppBadge,
