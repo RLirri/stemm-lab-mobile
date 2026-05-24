@@ -60,7 +60,8 @@ export default function LoginScreen({navigation}: Props) {
     }, [register]);
 
     const [request, response, promptAsync] = Google.useAuthRequest({
-        clientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+        webClientId: '1053383322573-ug048k2n7cv01mrgr0unuju9e8h4ct8q.apps.googleusercontent.com',
+        androidClientId: '1053383322573-7nhfkbjh6jmspbmhl4mpgqivmk4uskpc.apps.googleusercontent.com',
     });
 
     const showToast = (
