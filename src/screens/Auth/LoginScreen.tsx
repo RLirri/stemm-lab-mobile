@@ -16,7 +16,14 @@ import {loginWithEmail} from '../../services/authService';
 import {friendlyAuthError} from '../../utils/firebaseErrors';
 import {auth} from '../../services/firebase';
 
-import {AppButton, AppCard, AppGradientScreen, AppInput, AppStatusToast, AppText,} from '../../components/ui';
+import {
+    AppButton,
+    AppCard,
+    AppGradientScreen,
+    AppInput,
+    AppStatusToast,
+    AppText,
+} from '../../components/ui';
 
 import {colors, spacing} from '../../theme';
 
@@ -36,6 +43,9 @@ type ToastState = {
     message?: string;
     tone?: 'success' | 'info' | 'warning' | 'danger';
 };
+
+const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
 
 export default function LoginScreen({navigation}: Props) {
     const [submitting, setSubmitting] = useState(false);
@@ -60,8 +70,9 @@ export default function LoginScreen({navigation}: Props) {
     }, [register]);
 
     const [request, response, promptAsync] = Google.useAuthRequest({
-        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-        androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+        webClientId: googleWebClientId,
+        androidClientId: googleAndroidClientId,
+        scopes: ['profile', 'email'],
     });
 
     const showToast = (
@@ -78,20 +89,35 @@ export default function LoginScreen({navigation}: Props) {
     };
 
     useEffect(() => {
-        if (response?.type === 'success') {
-            const {id_token} = response.params;
-            const credential = GoogleAuthProvider.credential(id_token);
+        const signInWithGoogle = async () => {
+            if (response?.type !== 'success') {
+                return;
+            }
 
-            setGoogleLoading(true);
+            const idToken =
+                response.authentication?.idToken ?? response.params?.id_token;
 
-            signInWithCredential(auth, credential)
-                .catch((e) => {
-                    showToast('Google login failed', friendlyAuthError(e?.code), 'danger');
-                })
-                .finally(() => {
-                    setGoogleLoading(false);
-                });
-        }
+            if (!idToken) {
+                showToast(
+                    'Google login failed',
+                    'Google did not return a valid ID token. Please try again or use email login.',
+                    'danger',
+                );
+                return;
+            }
+
+            try {
+                setGoogleLoading(true);
+                const credential = GoogleAuthProvider.credential(idToken);
+                await signInWithCredential(auth, credential);
+            } catch (e: any) {
+                showToast('Google login failed', friendlyAuthError(e?.code), 'danger');
+            } finally {
+                setGoogleLoading(false);
+            }
+        };
+
+        signInWithGoogle();
     }, [response]);
 
     const onSubmit = async (data: FormData) => {
@@ -102,6 +128,29 @@ export default function LoginScreen({navigation}: Props) {
             showToast('Login failed', friendlyAuthError(e?.code), 'danger');
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const onGoogleLogin = async () => {
+        if (!request) {
+            showToast(
+                'Google login unavailable',
+                'Google sign-in is still preparing. Please try again shortly.',
+                'warning',
+            );
+            return;
+        }
+
+        try {
+            setGoogleLoading(true);
+            await promptAsync();
+        } catch {
+            showToast(
+                'Google login failed',
+                'Unable to open Google sign-in. Please try again.',
+                'danger',
+            );
+            setGoogleLoading(false);
         }
     };
 
@@ -172,7 +221,7 @@ export default function LoginScreen({navigation}: Props) {
                 <AppButton
                     title={googleLoading ? 'Connecting...' : 'Continue with Google'}
                     variant="outline"
-                    onPress={() => promptAsync()}
+                    onPress={onGoogleLogin}
                     loading={googleLoading}
                     disabled={!request || googleLoading}
                     style={styles.googleButton}
